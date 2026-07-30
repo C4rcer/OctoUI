@@ -1,0 +1,27 @@
+# Keep dev-only metadata out of downloaded archives. README/PORTING are NOT
+# excluded here (upstream ElvUI excluded them): people who download the ZIP
+# rather than using the launcher need the install instructions.
+.github         export-ignore
+.gitattributes  export-ignore
+.gitignore      export-ignore
+
+* text=auto
+
+# Source files
+*.lua           text
+*.xml           text
+*.toc           text
+*.md            text
+
+# Fonts
+*.ttf           binary
+
+# Sounds
+*.ogg           binary
+*.mp3           binary
+*.wav           binary
+
+# Textures
+*.blp           binary
+*.tga           binary
+*.png           binary

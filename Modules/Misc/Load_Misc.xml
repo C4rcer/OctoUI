@@ -1,0 +1,17 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/">
+	<Script file="Misc.lua"/>
+	<Script file="DebugTools.lua"/>
+	<Script file="AFK.lua"/>
+	<Script file="ChatBubbles.lua"/>
+	<Script file="Loot.lua"/>
+	<Script file="LootRoll.lua"/>
+	<Script file="RaidMarker.lua"/>
+	<Script file="AutoStance.lua"/>
+	<Script file="AutoDismount.lua"/>
+	<Script file="EnergyTick.lua"/>
+	<Script file="CombatFeedback.lua"/>
+	<Script file="MacroTweaks.lua"/>
+	<Script file="MacroIcons.lua"/>
+	<Script file="ReagentCounter.lua"/>
+	<Script file="BagItemClick.lua"/>
+</Ui>

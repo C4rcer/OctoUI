@@ -1,0 +1,36 @@
+local E, L, V, P, G = unpack(ElvUI); --Import: Engine, Locales, PrivateDB, ProfileDB, GlobalDB
+local S = E:GetModule("Skins");
+
+--Cache global variables
+--Lua functions
+local _G = _G
+--WoW API / Variables
+
+local function LoadSkin()
+	if E.private.skins.blizzard.enable ~= true or E.private.skins.blizzard.guildregistrar ~= true then return end
+
+	E:StripTextures(GuildRegistrarFrame, true)
+	E:CreateBackdrop(GuildRegistrarFrame, "Transparent")
+	E:Point(GuildRegistrarFrame.backdrop, "TOPLEFT", 12, -17)
+	E:Point(GuildRegistrarFrame.backdrop, "BOTTOMRIGHT", -28, 65)
+	E:StripTextures(GuildRegistrarGreetingFrame)
+	S:HandleButton(GuildRegistrarFrameGoodbyeButton)
+	S:HandleButton(GuildRegistrarFrameCancelButton)
+	S:HandleButton(GuildRegistrarFramePurchaseButton)
+	S:HandleCloseButton(GuildRegistrarFrameCloseButton)
+	S:HandleEditBox(GuildRegistrarFrameEditBox)
+
+	GuildRegistrarFrameEditBox:DisableDrawLayer("BACKGROUND")
+
+	GuildRegistrarFrameEditBox:SetHeight(20)
+
+	for i = 1, 2 do
+		local skinObj = _G["GuildRegistrarButton"..i]
+		if skinObj then skinObj:GetFontString():SetTextColor(1, 1, 1) end
+	end
+
+	GuildRegistrarPurchaseText:SetTextColor(1, 1, 1)
+	AvailableServicesText:SetTextColor(1, 1, 0)
+end
+
+S:AddCallback("GuildRegistrar", LoadSkin)

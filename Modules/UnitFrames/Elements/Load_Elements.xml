@@ -1,0 +1,25 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/">
+	<Script file="Auras.lua"/>
+	<Script file="BuffIndicator.lua"/>
+	<Script file="Castbar.lua"/>
+	<Script file="Classbars.lua"/>
+	<Script file="CombatIndicator.lua"/>
+	<Script file="ComboPoints.lua"/>
+	<Script file="CustomText.lua"/>
+	<Script file="DebuffHighlight.lua"/>
+	<Script file="GPS.lua"/>
+	<Script file="Happiness.lua"/>
+	<Script file="Health.lua"/>
+	<Script file="Name.lua"/>
+	<Script file="Portrait.lua"/>
+	<Script file="Power.lua"/>
+	<Script file="InfoPanel.lua"/>
+	<Script file="PvPIcon.lua"/>
+	<Script file="PvPIndicator.lua"/>
+	<Script file="RaidDebuffs.lua"/>
+	<Script file="RaidIcon.lua"/>
+	<Script file="RaidRoleIcons.lua"/>
+	<Script file="Range.lua"/>
+	<Script file="RestingIndicator.lua"/>
+	<Script file="FrameGlow.lua"/>
+</Ui>

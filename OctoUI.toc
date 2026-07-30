@@ -1,0 +1,45 @@
+## Interface: 11200
+## Title: |cff175581Octo|r|cffC4C4C4UI|r
+## Notes: Complete User Interface replacement for OctoWoW. Based on the ElvUI 1.12.1 backport.
+## Author: Carcer - N'Zoth. Based on ElvUI by Elv and Simpy, 1.12.1 backport by the ElvUI-Vanilla contributors.
+## Version: 1.0.0
+## SavedVariables: ElvDB, ElvPrivateDB, GAME_LOCALE
+## SavedVariablesPerCharacter: ElvCharacterDB, TWT_CONFIG
+## OptionalDeps: SharedMedia, Tukui, ButtonFacade
+
+# Compatibility polyfills. MUST stay first: everything below assumes select,
+# string.match, string.gmatch, strsplit, hooksecurefunc and friends exist.
+Compatibility\errorHandler.lua
+Compatibility\api\api.xml
+Compatibility\slashCommands.lua
+
+# Engine
+Developer\Load_Developer.xml
+Libraries\Load_Libraries.xml
+Locales\Load_Locales.xml
+Media\Load_Media.xml
+Init.lua
+Settings\Load_Config.xml
+Core\Load_Core.xml
+Layout\Load_Layout.xml
+Modules\Load_Modules.xml
+
+# Options GUI. Was the separate load-on-demand ElvUI_Config addon; merged in so
+# the whole UI installs from one git URL. Must stay last, its files resolve
+# modules with E:GetModule at load time.
+Config\Libraries\Load_Libraries.xml
+Config\Locales\Load_Locales.xml
+Config\Core.lua
+Config\General.lua
+Config\ActionBars.lua
+Config\Auras.lua
+Config\Bags.lua
+Config\Chat.lua
+Config\DataTexts.lua
+Config\NamePlates.lua
+Config\Skins.lua
+Config\Tooltip.lua
+Config\UnitFrames.lua
+Config\DataBars.lua
+Config\Maps.lua
+Config\ModuleControl.lua
