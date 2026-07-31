@@ -361,6 +361,7 @@ function mod:OnShow(self, isUpdate)
 
 	mod:ConfigureElement_HealthBar(self.UnitFrame)
 	if mod.db.units[unitType].healthbar.enable then
+		mod:ConfigureElement_PowerBar(self.UnitFrame)
 		mod:ConfigureElement_CastBar(self.UnitFrame)
 		mod:ConfigureElement_Glow(self.UnitFrame)
 
@@ -413,6 +414,14 @@ function mod:OnHide(self)
 	self.UnitFrame.LeftArrow:Hide()
 	self.UnitFrame.RightArrow:Hide()
 	self.UnitFrame.HealthBar.r, self.UnitFrame.HealthBar.g, self.UnitFrame.HealthBar.b = nil, nil, nil
+	--a recycled plate must not inherit the last mob's cast: the bar hides itself when
+	--a cast completes, but a plate can be released mid-cast and reused seconds later
+	self.UnitFrame.PowerBar:Hide()
+	self.UnitFrame.PowerBar:SetHeight(0.01)
+	self.UnitFrame.CastBar.casting = nil
+	self.UnitFrame.CastBar.channeling = nil
+	self.UnitFrame.CastBar.holdTime = 0
+	self.UnitFrame.CastBar:Hide()
 	self.UnitFrame.HealthBar:Hide()
 	self.UnitFrame.HealthBar.currentScale = nil
 	self.UnitFrame.Level:ClearAllPoints()
@@ -476,6 +485,7 @@ function mod:UpdateElement_All(frame, noTargetFrame, filterIgnore)
 	if healthShown then
 		mod:UpdateElement_Health(frame)
 		mod:UpdateElement_HealthColor(frame)
+		mod:UpdateElement_Power(frame)
 		mod:UpdateElement_Cast(frame, nil, frame.unit)
 		mod:UpdateElement_Auras(frame)
 	end
@@ -558,6 +568,7 @@ function mod:OnCreated(frame)
 	frame.UnitFrame.HealthBar = self:ConstructElement_HealthBar(frame.UnitFrame)
 	frame.UnitFrame.Level = self:ConstructElement_Level(frame.UnitFrame)
 	frame.UnitFrame.Name = self:ConstructElement_Name(frame.UnitFrame)
+	frame.UnitFrame.PowerBar = self:ConstructElement_PowerBar(frame.UnitFrame)
 	frame.UnitFrame.CastBar = self:ConstructElement_CastBar(frame.UnitFrame)
 	frame.UnitFrame.Glow = self:ConstructElement_Glow(frame.UnitFrame)
 	frame.UnitFrame.Buffs = self:ConstructElement_Auras(frame.UnitFrame, "LEFT")
@@ -773,6 +784,7 @@ function mod:Initialize()
 	self:ScheduleRepeatingTimer("ForEachVisiblePlate", 0.1, "SetTargetFrame")
 	--auras have no event to hang off on this client, so poll them
 	self:ScheduleRepeatingTimer("ForEachVisiblePlate", 0.2, "UpdateElement_Auras")
+	self:ScheduleRepeatingTimer("ForEachVisiblePlate", 0.2, "UpdateElement_Power")
 
 	E.NamePlates = self
 end

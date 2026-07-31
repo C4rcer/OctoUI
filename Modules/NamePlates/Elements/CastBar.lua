@@ -188,8 +188,10 @@ function mod:ConfigureElement_CastBar(frame)
 	local castBar = frame.CastBar
 
 	castBar:ClearAllPoints()
-	castBar:SetPoint("TOPLEFT", frame.HealthBar, "BOTTOMLEFT", 0, -self.db.units[frame.UnitType].castbar.offset)
-	castBar:SetPoint("TOPRIGHT", frame.HealthBar, "BOTTOMRIGHT", 0, -self.db.units[frame.UnitType].castbar.offset)
+	--anchored to the power bar, not the health bar: the power bar sits between them
+	--and stays anchored while hidden, so this lands correctly either way
+	castBar:SetPoint("TOPLEFT", frame.PowerBar, "BOTTOMLEFT", 0, -self.db.units[frame.UnitType].castbar.offset)
+	castBar:SetPoint("TOPRIGHT", frame.PowerBar, "BOTTOMRIGHT", 0, -self.db.units[frame.UnitType].castbar.offset)
 	castBar:SetHeight(self.db.units[frame.UnitType].castbar.height)
 
 	castBar.Icon:SetPoint("TOPLEFT", frame.HealthBar, "TOPRIGHT", self.db.units[frame.UnitType].castbar.offset, 0);
@@ -228,7 +230,13 @@ end
 function mod:ConstructElement_CastBar(parent)
 	local frame = CreateFrame("StatusBar", "$parentCastBar", parent)
 	self:StyleFrame(frame)
-	--frame:SetScript("OnUpdate", mod.UpdateElement_CastBarOnUpdate)
+
+	--Wrapped, not passed directly: a 1.12 script handler receives no self and no
+	--elapsed, only the globals `this` and `arg1`. Handing over the method raw is why
+	--this sat commented out -- it would have errored on the first frame.
+	frame:SetScript("OnUpdate", function()
+		mod.UpdateElement_CastBarOnUpdate(this, arg1)
+	end)
 
 	frame.Icon = CreateFrame("Frame", nil, frame)
 	frame.Icon.texture = frame.Icon:CreateTexture(nil, "BORDER")
@@ -241,7 +249,122 @@ function mod:ConstructElement_CastBar(parent)
 	frame.Spark = frame:CreateTexture(nil, "OVERLAY")
 	frame.Spark:SetTexture([[Interface\CastingBar\UI-CastingBar-Spark]])
 	frame.Spark:SetBlendMode("ADD")
-	--frame.Spark:SetSize(15, 15)
+	--SetSize is 3.0; this client wants the two calls
+	frame.Spark:SetWidth(15)
+	frame.Spark:SetHeight(15)
 	frame:Hide()
 	return frame
+end
+--[[
+	Cast bars, driven by SuperWoW.
+
+	The UNIT_SPELLCAST_* events the upstream element wants arrived in 2.0 and do not
+	exist here, which is why their registration sits commented out in NamePlates.lua
+	OnShow -- registering them would have been harmless and equally useless. Nothing
+	ever drove the bar, so it never appeared.
+
+	SuperWoW's UNIT_CASTEVENT is the replacement, and it is better suited than the
+	events it stands in for: it reports the *caster's GUID* directly, so a cast maps to
+	one specific nameplate with no name matching involved.
+
+		arg1  caster GUID
+		arg2  target GUID
+		arg3  "START" | "CAST" | "CHANNEL" | "FAIL"
+		arg4  spell ID
+		arg5  cast time
+
+	Without SuperWoW there is no cast information on this client at all, short of
+	parsing the combat log for spell names, and the bar simply stays hidden.
+]]
+
+local castEvents = CreateFrame("Frame", "OctoUI_NamePlateCastEvents")
+
+--Straight off the plate's parent frame rather than frame.guid, which is only stamped
+--when the aura poll last ran and would lag a cast that starts the instant a plate does.
+function mod:PlateByGUID(guid)
+	if not guid or guid == "" then return end
+
+	for frame in pairs(mod.VisiblePlates) do
+		local parent = frame:GetParent()
+		if parent and parent:GetName(1) == guid then
+			return frame
+		end
+	end
+end
+
+function mod:StopCast(frame, failed)
+	local castBar = frame and frame.CastBar
+	if not castBar then return end
+
+	castBar.casting = nil
+	castBar.channeling = nil
+
+	local hold = self.db.units[frame.UnitType] and self.db.units[frame.UnitType].castbar.timeToHold or 0
+	if failed and hold > 0 then
+		castBar.holdTime = hold
+		castBar.Name:SetText(FAILED)
+		castBar.Time:SetText("")
+	else
+		castBar.holdTime = 0
+		castBar:Hide()
+	end
+end
+
+function mod:StartCast(frame, spellID, castTime, channel)
+	if not frame.UnitType then return end
+
+	local db = self.db.units[frame.UnitType]
+	if not (db and db.castbar.enable) then return end
+
+	local castBar = frame.CastBar
+	if not castBar then return end
+
+	--SpellInfo is SuperWoW's. Guarded because a spell it does not know still deserves
+	--a bar; only the name and icon are lost.
+	local name, _, icon
+	if SpellInfo then name, _, icon = SpellInfo(spellID) end
+
+	--reported in milliseconds
+	castTime = tonumber(castTime) or 0
+	if castTime > 100 then castTime = castTime / 1000 end
+	if castTime <= 0 then return end
+
+	castBar.casting = not channel
+	castBar.channeling = channel
+	castBar.value = channel and castTime or 0
+	castBar.maxValue = castTime
+	castBar.holdTime = 0
+
+	castBar:SetMinMaxValues(0, castTime)
+	castBar:SetValue(castBar.value)
+	castBar:SetStatusBarColor(self.db.castColor.r, self.db.castColor.g, self.db.castColor.b)
+
+	castBar.Name:SetText(name or "")
+	--Icon is a Frame holding a texture, not a texture itself
+	if castBar.Icon and castBar.Icon.texture then
+		castBar.Icon.texture:SetTexture(icon or [[Interface\Icons\INV_Misc_QuestionMark]])
+	end
+
+	castBar:Show()
+end
+
+castEvents:SetScript("OnEvent", function()
+	local caster, _, castType, spellID, castTime = arg1, arg2, arg3, arg4, arg5
+
+	local frame = mod:PlateByGUID(caster)
+	if not frame then return end
+
+	if castType == "START" or castType == "CAST" then
+		mod:StartCast(frame, spellID, castTime, false)
+	elseif castType == "CHANNEL" then
+		mod:StartCast(frame, spellID, castTime, true)
+	elseif castType == "FAIL" then
+		mod:StopCast(frame, true)
+	end
+end)
+
+--Only if SuperWoW is loaded; the event does not exist otherwise and registering a
+--name this client does not know throws.
+if SUPERWOW_VERSION then
+	castEvents:RegisterEvent("UNIT_CASTEVENT")
 end

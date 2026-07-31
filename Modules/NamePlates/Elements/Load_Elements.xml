@@ -4,6 +4,7 @@
 	<Script file="ComboPoints.lua"/>
 	<Script file="Glow.lua"/>
 	<Script file="HealthBar.lua"/>
+	<Script file="PowerBar.lua"/>
 	<Script file="Level.lua"/>
 	<Script file="Name.lua"/>
 	<Script file="RaidIcon.lua"/>

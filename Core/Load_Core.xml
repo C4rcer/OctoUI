@@ -1,6 +1,7 @@
 <Ui xmlns="http://www.blizzard.com/wow/ui/">
 	<Script file="Math.lua"/>
 	<Script file="core.lua"/>
+	<Script file="LibStats.lua"/>
 	<Script file="fonts.lua"/>
 	<Script file="install.lua"/>
 	<Script file="pixelperfect.lua"/>

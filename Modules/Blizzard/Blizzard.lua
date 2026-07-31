@@ -4,6 +4,7 @@ local B = E:NewModule("Blizzard", "AceEvent-3.0", "AceHook-3.0");
 E.Blizzard = B
 
 function B:Initialize()
+	self:InitializeCharacterStats()
 	self:AlertMovers()
 	self:EnhanceColorPicker()
 	self:PositionCaptureBar()

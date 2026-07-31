@@ -179,7 +179,8 @@ function E:DebuffTimerReport()
 
 	local haste = NP and NP.LibHaste
 	if haste then
-		E:Print(format("casting speed: %.1f%%, scales DoTs: %s", haste:GetCastingSpeed() * 100,
+		E:Print(format("haste %d%% + casting speed %d%% = %.1f%% total, scales DoTs: %s",
+			E.Stats:Get("haste"), E.Stats:Get("castingSpeed"), haste:GetCastingSpeed() * 100,
 			haste:ScalesDots() and "|cff00ff00yes|r" or "no (durations left unhasted)"))
 	else
 		E:Print("LibHaste: |cffff0000MISSING|r")
@@ -218,9 +219,15 @@ function E:DebuffTimerReport()
 			duration, timeleft = lib:GetTimeLeft(name, level, effect or "", guid)
 		end
 
+		--built separately: a nil reaching string.format raises, and an error here
+		--aborts the loop, so the remaining debuffs never get reported at all
+		local timer = "|cffff0000no timer|r"
+		if type(timeleft) == "number" then
+			timer = format("left %.1f of %.0f", timeleft, (type(duration) == "number" and duration) or 0)
+		end
+
 		E:Print(format("  %d. %s | %s | %s", i,
-			effect and ("'"..effect.."'") or "|cffff0000name unresolved|r", known,
-			timeleft and format("left %.1f of %.0f", timeleft, duration or 0) or "|cffff0000no timer|r"))
+			effect and ("'"..effect.."'") or "|cffff0000name unresolved|r", known, timer))
 	end
 
 	if not found then E:Print("  target has no debuffs") end
