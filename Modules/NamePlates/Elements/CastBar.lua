@@ -326,13 +326,10 @@ function mod:StartCast(frame, spellID, castTime, channel)
 	local db = self.db.units[frame.UnitType]
 	if not (db and db.castbar.enable) then return end
 
-	--This bar is anchored to the power bar, which is anchored to the health bar, and
-	--none of the three are configured for a unit type whose health bar is off. Showing
-	--one regardless means showing a bar that was never given an anchor or a height.
-	--If friendly cast bars are ever wanted on their own, the configure step in
-	--NamePlates.lua has to stop being gated on healthbar.enable first.
-	if not db.healthbar.enable then return end
-
+	--No healthbar.enable check here any more. The configure step in NamePlates.lua no
+	--longer skips the anchor chain for a unit type whose health bar is off, so a cast bar
+	--on its own now has an anchor, a height and a font -- which is all this guard was ever
+	--standing in for. castbar.enable above is the only gate that should decide.
 	local castBar = frame.CastBar
 	if not castBar then return end
 

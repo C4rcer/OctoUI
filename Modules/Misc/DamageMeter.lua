@@ -4,7 +4,7 @@ local M = E:GetModule("Misc");
 --Cache global variables
 --Lua functions
 local pairs, tonumber, type = pairs, tonumber, type
-local format, sort = string.format, table.sort
+local format, sort, find = string.format, table.sort, string.find
 local tinsert, getn = table.insert, table.getn
 --WoW API / Variables
 local GetTime = GetTime
@@ -62,6 +62,21 @@ local current, overall = {}, {}
 local combatStart, combatEnd
 local combatTime = 0
 
+--Finished fights, newest first: { {store, duration, label, ended}, ... }. A segment is
+--banked when combat drops, so "the pull before last" stays readable after the next one
+--has already overwritten `current` -- which is the whole reason a meter is worth having
+--after the fight rather than during it.
+--
+--Capped, and deliberately low. Every entry holds a full actor table with its per-spell
+--breakdown, and this is a 1.12 client where the addon memory a fight costs is real; a
+--long raid night would otherwise accumulate hundreds of them for no one to ever read.
+local history = {}
+local HISTORY_MAX = 10
+
+--Fights this short are a stray proc or a critter, not something anyone wants a row in
+--the picker for.
+local HISTORY_MIN_DURATION = 4
+
 --GUIDs worth recording: you, your pet, and your group with theirs. The *_OTHER
 --events report every bit of damage in range, so without this the meter happily
 --credits whoever happens to be killing something nearby -- a stranger outside
@@ -90,10 +105,34 @@ local shieldSource = {}
 
 local watcher
 local available
+local usingCombatLog
 local debugging
 
+--Declared up here rather than beside the fallback that fills them: Available and
+--MeterSource close over both, and a local declared further down the file would leave
+--those two reading a nil global instead.
+local logEvents, logPatterns = {}, {}
+
+--Whether the meter has any source of numbers at all -- nampower's events, or failing
+--that a combat log the client gave us enough format strings to read. A fallback that
+--matched nothing would be a window that stays empty forever, which is worse than
+--saying plainly that the meter cannot run here.
 local function Available()
-	return available and true or false
+	if available then return true end
+
+	return (usingCombatLog and getn(logPatterns) > 0) and true or false
+end
+
+--"nampower", "combatlog" or nil, with the two counts the report command needs to say
+--how much of the combat log this client actually handed over.
+function M:MeterSource()
+	if available then return "nampower" end
+	if not usingCombatLog then return end
+
+	local events = 0
+	for _ in pairs(logEvents) do events = events + 1 end
+
+	return "combatlog", getn(logPatterns), events
 end
 
 --SuperWoW returns the GUID as a second value from UnitExists
@@ -106,6 +145,19 @@ local function RefreshTracked()
 	tracked, owners = {}, {}
 
 	local function add(unit, ownerUnit)
+		--The combat log deals in names, never GUIDs, so the fallback parser needs the
+		--same roster keyed the other way. Both sets are filled here rather than in two
+		--places that could drift apart, and a name key costs nothing when unused.
+		local name = UnitName(unit)
+		if name and name ~= "" and name ~= "Unknown Entity" then
+			tracked[name] = true
+
+			if ownerUnit then
+				local ownerName = UnitName(ownerUnit)
+				if ownerName and ownerName ~= "" then owners[name] = ownerName end
+			end
+		end
+
 		local guid = GuidOf(unit)
 		if not guid then return end
 
@@ -215,7 +267,184 @@ local function Record(guid, spell, amount, isHeal)
 	end
 end
 
+--[[ combat log fallback ]]--
+--
+--Used only when nampower's structured events are not on this client. Everything the
+--module header says about this way of working still holds -- it reads sentences instead
+--of numbers, it cannot tell two mobs of the same name apart, and it is capped by the
+--combat log's own range -- so it is the worse source and never runs alongside the good
+--one. What it buys is that the meter works at all for somebody without the DLL, which
+--is the difference between a feature and a feature only the author can use.
+--
+--Not a word of English appears below. Every pattern is one of the client's own format
+--strings, matched through LibDebuff's cmatch, which reads the captures back in the order
+--the *format string* declares them however the locale chooses to print them. That is
+--already load-bearing for the debuff timers, so it is the tested path rather than a
+--second copy written for here.
+--
+--Two guards make the uncertainty survivable. A format string this client does not have
+--is skipped when the table is built, and an event it has never heard of is dropped by
+--the pcall around RegisterEvent -- so a name that turns out to be wrong costs that one
+--line of coverage instead of erroring at login. /octoui-dps reports what actually
+--registered, which is the only honest way to find out.
+
+--Candidates. Damage and healing done by the player, their pet, and the group.
+local LOG_EVENT_NAMES = {
+	"CHAT_MSG_COMBAT_SELF_HITS", "CHAT_MSG_COMBAT_PARTY_HITS",
+	"CHAT_MSG_COMBAT_FRIENDLYPLAYER_HITS", "CHAT_MSG_COMBAT_PET_HITS",
+	"CHAT_MSG_SPELL_SELF_DAMAGE", "CHAT_MSG_SPELL_PARTY_DAMAGE",
+	"CHAT_MSG_SPELL_FRIENDLYPLAYER_DAMAGE", "CHAT_MSG_SPELL_PET_DAMAGE",
+	"CHAT_MSG_SPELL_PERIODIC_CREATURE_DAMAGE", "CHAT_MSG_SPELL_PERIODIC_HOSTILEPLAYER_DAMAGE",
+	"CHAT_MSG_SPELL_SELF_BUFF", "CHAT_MSG_SPELL_PARTY_BUFF",
+	"CHAT_MSG_SPELL_FRIENDLYPLAYER_BUFF", "CHAT_MSG_SPELL_PERIODIC_SELF_BUFFS",
+	"CHAT_MSG_SPELL_PERIODIC_PARTY_BUFFS", "CHAT_MSG_SPELL_PERIODIC_FRIENDLYPLAYER_BUFFS",
+}
+
+--Resolved on demand: this file loads before the NamePlates module exists.
+local function CombatMatch(text, pattern)
+	local module = E.GetModule and E:GetModule("NamePlates", true)
+	local lib = module and module.LibDebuff
+	if not (lib and lib.Match) then return end
+
+	return lib:Match(text, pattern)
+end
+
+local playerName
+
+--{ format string name, handler(captures in format-string order) }.
+--
+--The school-qualified wordings come before the plain ones of the same family. They are
+--not actually ambiguous -- "for %d." needs a full stop straight after the digits and
+--"for %d %s damage." does not -- but the ordering is what the reader should be able to
+--rely on rather than that argument.
+local LOG_HANDLERS = {
+	--your melee
+	{"COMBATHITCRITSCHOOLSELFOTHER", function(target, amount) Record(playerName, "melee", amount) end},
+	{"COMBATHITSCHOOLSELFOTHER", function(target, amount) Record(playerName, "melee", amount) end},
+	{"COMBATHITCRITSELFOTHER", function(target, amount) Record(playerName, "melee", amount) end},
+	{"COMBATHITSELFOTHER", function(target, amount) Record(playerName, "melee", amount) end},
+
+	--somebody else's melee; the roster filter in Record drops anyone outside the group
+	{"COMBATHITCRITSCHOOLOTHEROTHER", function(source, target, amount) Record(source, "melee", amount) end},
+	{"COMBATHITSCHOOLOTHEROTHER", function(source, target, amount) Record(source, "melee", amount) end},
+	{"COMBATHITCRITOTHEROTHER", function(source, target, amount) Record(source, "melee", amount) end},
+	{"COMBATHITOTHEROTHER", function(source, target, amount) Record(source, "melee", amount) end},
+
+	--your spells
+	{"SPELLLOGCRITSCHOOLSELFOTHER", function(spell, target, amount) Record(playerName, spell, amount) end},
+	{"SPELLLOGSCHOOLSELFOTHER", function(spell, target, amount) Record(playerName, spell, amount) end},
+	{"SPELLLOGCRITSELFOTHER", function(spell, target, amount) Record(playerName, spell, amount) end},
+	{"SPELLLOGSELFOTHER", function(spell, target, amount) Record(playerName, spell, amount) end},
+
+	--somebody else's spells
+	{"SPELLLOGCRITSCHOOLOTHEROTHER", function(source, spell, target, amount) Record(source, spell, amount) end},
+	{"SPELLLOGSCHOOLOTHEROTHER", function(source, spell, target, amount) Record(source, spell, amount) end},
+	{"SPELLLOGCRITOTHEROTHER", function(source, spell, target, amount) Record(source, spell, amount) end},
+	{"SPELLLOGOTHEROTHER", function(source, spell, target, amount) Record(source, spell, amount) end},
+
+	--damage over time, which the log phrases as the target suffering rather than
+	--anyone hitting, and so shares no wording with the above
+	{"PERIODICAURADAMAGEOTHERSELF", function(target, amount, school, spell) Record(playerName, spell, amount) end},
+	{"PERIODICAURADAMAGEOTHEROTHER", function(target, amount, school, source, spell) Record(source, spell, amount) end},
+
+	--healing
+	{"HEALEDCRITSELFSELF", function(spell, amount) Record(playerName, spell, amount, true) end},
+	{"HEALEDSELFSELF", function(spell, amount) Record(playerName, spell, amount, true) end},
+	{"HEALEDCRITSELFOTHER", function(spell, target, amount) Record(playerName, spell, amount, true) end},
+	{"HEALEDSELFOTHER", function(spell, target, amount) Record(playerName, spell, amount, true) end},
+	{"HEALEDCRITOTHERSELF", function(source, spell, amount) Record(source, spell, amount, true) end},
+	{"HEALEDOTHERSELF", function(source, spell, amount) Record(source, spell, amount, true) end},
+	{"HEALEDCRITOTHEROTHER", function(source, spell, target, amount) Record(source, spell, amount, true) end},
+	{"HEALEDOTHEROTHER", function(source, spell, target, amount) Record(source, spell, amount, true) end},
+}
+
+local function ParseCombatLog(text)
+	if not text then return end
+
+	for i = 1, getn(logPatterns) do
+		local entry = logPatterns[i]
+		local a, b, c, d, e = CombatMatch(text, entry[1])
+		if a then
+			entry[2](a, b, c, d, e)
+			return --one line is one event; a second match would double count it
+		end
+	end
+end
+
+--Returns how many format strings and events this client actually gave us, so the
+--report command can say whether the fallback has anything to work with.
+local function SetupCombatLogFallback(frame)
+	playerName = UnitName("player")
+
+	for i = 1, getn(LOG_HANDLERS) do
+		local name = LOG_HANDLERS[i][1]
+		local pattern = _G[name]
+		if type(pattern) == "string" then
+			tinsert(logPatterns, {pattern, LOG_HANDLERS[i][2], name})
+		end
+	end
+
+	for i = 1, getn(LOG_EVENT_NAMES) do
+		local name = LOG_EVENT_NAMES[i]
+		if pcall(frame.RegisterEvent, frame, name) then
+			logEvents[name] = true
+		end
+	end
+
+	local events = 0
+	for _ in pairs(logEvents) do events = events + 1 end
+
+	return getn(logPatterns), events
+end
+
+--Names the fight by whoever took the most damage from the group, which is the closest
+--thing to "what we were fighting" available without tracking targets separately. Falls
+--back to the top damage dealer's own name so a segment is never nameless.
+local function SegmentLabel(store)
+	local best, bestDamage
+	for _, actor in pairs(store) do
+		if actor.damage > (bestDamage or 0) then
+			best, bestDamage = actor.name, actor.damage
+		end
+	end
+
+	return best
+end
+
+--Moves the finished fight into history. Called when combat drops, before anything
+--overwrites `current`.
+local function BankSegment(duration)
+	if duration < HISTORY_MIN_DURATION then return end
+
+	--nothing happened; a fight nobody in the group contributed to is not worth a row
+	local any
+	for _, actor in pairs(current) do
+		if actor.damage > 0 or actor.healing > 0 then any = true break end
+	end
+	if not any then return end
+
+	--The store is handed over rather than copied, and `current` is replaced with a fresh
+	--table at the start of the next fight, so the two never share state.
+	tinsert(history, 1, {
+		store = current,
+		duration = duration,
+		label = SegmentLabel(current),
+		ended = GetTime(),
+	})
+
+	while getn(history) > HISTORY_MAX do
+		history[getn(history)] = nil
+	end
+end
+
 local function OnEvent()
+	--Checked before anything else: these only ever fire in fallback mode, and every
+	--other branch below is testing for an event name that cannot be one of them.
+	if logEvents[event] then
+		ParseCombatLog(arg1)
+		return
+	end
+
 	if event == "PLAYER_REGEN_DISABLED" then
 		--A new fight wipes the current segment but never the overall one
 		current = {}
@@ -228,6 +457,7 @@ local function OnEvent()
 		--login and not the gap between first and last hit
 		if combatStart then
 			combatTime = combatTime + (combatEnd - combatStart)
+			BankSegment(combatEnd - combatStart)
 		end
 		return
 	elseif event == "PLAYER_ENTERING_WORLD" or event == "PARTY_MEMBERS_CHANGED"
@@ -280,6 +510,68 @@ local function OnEvent()
 	end
 end
 
+--A segment name is "current", "overall", or "fight:N" for the Nth entry in history --
+--1 being the most recent. Returns the store and, for a banked fight, its fixed duration.
+local function Segment(name)
+	if name == "current" then return current end
+	if name == "overall" or not name then return overall end
+
+	local _, _, index = find(name, "^fight:(%d+)$")
+	local entry = index and history[tonumber(index)]
+	if entry then return entry.store, entry.duration end
+
+	--a fight that has since dropped off the end of the history
+	return overall
+end
+
+--The banked fights, newest first, for the picker: { {segment, label, duration}, ... }
+function M:MeterHistory()
+	local list = {}
+
+	for i = 1, getn(history) do
+		tinsert(list, {
+			segment = "fight:"..i,
+			label = history[i].label or UNKNOWN or "?",
+			duration = history[i].duration,
+			ended = history[i].ended,
+		})
+	end
+
+	return list
+end
+
+--Per-spell breakdown for one actor in one segment, sorted, as
+--{ {name, damage, healing, hits, share}, ... } plus the actor's own total.
+--`share` is the fraction of that actor's total the spell accounts for, which is the
+--number the detail view is actually for -- the raw amounts are already on the row.
+function M:MeterSpells(segment, guid, mode)
+	local store = Segment(segment)
+	local actor = store and store[guid]
+	if not actor then return {}, 0 end
+
+	local healing = (mode == "healing")
+	local total = healing and actor.healing or actor.damage
+	local list = {}
+
+	for key, entry in pairs(actor.spells) do
+		local value = healing and entry.healing or entry.damage
+		if value > 0 then
+			tinsert(list, {
+				name = key,
+				damage = entry.damage,
+				healing = entry.healing,
+				hits = entry.hits,
+				value = value,
+				share = (total > 0) and (value / total) or 0,
+			})
+		end
+	end
+
+	sort(list, function(a, b) return a.value > b.value end)
+
+	return list, total
+end
+
 --Seconds the segment has been running. Falls back to the spread of the entries
 --themselves when combat never formally started, which is how a dummy parse looks.
 function M:MeterDuration(segment)
@@ -287,6 +579,10 @@ function M:MeterDuration(segment)
 		if not combatStart then return 0 end
 		return (combatEnd or GetTime()) - combatStart
 	end
+
+	--a banked fight's length is fixed and was recorded when it ended
+	local _, banked = Segment(segment)
+	if banked then return banked end
 
 	--Time actually spent in combat, plus the fight in progress
 	local total = combatTime
@@ -309,7 +605,7 @@ end
 
 --Sorted list of actors for a segment: { {name, damage, healing, dps}, ... }
 function M:MeterData(segment)
-	local store = (segment == "current") and current or overall
+	local store = Segment(segment)
 	local duration = M:MeterDuration(segment)
 	local rows = {}
 
@@ -340,8 +636,15 @@ function M:ToggleMeterDebug()
 end
 
 function M:ResetMeter()
-	current, overall = {}, {}
+	current, overall, history = {}, {}, {}
 	combatStart, combatEnd, combatTime = nil, nil, 0
+
+	--a banked fight the user just cleared must not stay selected, or the window shows a
+	--segment that no longer exists and silently falls back to overall
+	local db = E.db.general.damageMeter
+	if db and db.segment and find(db.segment, "^fight:") then
+		db.segment = "current"
+	end
 end
 
 function M:InitializeDamageMeter()
@@ -359,16 +662,27 @@ function M:InitializeDamageMeter()
 			if not ok then
 				available = nil
 				watcher:UnregisterAllEvents()
-				return
+				break
 			end
 
 			available = true
 		end
+
+		if not available then break end
 	end
 
-	--Best effort; the meter works without them, only shield attribution needs them
-	for i = 1, getn(AURA_EVENTS) do
-		pcall(watcher.RegisterEvent, watcher, AURA_EVENTS[i])
+	if available then
+		--Best effort; the meter works without them, only shield attribution needs them
+		for i = 1, getn(AURA_EVENTS) do
+			pcall(watcher.RegisterEvent, watcher, AURA_EVENTS[i])
+		end
+	else
+		--No nampower. Fall back to reading the combat log, which is worse in every way
+		--but is the difference between the meter existing for other people and not.
+		--Never both: the two sources describe the same hits and would double every
+		--number, which is why this is an else and not a second registration pass.
+		usingCombatLog = true
+		SetupCombatLogFallback(watcher)
 	end
 
 	watcher:RegisterEvent("PLAYER_REGEN_DISABLED")
@@ -393,6 +707,12 @@ end
 --mover, /moveui moves the mover, and the reset button puts the mover back.
 local window, rows, lastUpdate = nil, {}, 0
 
+--Set while the per-spell breakdown is on screen: { segment, guid, name }. The segment
+--is pinned at the moment of the click rather than read live, so switching the window to
+--another fight while a breakdown is open cannot quietly show somebody else's numbers
+--under the name that was clicked.
+local detail
+
 local MODES = {damage = "damage", healing = "healing"}
 
 local function MeterDB()
@@ -404,6 +724,28 @@ local function Short(value)
 	if value >= 1000 then return format("%.1fk", value / 1000) end
 
 	return format("%d", value)
+end
+
+--Shift-drag has to keep working with the mouse over a row, and a row that enables the
+--mouse takes the drag away from the window underneath it. Both are wired to these, so
+--there is one implementation of "a drag anywhere on this window moves the mover".
+local function StartWindowDrag()
+	if not IsShiftKeyDown() then return end
+
+	local mover = _G["DamageMeterMover"]
+	if mover then mover:StartMoving() end
+end
+
+local function StopWindowDrag()
+	local mover = _G["DamageMeterMover"]
+	if not mover then return end
+
+	mover:StopMovingOrSizing()
+
+	local x, y, point = E:CalculateMoverPoints(mover)
+	mover:ClearAllPoints()
+	E:Point(mover, point, E.UIParent, point, x, y)
+	E:SaveMoverPosition("DamageMeterMover")
 end
 
 local function CreateRow(index)
@@ -432,6 +774,30 @@ local function CreateRow(index)
 		E:Point(row, "TOPRIGHT", rows[index - 1], "BOTTOMRIGHT", 0, -1)
 	end
 
+	--Click a source to see what it was made of, click anything in the breakdown to come
+	--back out. Right-click backs out from either, so there is always a way back that
+	--does not depend on having noticed the "<" in the title.
+	row:EnableMouse(true)
+	row:RegisterForDrag("LeftButton")
+	row:SetScript("OnDragStart", StartWindowDrag)
+	row:SetScript("OnDragStop", StopWindowDrag)
+	row:SetScript("OnMouseUp", function()
+		if IsShiftKeyDown() then return end --that was a drag, not a click
+
+		if detail or arg1 == "RightButton" then
+			detail = nil
+		elseif this.guid then
+			local db = MeterDB()
+			detail = {
+				segment = db.segment or "current",
+				guid = this.guid,
+				name = this.actorName,
+			}
+		end
+
+		M:UpdateMeterWindow()
+	end)
+
 	row:Hide()
 
 	return row
@@ -455,43 +821,38 @@ local function TitleButton(text, width, point, relativeTo, relativePoint, x)
 	return button
 end
 
-function M:UpdateMeterWindow()
-	if not window or not window:IsShown() then return end
-
-	local db = MeterDB()
-	local segment = db.segment or "current"
-	local mode = db.mode or MODES.damage
-	local data, duration = M:MeterData(segment)
-
-	window.title:SetText(format("%s  |cff999999%s %.0fs|r",
-		(mode == MODES.healing) and L["Healing"] or L["Damage"], segment, duration))
-
+--Draws one page of bars. `entries` is already sorted and already the right shape,
+--which is what lets the source list and the per-spell breakdown share every pixel of
+--layout code instead of growing a second copy that drifts.
+--Each entry: { label, right, value, guid }.
+local function RenderRows(db, entries)
 	--Everything is scaled against the top row, which is what makes a bar chart
 	--readable at a glance; an absolute scale would leave every bar stubby on trash
 	local top = 0
-	for i = 1, getn(data) do
-		local value = (mode == MODES.healing) and data[i].healing or data[i].damage
-		if value > top then top = value end
+	for i = 1, getn(entries) do
+		if entries[i].value > top then top = entries[i].value end
 	end
 
 	local shown = 0
 	for i = 1, db.bars do
 		local row = rows[i]
-		local entry = data[i]
-		local value = entry and ((mode == MODES.healing) and entry.healing or entry.damage) or 0
+		local entry = entries[i]
 
-		if entry and value > 0 then
+		if entry and entry.value > 0 then
 			shown = shown + 1
-			row:SetValue((top > 0) and (value / top) or 0)
+			row:SetValue((top > 0) and (entry.value / top) or 0)
 
 			local color = E.media.rgbvaluecolor
 			row:SetStatusBarColor(color[1], color[2], color[3])
 
-			row.label:SetText(format("%d. %s", i, entry.name))
-			row.amount:SetText(format("%s  |cff999999%.0f|r", Short(value),
-				(mode == MODES.healing) and entry.hps or entry.dps))
+			row.label:SetText(format("%d. %s", i, entry.label))
+			row.amount:SetText(entry.right)
+			row.guid = entry.guid
+			--kept unprefixed for the detail title; the label carries a rank number
+			row.actorName = entry.label
 			row:Show()
 		else
+			row.guid = nil
 			row:Hide()
 		end
 	end
@@ -500,6 +861,72 @@ function M:UpdateMeterWindow()
 	--anchored by its bottom edge, so this grows the top upwards and the window never
 	--reaches further down the screen than where it was placed.
 	E:Height(window, 22 + (shown * (db.height + 1)) + 2)
+end
+
+--What the segment button and the title call the segment being shown.
+local function SegmentName(segment)
+	if segment == "overall" then return L["Overall"] end
+	if segment == "current" or not segment then return L["Current"] end
+
+	local _, _, index = find(segment, "^fight:(%d+)$")
+	local list = M:MeterHistory()
+	local entry = index and list[tonumber(index)]
+
+	return entry and entry.label or L["Current"]
+end
+
+function M:UpdateMeterWindow()
+	if not window or not window:IsShown() then return end
+
+	local db = MeterDB()
+	local segment = db.segment or "current"
+	local mode = db.mode or MODES.damage
+	local healing = (mode == MODES.healing)
+	local modeName = healing and L["Healing"] or L["Damage"]
+
+	--Per-spell breakdown for one source. The data has been recorded since the meter was
+	--written; this is the view that finally reads it.
+	if detail then
+		local spells, total = M:MeterSpells(detail.segment, detail.guid, mode)
+		local entries = {}
+
+		for i = 1, getn(spells) do
+			local spell = spells[i]
+			tinsert(entries, {
+				label = spell.name,
+				--share and hit count, which is what a breakdown is read for; the raw
+				--amount alone is already implied by the bar next to it
+				right = format("%s  |cff999999%.0f%%  %d|r", Short(spell.value),
+					spell.share * 100, spell.hits),
+				value = spell.value,
+			})
+		end
+
+		window.title:SetText(format("|cff999999<|r %s  |cff999999%s %s|r",
+			detail.name, modeName, Short(total)))
+		RenderRows(db, entries)
+
+		return
+	end
+
+	local data, duration = M:MeterData(segment)
+	local entries = {}
+
+	for i = 1, getn(data) do
+		local actor = data[i]
+		tinsert(entries, {
+			label = actor.name,
+			right = format("%s  |cff999999%.0f|r",
+				Short(healing and actor.healing or actor.damage),
+				healing and actor.hps or actor.dps),
+			value = healing and actor.healing or actor.damage,
+			guid = actor.guid,
+		})
+	end
+
+	window.title:SetText(format("%s  |cff999999%s %.0fs|r",
+		modeName, SegmentName(segment), duration))
+	RenderRows(db, entries)
 end
 
 local function OnUpdate()
@@ -561,16 +988,33 @@ function M:BuildMeterWindow()
 		M:UpdateMeterWindow()
 	end)
 
+	--Cycles current -> overall -> each banked fight, newest first, and back round. A
+	--dropdown would be the obvious thing, but this window is 50 pixels of title bar and
+	--the list is usually two or three entries long; cycling costs no chrome at all.
+	--Leaving a breakdown open across a segment change would show numbers from a fight
+	--the user is no longer looking at, so it closes.
 	window.segment = TitleButton(L["Current"], 50, "TOPRIGHT", window.mode, "TOPLEFT", -2)
 	window.segment:SetScript("OnClick", function()
 		local cfg = MeterDB()
-		cfg.segment = (cfg.segment == "overall") and "current" or "overall"
-		this.text:SetText((cfg.segment == "overall") and L["Overall"] or L["Current"])
+		local order = {"current", "overall"}
+		local past = M:MeterHistory()
+		for i = 1, getn(past) do
+			tinsert(order, past[i].segment)
+		end
+
+		local at = 1
+		for i = 1, getn(order) do
+			if order[i] == cfg.segment then at = i break end
+		end
+
+		cfg.segment = order[at + 1] or order[1]
+		detail = nil
+		this.text:SetText(SegmentName(cfg.segment))
 		M:UpdateMeterWindow()
 	end)
 
 	window.mode.text:SetText((db.mode == MODES.healing) and L["Healing"] or L["Damage"])
-	window.segment.text:SetText((db.segment == "overall") and L["Overall"] or L["Current"])
+	window.segment.text:SetText(SegmentName(db.segment))
 
 	for i = 1, db.bars do
 		rows[i] = CreateRow(i)
@@ -587,26 +1031,13 @@ function M:BuildMeterWindow()
 	E:CreateMover(window, "DamageMeterMover", L["Damage Meter"], nil, nil, nil, "ALL,GENERAL")
 
 	--Shift-drag moves the mover rather than the frame, so a drag here and a drag in
-	--/moveui write the same E.db.movers entry instead of two positions fighting
+	--/moveui write the same E.db.movers entry instead of two positions fighting. The
+	--rows carry the same two handlers, since a row with the mouse enabled would
+	--otherwise swallow every drag that started over it.
 	window:EnableMouse(true)
 	window:RegisterForDrag("LeftButton")
-	window:SetScript("OnDragStart", function()
-		if not IsShiftKeyDown() then return end
-
-		local mover = _G["DamageMeterMover"]
-		if mover then mover:StartMoving() end
-	end)
-	window:SetScript("OnDragStop", function()
-		local mover = _G["DamageMeterMover"]
-		if not mover then return end
-
-		mover:StopMovingOrSizing()
-
-		local x, y, point = E:CalculateMoverPoints(mover)
-		mover:ClearAllPoints()
-		E:Point(mover, point, E.UIParent, point, x, y)
-		E:SaveMoverPosition("DamageMeterMover")
-	end)
+	window:SetScript("OnDragStart", StartWindowDrag)
+	window:SetScript("OnDragStop", StopWindowDrag)
 
 	window:SetScript("OnUpdate", OnUpdate)
 

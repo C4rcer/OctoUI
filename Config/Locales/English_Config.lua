@@ -1293,3 +1293,78 @@ L["Merge Pet Damage"] = true
 L["Count a pet's damage towards whoever summoned it, rather than giving the pet its own row."] = true
 L["Credit Damage Shields to the Caster"] = true
 L["A damage shield is normally credited to whoever is wearing it, which is what the game reports and what other meters show. Turn this on to credit it to whoever applied it instead -- an imp's Fire Shield on a tank counting as the warlock's damage. Approximate: it follows the last aura a group member cast on that unit."] = true
+
+
+--Strings that reached the options tree and the chat frame without ever having a
+--locale entry. AceLocale is registered silent (the fourth argument to NewLocale), so
+--an unknown key quietly returns the key string instead of raising -- which is why
+--these worked at all, and why nothing ever pointed them out. Grouped by the file that
+--uses them.
+
+--Config/Auras.lua
+L["Threshold before text changes red, goes into decimal form, and the icon will fade. Set to -1 to disable."] = true
+
+--Config/Chat.lua
+L["Chat"] = true
+L["Specify a filename located inside the World of Warcraft directory. Textures folder that you wish to have set as a panel background.\n\nPlease Note:\n-The image size recommended is 256x128\n-You must do a complete game restart after adding a file to the folder.\n-The file type must be tga format.\n\nExample: Interface\\AddOns\\OctoUI\\media\\textures\\copy\n\nOr for most users it would be easier to simply put a tga file into your WoW folder, then type the name of the file here."] = true
+
+--Config/Core.lua
+L["Filters (NamePlates)"] = true
+L["Filters (UnitFrames)"] = true
+L["Filters (All)"] = true
+L["You must be in a group."] = true
+L["You must be targeting a player within your group."] = true
+
+--Config/General.lua
+L["Auto Greed"] = true
+L["Automatically select greed (when available) on green quality items. This will only work if you are the max level."] = true
+L["Loot Under Mouse"] = true
+L["Enable/Disable loot frame under the mouse cursor."] = true
+L["Macro Tweaks"] = true
+L["Add /equip and /use commands to macros, keep #showtooltip lines out of chat and macro commands out of chat history."] = true
+L["Macro Icons"] = true
+L["Detect #showtooltip and cast lines in macros and use the spell icon on action buttons."] = true
+L["Reagent Counter"] = true
+L["Show a reagent counter on action buttons for spells that consume reagents."] = true
+L["Bag Item Click"] = true
+L["Right click bag items to send them to the trade window or search or sell them at the auction house. Hold Shift for the default action."] = true
+L["Enables the OctoUI Raid Control panel."] = true
+L["Library Threat-2.0 found."] = true
+L["Library Threat-2.0 not found. If you want to use Threat module install Omen or separate Threat-2.0 library."] = true
+
+--Config/NamePlates.lua
+L["Use this filter."] = true
+L["Prevent any nameplate with this unit name from showing."] = true
+L["Disable threat coloring for this plate and use the custom color."] = true
+L["Custom Scale"] = true
+L["Set the scale of the nameplate."] = true
+L["Time To Hold"] = true
+L["How many seconds the castbar should stay visible after the cast failed or was interrupted."] = true
+L["Nameplates"] = true
+L["Nameplate Motion Type"] = true
+L["Set to either stack nameplates vertically or allow them to overlap."] = true
+L["Disabled"] = true
+L["Clickable Width"] = true
+L["Controls how big of an area on the screen will accept clicks to target unit."] = true
+L["Clickable Height"] = true
+L["Target Indicator"] = true
+L["Color Tanked"] = true
+L["Use Tanked Color when a nameplate is being effectively tanked by another tank."] = true
+L["Tanked Color"] = true
+L["Friendly NPC"] = true
+L["Tagged NPC"] = true
+L["Friendly Player"] = true
+L["You can't remove a default name from the filter, disabling the name."] = true
+
+--Config/Skins.lua
+L["Key Binding"] = true
+
+--Config/UnitFrames.lua
+L["Automatic"] = true
+L["Resting"] = true
+L["Resting 2"] = true
+L["Attack"] = true
+L["Alert"] = true
+L["Alert 2"] = true
+L["Arthas"] = true
+L["Skull"] = true

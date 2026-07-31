@@ -13,9 +13,6 @@ local RAID_CLASS_COLORS = RAID_CLASS_COLORS
 
 --Preload shit..
 E.mult = 1
---Dumps mover SetPoint args to chat. Off by default; flip to true to chase a mover
---positioning failure, which on this client has meant another addon interfering.
-E.PointDebug = false
 local backdropr, backdropg, backdropb, backdropa, borderr, borderg, borderb = 0, 0, 0, 1, 0, 0, 0
 
 local function GetTemplate(t, isUnitFrameElement)
@@ -147,24 +144,6 @@ function E:Point(obj, arg1, arg2, arg3, arg4, arg5)
 	if type(arg3)=="number" then arg3 = E:Scale(arg3) end
 	if type(arg4)=="number" then arg4 = E:Scale(arg4) end
 	if type(arg5)=="number" then arg5 = E:Scale(arg5) end
-
-	--[[ TEMP DIAGNOSTIC, remove once the mover SetPoint failure is understood.
-	     Dumps the exact arguments and whether a string anchor resolves globally. ]]
-	if E.PointDebug then
-		local nm = obj.GetName and obj:GetName()
-		if nm and string.find(nm, "Mover") then
-			DEFAULT_CHAT_FRAME:AddMessage(string.format(
-				"|cffff8800Point|r %s | 1:%s(%s) 2:%s(%s) 3:%s(%s) 4:%s(%s) 5:%s(%s)",
-				nm,
-				type(arg1), tostring(arg1), type(arg2), tostring(arg2),
-				type(arg3), tostring(arg3), type(arg4), tostring(arg4),
-				type(arg5), tostring(arg5)))
-			if type(arg2) == "string" then
-				DEFAULT_CHAT_FRAME:AddMessage(string.format(
-					"     _G[%q] = %s   E.mult = %s", arg2, tostring(_G[arg2]), tostring(E.mult)))
-			end
-		end
-	end
 
 	--Bags anchors the search box backdrop to the EditBox itself, which is exactly the
 	--object this client will not take as an anchor, so this needs the same retry the

@@ -13,7 +13,7 @@ local _G, _ = _G or getfenv()
 local E = unpack(ElvUI)
 
 -- todo tankmode messages to send if guid is target, for tankmode highlight
--- todo save TWT_SPEC per sender so it caches from other people's inspects
+-- todo save OctoTWT_SPEC per sender so it caches from other people's inspects
 
 local __lower = string.lower
 local __repeat = string.rep
@@ -128,7 +128,7 @@ TWT.updateSpeeds = {
     ['druid'] = { 0.8, 0.5, 1 },
 }
 
-function twtprint(a)
+function OctoTWTPrint(a)
     if a == nil then
         DEFAULT_CHAT_FRAME:AddMessage('[TWT]|cff0070de:' .. GetTime() .. '|cffffffff attempt to print a nil value.')
         return false
@@ -136,68 +136,74 @@ function twtprint(a)
     DEFAULT_CHAT_FRAME:AddMessage(TWT.classColors[TWT.class].c .. "[TWT] |cffffffff" .. a)
 end
 
-function twtdebug(a)
+function OctoTWTDebug(a)
     local time = GetTime() + 0.0001
-    if not TWT_CONFIG.debug then
+    if not OctoTWT_CONFIG.debug then
         return false
     end
     if a == nil then
-        twtprint('|cff0070de[TWTDEBUG:' .. time .. ']|cffffffff attempt to print a nil value.')
+        OctoTWTPrint('|cff0070de[OctoTWTDEBUG:' .. time .. ']|cffffffff attempt to print a nil value.')
         return
     end
     if type(a) == 'boolean' then
         if a then
-            twtprint('|cff0070de[TWTDEBUG:' .. time .. ']|cffffffff[true]')
+            OctoTWTPrint('|cff0070de[OctoTWTDEBUG:' .. time .. ']|cffffffff[true]')
         else
-            twtprint('|cff0070de[TWTDEBUG:' .. time .. ']|cffffffff[false]')
+            OctoTWTPrint('|cff0070de[OctoTWTDEBUG:' .. time .. ']|cffffffff[false]')
         end
         return true
     end
-    twtprint('|cff0070de[D:' .. time .. ']|cffffffff[' .. a .. ']')
+    OctoTWTPrint('|cff0070de[D:' .. time .. ']|cffffffff[' .. a .. ']')
 end
 
-SLASH_TWT1 = "/twt"
-SlashCmdList["TWT"] = function(cmd)
+--The SLASH_ and SlashCmdList keys carry the Octo prefix like every other global this
+--module owns, but the commands people actually type stay as they were: /twt is what the
+--upstream addon's own documentation says and what anyone coming from it will reach for.
+--A second spelling is registered alongside for when both addons are installed and the
+--standalone wins the /twt registration -- it loads second, so it does.
+SLASH_OCTOTWT1 = "/twt"
+SLASH_OCTOTWT2 = "/octotwt"
+SlashCmdList["OCTOTWT"] = function(cmd)
     if not TWT.enabled then
-        twtprint('Threat meter is disabled. Enable it under /oc -> General.')
+        OctoTWTPrint('Threat meter is disabled. Enable it under /oc -> General.')
         return false
     end
     if cmd then
         if __substr(cmd, 1, 4) == 'show' then
-            _G['TWTMain']:Show()
-            TWT_CONFIG.visible = true
+            _G['OctoTWTMain']:Show()
+            OctoTWT_CONFIG.visible = true
             return true
         end
         if __substr(cmd, 1, 8) == 'tankmode' then
-            if TWT_CONFIG.tankMode then
-                twtprint('Tank Mode is already enabled.')
+            if OctoTWT_CONFIG.tankMode then
+                OctoTWTPrint('Tank Mode is already enabled.')
                 return false
             else
-                TWT_CONFIG.tankMode = true
-                twtprint('Tank Mode enabled.')
+                OctoTWT_CONFIG.tankMode = true
+                OctoTWTPrint('Tank Mode enabled.')
             end
             return true
         end
         if __substr(cmd, 1, 6) == 'skeram' then
-            if TWT_CONFIG.skeram then
-                TWT_CONFIG.skeram = false
-                twtprint('Skeram module disabled.')
+            if OctoTWT_CONFIG.skeram then
+                OctoTWT_CONFIG.skeram = false
+                OctoTWTPrint('Skeram module disabled.')
                 return true
             end
-            TWT_CONFIG.skeram = true
-            twtprint('Skeram module enabled.')
+            OctoTWT_CONFIG.skeram = true
+            OctoTWTPrint('Skeram module enabled.')
             return true
         end
         if __substr(cmd, 1, 5) == 'debug' then
-            if TWT_CONFIG.debug then
-                TWT_CONFIG.debug = false
-                _G['pps']:Hide()
-                twtprint('Debugging disabled')
+            if OctoTWT_CONFIG.debug then
+                OctoTWT_CONFIG.debug = false
+                _G['OctoTWTpps']:Hide()
+                OctoTWTPrint('Debugging disabled')
                 return true
             end
-            TWT_CONFIG.debug = true
-            _G['pps']:Show()
-            twtdebug('Debugging enabled')
+            OctoTWT_CONFIG.debug = true
+            _G['OctoTWTpps']:Show()
+            OctoTWTDebug('Debugging enabled')
             return true
         end
 
@@ -206,36 +212,38 @@ SlashCmdList["TWT"] = function(cmd)
             return true
         end
 
-        twtprint(TWT.addonName .. ' |cffabd473v' .. TWT.addonVer .. '|cffffffff available commands:')
-        twtprint('/twt show - shows the main window (also /twtshow)')
+        OctoTWTPrint(TWT.addonName .. ' |cffabd473v' .. TWT.addonVer .. '|cffffffff available commands:')
+        OctoTWTPrint('/twt show - shows the main window (also /twtshow)')
     end
 end
 
-SLASH_TWTSHOW1 = "/twtshow"
-SlashCmdList["TWTSHOW"] = function(cmd)
+SLASH_OCTOTWTSHOW1 = "/twtshow"
+SLASH_OCTOTWTSHOW2 = "/octotwtshow"
+SlashCmdList["OCTOTWTSHOW"] = function(cmd)
     if not TWT.enabled then
-        twtprint('Threat meter is disabled. Enable it under /oc -> General.')
+        OctoTWTPrint('Threat meter is disabled. Enable it under /oc -> General.')
         return false
     end
     if cmd then
-        _G['TWTMain']:Show()
-        TWT_CONFIG.visible = true
+        _G['OctoTWTMain']:Show()
+        OctoTWT_CONFIG.visible = true
     end
 end
 
-SLASH_TWTDEBUG1 = "/twtdebug"
-SlashCmdList["TWTDEBUG"] = function(cmd)
+SLASH_OCTOTWTDEBUG1 = "/twtdebug"
+SLASH_OCTOTWTDEBUG2 = "/octotwtdebug"
+SlashCmdList["OCTOTWTDEBUG"] = function(cmd)
     if not TWT.enabled then
         return false
     end
     if cmd then
-        if TWT_CONFIG.debug then
-            TWT_CONFIG.debug = false
-            twtprint('Debugging disabled')
+        if OctoTWT_CONFIG.debug then
+            OctoTWT_CONFIG.debug = false
+            OctoTWTPrint('Debugging disabled')
             return true
         end
-        TWT_CONFIG.debug = true
-        twtdebug('Debugging enabled')
+        OctoTWT_CONFIG.debug = true
+        OctoTWTDebug('Debugging enabled')
         return true
     end
 end
@@ -256,7 +264,7 @@ local totalData = 0
 local uiUpdates = 0
 
 TWT:SetScript("OnEvent", function()
-    --Nothing may run before TM:Initialize has set up TWT_CONFIG
+    --Nothing may run before TM:Initialize has set up OctoTWT_CONFIG
     if not TWT.enabled then
         return
     end
@@ -279,7 +287,7 @@ TWT:SetScript("OnEvent", function()
 
             local threatData = arg2
             if __find(threatData, '#') and __find(threatData, TWT.tankModeApi) then
-                local packetEx = __explode(threatData, '#')
+                local packetEx = OctoTWTExplode(threatData, '#')
                 if packetEx[1] and packetEx[2] then
                     threatData = packetEx[1]
                     TWT.handleTankModePacket(packetEx[2])
@@ -304,7 +312,7 @@ TWT:SetScript("OnEvent", function()
             end
 
             if __substr(arg2, 1, 15) == 'TWTRoleTexture:' then
-                local tex = __explode(arg2, ':')[2] or ''
+                local tex = OctoTWTExplode(arg2, ':')[2] or ''
                 TWT.roles[arg4] = tex
                 return true
             end
@@ -313,7 +321,7 @@ TWT:SetScript("OnEvent", function()
 
                 if TWT.addonStatus[arg4] then
 
-                    local msg = __explode(arg2, ':')[2]
+                    local msg = OctoTWTExplode(arg2, ':')[2]
                     local verColor = ""
                     if TWT.version(msg) == TWT.version(TWT.addonVer) then
                         verColor = TWT.classColors['hunter'].c
@@ -357,7 +365,7 @@ TWT:SetScript("OnEvent", function()
     end
 end)
 
-function QueryWho_OnClick()
+function OctoTWTQueryWho_OnClick()
     TWT.queryWho()
 end
 
@@ -378,8 +386,8 @@ function TWT.queryWho()
             end
         end
     end
-    twtprint('Sending who query...')
-    _G['TWTWithAddonList']:Show()
+    OctoTWTPrint('Sending who query...')
+    _G['OctoTWTWithAddonList']:Show()
     TWT.send('TWT_WHO')
 end
 
@@ -398,8 +406,8 @@ function TWT.updateWithAddon()
             i = 0
         end
     end
-    _G['TWTWithAddonListText']:SetText(rosterList)
-    _G['TWTWithAddonListTitle']:SetText('Addon Raid Status ' .. TWT.withAddon .. '/' .. GetNumRaidMembers())
+    _G['OctoTWTWithAddonListText']:SetText(rosterList)
+    _G['OctoTWTWithAddonListTitle']:SetText('Addon Raid Status ' .. TWT.withAddon .. '/' .. GetNumRaidMembers())
 end
 
 TWT.glowFader = CreateFrame('Frame')
@@ -408,8 +416,8 @@ TWT.glowFader:Hide()
 TWT.glowFader:SetScript("OnShow", function()
     this.startTime = GetTime() - 1
     this.dir = 10
-    _G['TWTFullScreenGlow']:SetAlpha(0.01)
-    _G['TWTFullScreenGlow']:Show()
+    _G['OctoTWTFullScreenGlow']:SetAlpha(0.01)
+    _G['OctoTWTFullScreenGlow']:Show()
 end)
 TWT.glowFader:SetScript("OnHide", function()
     this.startTime = GetTime()
@@ -421,13 +429,13 @@ TWT.glowFader:SetScript("OnUpdate", function()
     if gt >= st then
         this.startTime = GetTime()
 
-        if _G['TWTFullScreenGlow']:GetAlpha() >= 0.6 then
+        if _G['OctoTWTFullScreenGlow']:GetAlpha() >= 0.6 then
             this.dir = -1
         end
 
-        _G['TWTFullScreenGlow']:SetAlpha(_G['TWTFullScreenGlow']:GetAlpha() + 0.03 * this.dir)
+        _G['OctoTWTFullScreenGlow']:SetAlpha(_G['OctoTWTFullScreenGlow']:GetAlpha() + 0.03 * this.dir)
 
-        if _G['TWTFullScreenGlow']:GetAlpha() <= 0 then
+        if _G['OctoTWTFullScreenGlow']:GetAlpha() <= 0 then
             TWT.glowFader:Hide()
         end
 
@@ -437,8 +445,18 @@ end)
 
 function TWT.init()
 
-    if not TWT_CONFIG then
-        TWT_CONFIG = {
+    --This saved variable used to be called TWT_CONFIG, which is also the name the
+    --standalone TWThreat addon uses -- the reason for the rename. Anyone upgrading has
+    --their settings under the old name, so the old one is still declared in the toc
+    --purely to be read here and copied across once. The copy is one-way and only
+    --happens when there is nothing under the new name, so it cannot undo a later
+    --change; TWT_CONFIG can come out of the toc entirely a version or two from now.
+    if not OctoTWT_CONFIG and type(TWT_CONFIG) == "table" then
+        OctoTWT_CONFIG = TWT_CONFIG
+    end
+
+    if not OctoTWT_CONFIG then
+        OctoTWT_CONFIG = {
             visible = true,
             colTPS = true,
             colThreat = true,
@@ -447,123 +465,123 @@ function TWT.init()
         }
     end
 
-    TWT_CONFIG.windowScale = TWT_CONFIG.windowScale or 1
-    TWT_CONFIG.glow = TWT_CONFIG.glow or false
-    TWT_CONFIG.perc = TWT_CONFIG.perc or false
-    TWT_CONFIG.glowUF = TWT_CONFIG.glowUF or false
-    TWT_CONFIG.percUF = TWT_CONFIG.percUF or false
-    TWT_CONFIG.percUFtop = TWT_CONFIG.percUFtop or false
-    TWT_CONFIG.percUFbottom = TWT_CONFIG.percUFbottom or false
-    TWT_CONFIG.showInCombat = TWT_CONFIG.showInCombat or false
-    TWT_CONFIG.hideOOC = TWT_CONFIG.hideOOC or false
-    TWT_CONFIG.font = TWT_CONFIG.font or 'Roboto'
-    TWT_CONFIG.barHeight = TWT_CONFIG.barHeight or 20
-    TWT_CONFIG.visibleBars = TWT_CONFIG.visibleBars or TWT.minBars
-    TWT_CONFIG.fullScreenGlow = TWT_CONFIG.fullScreenGlow or false
-    TWT_CONFIG.aggroSound = TWT_CONFIG.aggroSound or false
-    TWT_CONFIG.aggroThreshold = TWT_CONFIG.aggroThreshold or 85
-    TWT_CONFIG.tankMode = TWT_CONFIG.tankMode or false
-    TWT_CONFIG.tankModeStick = TWT_CONFIG.tankModeStick or 'Free' -- Top, Right, Left, Right, Free
-    TWT_CONFIG.lock = TWT_CONFIG.lock or false
-    TWT_CONFIG.visible = TWT_CONFIG.visible or false
-    TWT_CONFIG.colTPS = TWT_CONFIG.colTPS or false
-    TWT_CONFIG.colThreat = TWT_CONFIG.colThreat or false
-    TWT_CONFIG.colPerc = TWT_CONFIG.colPerc or false
-    TWT_CONFIG.labelRow = TWT_CONFIG.labelRow or false
-    TWT_CONFIG.skeram = TWT_CONFIG.skeram or false
+    OctoTWT_CONFIG.windowScale = OctoTWT_CONFIG.windowScale or 1
+    OctoTWT_CONFIG.glow = OctoTWT_CONFIG.glow or false
+    OctoTWT_CONFIG.perc = OctoTWT_CONFIG.perc or false
+    OctoTWT_CONFIG.glowUF = OctoTWT_CONFIG.glowUF or false
+    OctoTWT_CONFIG.percUF = OctoTWT_CONFIG.percUF or false
+    OctoTWT_CONFIG.percUFtop = OctoTWT_CONFIG.percUFtop or false
+    OctoTWT_CONFIG.percUFbottom = OctoTWT_CONFIG.percUFbottom or false
+    OctoTWT_CONFIG.showInCombat = OctoTWT_CONFIG.showInCombat or false
+    OctoTWT_CONFIG.hideOOC = OctoTWT_CONFIG.hideOOC or false
+    OctoTWT_CONFIG.font = OctoTWT_CONFIG.font or 'Roboto'
+    OctoTWT_CONFIG.barHeight = OctoTWT_CONFIG.barHeight or 20
+    OctoTWT_CONFIG.visibleBars = OctoTWT_CONFIG.visibleBars or TWT.minBars
+    OctoTWT_CONFIG.fullScreenGlow = OctoTWT_CONFIG.fullScreenGlow or false
+    OctoTWT_CONFIG.aggroSound = OctoTWT_CONFIG.aggroSound or false
+    OctoTWT_CONFIG.aggroThreshold = OctoTWT_CONFIG.aggroThreshold or 85
+    OctoTWT_CONFIG.tankMode = OctoTWT_CONFIG.tankMode or false
+    OctoTWT_CONFIG.tankModeStick = OctoTWT_CONFIG.tankModeStick or 'Free' -- Top, Right, Left, Right, Free
+    OctoTWT_CONFIG.lock = OctoTWT_CONFIG.lock or false
+    OctoTWT_CONFIG.visible = OctoTWT_CONFIG.visible or false
+    OctoTWT_CONFIG.colTPS = OctoTWT_CONFIG.colTPS or false
+    OctoTWT_CONFIG.colThreat = OctoTWT_CONFIG.colThreat or false
+    OctoTWT_CONFIG.colPerc = OctoTWT_CONFIG.colPerc or false
+    OctoTWT_CONFIG.labelRow = OctoTWT_CONFIG.labelRow or false
+    OctoTWT_CONFIG.skeram = OctoTWT_CONFIG.skeram or false
 
-    TWT_CONFIG.combatAlpha = TWT_CONFIG.combatAlpha or 1
-    TWT_CONFIG.oocAlpha = TWT_CONFIG.oocAlpha or 1
+    OctoTWT_CONFIG.combatAlpha = OctoTWT_CONFIG.combatAlpha or 1
+    OctoTWT_CONFIG.oocAlpha = OctoTWT_CONFIG.oocAlpha or 1
 
     if TWT.class ~= 'paladin' and TWT.class ~= 'warrior' and TWT.class ~= 'druid' then
-        _G['TWTMainSettingsTankMode']:Disable()
-        TWT_CONFIG.tankMode = false
+        _G['OctoTWTMainSettingsTankMode']:Disable()
+        OctoTWT_CONFIG.tankMode = false
     end
 
-    TWT_CONFIG.debug = TWT_CONFIG.debug or false
+    OctoTWT_CONFIG.debug = OctoTWT_CONFIG.debug or false
 
-    if TWT_CONFIG.visible then
-        _G['TWTMain']:Show()
+    if OctoTWT_CONFIG.visible then
+        _G['OctoTWTMain']:Show()
     else
-        _G['TWTMain']:Hide()
+        _G['OctoTWTMain']:Hide()
     end
 
-    if TWT_CONFIG.tankMode then
-        _G['TWTMainSettingsFullScreenGlow']:SetChecked(TWT_CONFIG.fullScreenGlow)
-        _G['TWTMainSettingsFullScreenGlow']:Disable()
-        _G['TWTMainSettingsAggroSound']:SetChecked(TWT_CONFIG.fullScreenGlow)
-        _G['TWTMainSettingsAggroSound']:Disable()
+    if OctoTWT_CONFIG.tankMode then
+        _G['OctoTWTMainSettingsFullScreenGlow']:SetChecked(OctoTWT_CONFIG.fullScreenGlow)
+        _G['OctoTWTMainSettingsFullScreenGlow']:Disable()
+        _G['OctoTWTMainSettingsAggroSound']:SetChecked(OctoTWT_CONFIG.fullScreenGlow)
+        _G['OctoTWTMainSettingsAggroSound']:Disable()
     end
 
-    if TWT_CONFIG.lock then
-        _G['TWTMainLockButton']:SetNormalTexture('Interface\\AddOns\\OctoUI\\Modules\\Threat\\images\\icon_locked')
+    if OctoTWT_CONFIG.lock then
+        _G['OctoTWTMainLockButton']:SetNormalTexture('Interface\\AddOns\\OctoUI\\Modules\\Threat\\images\\icon_locked')
     else
-        _G['TWTMainLockButton']:SetNormalTexture('Interface\\AddOns\\OctoUI\\Modules\\Threat\\images\\icon_unlocked')
+        _G['OctoTWTMainLockButton']:SetNormalTexture('Interface\\AddOns\\OctoUI\\Modules\\Threat\\images\\icon_unlocked')
     end
 
-    _G['TWTFullScreenGlowTexture']:SetWidth(GetScreenWidth())
-    _G['TWTFullScreenGlowTexture']:SetHeight(GetScreenHeight())
+    _G['OctoTWTFullScreenGlowTexture']:SetWidth(GetScreenWidth())
+    _G['OctoTWTFullScreenGlowTexture']:SetHeight(GetScreenHeight())
 
-    _G['TWTMain']:SetHeight(TWT_CONFIG.barHeight * TWT_CONFIG.visibleBars + (TWT_CONFIG.labelRow and 40 or 20))
+    _G['OctoTWTMain']:SetHeight(OctoTWT_CONFIG.barHeight * OctoTWT_CONFIG.visibleBars + (OctoTWT_CONFIG.labelRow and 40 or 20))
 
-    _G['TWTMainSettingsFrameHeightSlider']:SetValue(TWT_CONFIG.barHeight) -- calls FrameHeightSlider_OnValueChanged()
-    _G['TWTMainSettingsWindowScaleSlider']:SetValue(TWT_CONFIG.windowScale) -- calls FrameHeightSlider_OnValueChanged()
+    _G['OctoTWTMainSettingsFrameHeightSlider']:SetValue(OctoTWT_CONFIG.barHeight) -- calls OctoTWTFrameHeightSlider_OnValueChanged()
+    _G['OctoTWTMainSettingsWindowScaleSlider']:SetValue(OctoTWT_CONFIG.windowScale) -- calls OctoTWTFrameHeightSlider_OnValueChanged()
 
-    _G['TWTMainSettingsCombatAlphaSlider']:SetValue(TWT_CONFIG.combatAlpha) -- calls CombatOpacitySlider_OnValueChanged()
-    _G['TWTMainSettingsOOCAlphaSlider']:SetValue(TWT_CONFIG.oocAlpha) -- calls OOCombatSlider_OnValueChanged()
+    _G['OctoTWTMainSettingsCombatAlphaSlider']:SetValue(OctoTWT_CONFIG.combatAlpha) -- calls OctoTWTCombatOpacitySlider_OnValueChanged()
+    _G['OctoTWTMainSettingsOOCAlphaSlider']:SetValue(OctoTWT_CONFIG.oocAlpha) -- calls OctoTWTOOCombatSlider_OnValueChanged()
 
-    _G['TWTMainSettingsAggroThresholdSlider']:SetValue(TWT_CONFIG.aggroThreshold) -- calls AggroThresholdSlider_OnValueChanged()
+    _G['OctoTWTMainSettingsAggroThresholdSlider']:SetValue(OctoTWT_CONFIG.aggroThreshold) -- calls OctoTWTAggroThresholdSlider_OnValueChanged()
 
-    _G['TWTMainSettingsFontButton']:SetText(TWT_CONFIG.font)
+    _G['OctoTWTMainSettingsFontButton']:SetText(OctoTWT_CONFIG.font)
 
-    _G['TWTMainSettingsTargetFrameGlow']:SetChecked(TWT_CONFIG.glow)
-    _G['TWTMainSettingsTargetFrameGlowUF']:SetChecked(TWT_CONFIG.glowUF)
-    _G['TWTMainSettingsPercNumbers']:SetChecked(TWT_CONFIG.perc)
-    _G['TWTMainSettingsPercNumbersUF']:SetChecked(TWT_CONFIG.percUF)
-    _G['TWTMainSettingsPercNumbersUFtop']:SetChecked(TWT_CONFIG.percUFtop)
-    _G['TWTMainSettingsPercNumbersUFbottom']:SetChecked(TWT_CONFIG.percUFbottom)
-    _G['TWTMainSettingsShowInCombat']:SetChecked(TWT_CONFIG.showInCombat)
-    _G['TWTMainSettingsHideOOC']:SetChecked(TWT_CONFIG.hideOOC)
-    _G['TWTMainSettingsFullScreenGlow']:SetChecked(TWT_CONFIG.fullScreenGlow)
-    _G['TWTMainSettingsAggroSound']:SetChecked(TWT_CONFIG.aggroSound)
-    _G['TWTMainSettingsTankMode']:SetChecked(TWT_CONFIG.tankMode)
+    _G['OctoTWTMainSettingsTargetFrameGlow']:SetChecked(OctoTWT_CONFIG.glow)
+    _G['OctoTWTMainSettingsTargetFrameGlowUF']:SetChecked(OctoTWT_CONFIG.glowUF)
+    _G['OctoTWTMainSettingsPercNumbers']:SetChecked(OctoTWT_CONFIG.perc)
+    _G['OctoTWTMainSettingsPercNumbersUF']:SetChecked(OctoTWT_CONFIG.percUF)
+    _G['OctoTWTMainSettingsPercNumbersUFtop']:SetChecked(OctoTWT_CONFIG.percUFtop)
+    _G['OctoTWTMainSettingsPercNumbersUFbottom']:SetChecked(OctoTWT_CONFIG.percUFbottom)
+    _G['OctoTWTMainSettingsShowInCombat']:SetChecked(OctoTWT_CONFIG.showInCombat)
+    _G['OctoTWTMainSettingsHideOOC']:SetChecked(OctoTWT_CONFIG.hideOOC)
+    _G['OctoTWTMainSettingsFullScreenGlow']:SetChecked(OctoTWT_CONFIG.fullScreenGlow)
+    _G['OctoTWTMainSettingsAggroSound']:SetChecked(OctoTWT_CONFIG.aggroSound)
+    _G['OctoTWTMainSettingsTankMode']:SetChecked(OctoTWT_CONFIG.tankMode)
 
-    _G['TWTMainSettingsColumnsTPS']:SetChecked(TWT_CONFIG.colTPS)
-    _G['TWTMainSettingsColumnsThreat']:SetChecked(TWT_CONFIG.colThreat)
-    _G['TWTMainSettingsColumnsPercent']:SetChecked(TWT_CONFIG.colPerc)
+    _G['OctoTWTMainSettingsColumnsTPS']:SetChecked(OctoTWT_CONFIG.colTPS)
+    _G['OctoTWTMainSettingsColumnsThreat']:SetChecked(OctoTWT_CONFIG.colThreat)
+    _G['OctoTWTMainSettingsColumnsPercent']:SetChecked(OctoTWT_CONFIG.colPerc)
 
-    _G['TWTMainSettingsLabelRow']:SetChecked(TWT_CONFIG.labelRow)
+    _G['OctoTWTMainSettingsLabelRow']:SetChecked(OctoTWT_CONFIG.labelRow)
 
     TWT.setColumnLabels()
 
-    if TWT_CONFIG.labelRow then
-        _G['TWTMainBarsBG']:SetPoint('TOPLEFT', 1, -40)
-        _G['TWTMainNameLabel']:Show()
+    if OctoTWT_CONFIG.labelRow then
+        _G['OctoTWTMainBarsBG']:SetPoint('TOPLEFT', 1, -40)
+        _G['OctoTWTMainNameLabel']:Show()
     else
-        _G['TWTMainBarsBG']:SetPoint('TOPLEFT', 1, -20)
-        _G['TWTMainNameLabel']:Hide()
-        _G['TWTMainTPSLabel']:Hide()
-        _G['TWTMainThreatLabel']:Hide()
-        _G['TWTMainPercLabel']:Hide()
+        _G['OctoTWTMainBarsBG']:SetPoint('TOPLEFT', 1, -20)
+        _G['OctoTWTMainNameLabel']:Hide()
+        _G['OctoTWTMainTPSLabel']:Hide()
+        _G['OctoTWTMainThreatLabel']:Hide()
+        _G['OctoTWTMainPercLabel']:Hide()
     end
 
-    _G['TWTMainSettingsFontButtonNT']:SetVertexColor(0.4, 0.4, 0.4)
+    _G['OctoTWTMainSettingsFontButtonNT']:SetVertexColor(0.4, 0.4, 0.4)
 
     local color = TWT.classColors[TWT.class]
 
-    _G['TWTMainTitleBG']:SetVertexColor(color.r, color.g, color.b)
-    _G['TWTMainSettingsTitleBG']:SetVertexColor(color.r, color.g, color.b)
-    _G['TWTMainTankModeWindowTitleBG']:SetVertexColor(color.r, color.g, color.b)
+    _G['OctoTWTMainTitleBG']:SetVertexColor(color.r, color.g, color.b)
+    _G['OctoTWTMainSettingsTitleBG']:SetVertexColor(color.r, color.g, color.b)
+    _G['OctoTWTMainTankModeWindowTitleBG']:SetVertexColor(color.r, color.g, color.b)
 
-    _G['TWThreatDisplayTarget']:SetScale(UIParent:GetScale())
+    _G['OctoTWThreatDisplayTarget']:SetScale(UIParent:GetScale())
 
     -- fonts
     local fontFrames = {}
 
     for i, font in TWT.fonts do
-        fontFrames[i] = CreateFrame('Button', 'Font_' .. font, _G['TWTMainSettingsFontList'], 'TWTFontFrameTemplate')
+        fontFrames[i] = CreateFrame('Button', 'Font_' .. font, _G['OctoTWTMainSettingsFontList'], 'OctoTWTFontFrameTemplate')
 
-        fontFrames[i]:SetPoint("TOPLEFT", _G["TWTMainSettingsFontList"], "TOPLEFT", 0, 17 - i * 17)
+        fontFrames[i]:SetPoint("TOPLEFT", _G["OctoTWTMainSettingsFontList"], "TOPLEFT", 0, 17 - i * 17)
 
         _G['Font_' .. font]:SetID(i)
         _G['Font_' .. font .. 'Name']:SetFont("Interface\\AddOns\\OctoUI\\Modules\\Threat\\fonts\\" .. font .. ".ttf", 15)
@@ -583,9 +601,9 @@ function TWT.init()
     --    local button = this.value
     --    if button == "INSPECT_TALENTS" then
     --
-    --        _G['TWTTalentFrame']:Hide()
+    --        _G['OctoTWTTalentFrame']:Hide()
     --
-    --        TWT_SPEC = {
+    --        OctoTWT_SPEC = {
     --            class = UnitClass('target'),
     --            {
     --                name = 'Arms',
@@ -619,34 +637,34 @@ function TWT.init()
 
     TWT.checkTargetFrames()
 
-    twtprint(TWT.addonName .. ' |cffabd473v' .. TWT.addonVer .. '|cffffffff loaded.')
+    OctoTWTPrint(TWT.addonName .. ' |cffabd473v' .. TWT.addonVer .. '|cffffffff loaded.')
     return true
 end
 
 function TWT.updateSettingsTabs(tab)
     local color = TWT.classColors[TWT.class]
-    _G['TWTMainSettingsTabsUnderline']:SetVertexColor(color.r, color.g, color.b)
+    _G['OctoTWTMainSettingsTabsUnderline']:SetVertexColor(color.r, color.g, color.b)
 
     for i = 1, 3 do
-        _G['TWTMainSettingsTab' .. i]:Hide()
-        _G['TWTMainSettingsTab' .. i .. 'ButtonNT']:SetVertexColor(color.r, color.g, color.b, 0.4)
-        _G['TWTMainSettingsTab' .. i .. 'ButtonHT']:SetVertexColor(color.r, color.g, color.b, 0.4)
-        _G['TWTMainSettingsTab' .. i .. 'ButtonPT']:SetVertexColor(color.r, color.g, color.b, 0.4)
-        _G['TWTMainSettingsTab' .. i .. 'ButtonText']:SetTextColor(0.4, 0.4, 0.4)
+        _G['OctoTWTMainSettingsTab' .. i]:Hide()
+        _G['OctoTWTMainSettingsTab' .. i .. 'ButtonNT']:SetVertexColor(color.r, color.g, color.b, 0.4)
+        _G['OctoTWTMainSettingsTab' .. i .. 'ButtonHT']:SetVertexColor(color.r, color.g, color.b, 0.4)
+        _G['OctoTWTMainSettingsTab' .. i .. 'ButtonPT']:SetVertexColor(color.r, color.g, color.b, 0.4)
+        _G['OctoTWTMainSettingsTab' .. i .. 'ButtonText']:SetTextColor(0.4, 0.4, 0.4)
     end
 
-    _G['TWTMainSettingsTab' .. tab .. 'ButtonNT']:SetVertexColor(color.r, color.g, color.b, 1)
-    _G['TWTMainSettingsTab' .. tab .. 'ButtonText']:SetTextColor(1, 1, 1)
+    _G['OctoTWTMainSettingsTab' .. tab .. 'ButtonNT']:SetVertexColor(color.r, color.g, color.b, 1)
+    _G['OctoTWTMainSettingsTab' .. tab .. 'ButtonText']:SetTextColor(1, 1, 1)
 
-    _G['TWTMainSettingsTab' .. tab]:Show()
+    _G['OctoTWTMainSettingsTab' .. tab]:Show()
 
 end
 
-function TWTSettingsTab_OnClick(tab)
+function OctoTWTSettingsTab_OnClick(tab)
     TWT.updateSettingsTabs(tab)
 end
 
-function TWTHealerMasterTarget_OnClick()
+function OctoTWTHealerMasterTarget_OnClick()
 
     TWT.getClasses()
 
@@ -654,7 +672,7 @@ function TWTHealerMasterTarget_OnClick()
             or UnitName('target') == TWT.name then
 
         if TWT.healerMasterTarget == '' then
-            twtprint('Please target a tank.')
+            OctoTWTPrint('Please target a tank.')
         else
             TWT.removeHealerMasterTarget()
         end
@@ -670,22 +688,22 @@ function TWTHealerMasterTarget_OnClick()
 
     local color = TWT.classColors[TWT.getClass(UnitName('target'))]
 
-    twtprint('Trying to set Healer Master Target to ' .. color.c .. UnitName('target'))
+    OctoTWTPrint('Trying to set Healer Master Target to ' .. color.c .. UnitName('target'))
 
 end
 
 function TWT.removeHealerMasterTarget()
     TWT.send('TWT_HMT_REM:' .. TWT.healerMasterTarget)
 
-    twtprint('Healer Master Target cleared.')
+    OctoTWTPrint('Healer Master Target cleared.')
 
     TWT.healerMasterTarget = ''
     TWT.targetName = ''
 
     TWT.threats = TWT.wipe(TWT.threats)
 
-    _G['TWTMainSettingsHealerMasterTargetButton']:SetText('From Target')
-    _G['TWTMainSettingsHealerMasterTargetButtonNT']:SetVertexColor(1, 1, 1, 1)
+    _G['OctoTWTMainSettingsHealerMasterTargetButton']:SetText('From Target')
+    _G['OctoTWTMainSettingsHealerMasterTargetButtonNT']:SetVertexColor(1, 1, 1, 1)
 
     TWT.updateUI('removeHealerMasterTarget')
 
@@ -735,7 +753,7 @@ function TWT.getClasses()
             end
         end
     end
-    twtdebug('classes saved')
+    OctoTWTDebug('classes saved')
     return true
 end
 
@@ -745,18 +763,18 @@ TWT.tankName = ''
 
 function TWT.handleThreatPacket(packet)
 
-    --twtdebug(packet)
+    --OctoTWTDebug(packet)
 
     local playersString = __substr(packet, __find(packet, TWT.threatApi) + __strlen(TWT.threatApi), __strlen(packet))
 
     TWT.threats = TWT.wipe(TWT.threats)
     TWT.tankName = ''
 
-    local players = __explode(playersString, ';')
+    local players = OctoTWTExplode(playersString, ';')
 
     for _, tData in players do
 
-        local msgEx = __explode(tData, ':')
+        local msgEx = OctoTWTExplode(tData, ':')
 
         -- udts handling
         if msgEx[1] and msgEx[2] and msgEx[3] and msgEx[4] and msgEx[5] then
@@ -770,7 +788,7 @@ function TWT.handleThreatPacket(packet)
             if UnitName('target') and not UnitIsPlayer('target') and TWT.shouldRelay then
                 --relay
                 for i, name in TWT.relayTo do
-                    twtdebug('relaying to ' .. i .. ' ' .. name)
+                    OctoTWTDebug('relaying to ' .. i .. ' ' .. name)
                 end
                 TWT.send('TWTRelayV1' ..
                         ':' .. UnitName('target') ..
@@ -812,17 +830,17 @@ end
 
 function TWT.handleTankModePacket(packet)
 
-    --twtdebug(msg)
+    --OctoTWTDebug(msg)
 
     local playersString = __substr(packet, __find(packet, TWT.tankModeApi) + __strlen(TWT.tankModeApi), __strlen(packet))
 
     TWT.tankModeThreats = TWT.wipe(TWT.tankModeThreats)
 
-    local players = __explode(playersString, ';')
+    local players = OctoTWTExplode(playersString, ';')
 
     for _, tData in players do
 
-        local msgEx = __explode(tData, ':')
+        local msgEx = OctoTWTExplode(tData, ':')
 
         if msgEx[1] and msgEx[2] and msgEx[3] and msgEx[4] then
 
@@ -866,7 +884,7 @@ function TWT.calcAGROPerc()
     }
 
     if not TWT.threats[TWT.name] then
-        twtdebug('threats de name is bad')
+        OctoTWTDebug('threats de name is bad')
         return false
     end
 
@@ -885,7 +903,7 @@ function TWT.combatStart()
     totalPackets = 0
     totalData = 0
 
-    --twtdebug('wipe threats combatstart')
+    --OctoTWTDebug('wipe threats combatstart')
     --TWT.threats = TWT.wipe(TWT.threats)
     --TWT.tankModeThreats = TWT.wipe(TWT.tankModeThreats)
     TWT.hideThreatFrames(true)
@@ -895,8 +913,8 @@ function TWT.combatStart()
         return false
     end
 
-    if TWT_CONFIG.showInCombat then
-        _G['TWTMain']:Show()
+    if OctoTWT_CONFIG.showInCombat then
+        _G['OctoTWTMain']:Show()
     end
 
     TWT.spec = {}
@@ -916,7 +934,7 @@ function TWT.combatStart()
         local name, texture = GetSpellTabInfo(i);
         if name and texture then
             TWT.spec[specIndex].name = name
-            texture = __explode(texture, '\\')
+            texture = OctoTWTExplode(texture, '\\')
             texture = texture[__getn(texture)]
             TWT.spec[specIndex].texture = texture
             specIndex = specIndex + 1
@@ -947,9 +965,9 @@ function TWT.combatStart()
     TWT.threatQuery:Show()
     TWT.barAnimator:Show()
 
-    TWTTankModeWindowChangeStick_OnClick()
+    OctoTWTTankModeWindowChangeStick_OnClick()
 
-    _G['TWTMain']:SetAlpha(TWT_CONFIG.combatAlpha)
+    _G['OctoTWTMain']:SetAlpha(OctoTWT_CONFIG.combatAlpha)
 
     return true
 end
@@ -958,21 +976,21 @@ function TWT.combatEnd()
 
     TWT.updateTargetFrameThreatIndicators(-1, '')
 
-    twtdebug('time = ' .. (TWT.round(GetTime() - timeStart)) .. 's packets = ' .. totalPackets .. ' ' ..
+    OctoTWTDebug('time = ' .. (TWT.round(GetTime() - timeStart)) .. 's packets = ' .. totalPackets .. ' ' ..
             totalPackets / (GetTime() - timeStart) .. ' packets/s')
 
     timeStart = GetTime()
     totalPackets = 0
     totalData = 0
 
-    twtdebug('wipe threats combat end')
+    OctoTWTDebug('wipe threats combat end')
 
     TWT.threats = TWT.wipe(TWT.threats)
     TWT.tankModeThreats = TWT.wipe(TWT.tankModeThreats)
     TWT.history = TWT.wipe(TWT.history)
 
-    if TWT_CONFIG.hideOOC then
-        _G['TWTMain']:Hide()
+    if OctoTWT_CONFIG.hideOOC then
+        _G['OctoTWTMain']:Hide()
     end
 
     TWT.updateUI('combatEnd')
@@ -980,15 +998,15 @@ function TWT.combatEnd()
     TWT.threatQuery:Hide()
     TWT.barAnimator:Hide()
 
-    if TWT_CONFIG.tankMode then
-        _G['TWTMainTankModeWindow']:Hide()
+    if OctoTWT_CONFIG.tankMode then
+        _G['OctoTWTMainTankModeWindow']:Hide()
     end
 
-    _G['TWTWarning']:Hide()
+    _G['OctoTWTWarning']:Hide()
 
     TWT.updateTitleBarText()
 
-    _G['TWTMain']:SetAlpha(TWT_CONFIG.oocAlpha)
+    _G['OctoTWTMain']:SetAlpha(OctoTWT_CONFIG.oocAlpha)
 
     TWT.hideThreatFrames(true)
 
@@ -1017,7 +1035,7 @@ function TWT.checkRelay()
             end
             if not found then
                 TWT.relayTo[index] = nil
-                twtdebug(name .. ' removed from relay')
+                OctoTWTDebug(name .. ' removed from relay')
             end
         end
     end
@@ -1031,7 +1049,7 @@ function TWT.checkRelay()
             end
             if not found then
                 TWT.relayTo[index] = nil
-                twtdebug(name .. ' removed from relay')
+                OctoTWTDebug(name .. ' removed from relay')
             end
         end
     end
@@ -1053,9 +1071,9 @@ function TWT.checkTargetFrames()
     --ElvUF_Target is spawned at runtime by the UnitFrames module, so the
     --display frame cannot be anchored to it from XML; do it on first sight
     if _G['ElvUF_Target'] and not TWT.ufAnchored then
-        _G['TWThreatDisplayTargetUF']:ClearAllPoints()
-        _G['TWThreatDisplayTargetUF']:SetPoint('TOPLEFT', _G['ElvUF_Target'], 'TOPLEFT', 0, 0)
-        _G['TWThreatDisplayTargetUF']:SetPoint('BOTTOMRIGHT', _G['ElvUF_Target'], 'BOTTOMRIGHT', 0, 0)
+        _G['OctoTWThreatDisplayTargetUF']:ClearAllPoints()
+        _G['OctoTWThreatDisplayTargetUF']:SetPoint('TOPLEFT', _G['ElvUF_Target'], 'TOPLEFT', 0, 0)
+        _G['OctoTWThreatDisplayTargetUF']:SetPoint('BOTTOMRIGHT', _G['ElvUF_Target'], 'BOTTOMRIGHT', 0, 0)
         TWT.ufAnchored = true
     end
 
@@ -1076,14 +1094,14 @@ end
 
 function TWT.targetChanged()
 
-    if not UnitAffectingCombat('player') and _G['TWTMainSettings']:IsVisible() == 1 then
+    if not UnitAffectingCombat('player') and _G['OctoTWTMainSettings']:IsVisible() == 1 then
         return true
     end
 
     TWT.channel = (GetNumRaidMembers() > 0) and 'RAID' or 'PARTY'
 
-    if UIParent:GetScale() ~= _G['TWThreatDisplayTarget']:GetScale() then
-        _G['TWThreatDisplayTarget']:SetScale(UIParent:GetScale())
+    if UIParent:GetScale() ~= _G['OctoTWThreatDisplayTarget']:GetScale() then
+        _G['OctoTWThreatDisplayTarget']:SetScale(UIParent:GetScale())
     end
 
     if TWT.healerMasterTarget ~= '' then
@@ -1123,22 +1141,22 @@ function TWT.targetChanged()
         return false
     end
 
-    twtdebug('wipe target changed')
+    OctoTWTDebug('wipe target changed')
     TWT.threats = TWT.wipe(TWT.threats)
     TWT.history = TWT.wipe(TWT.history)
 
-    if TWT_CONFIG.skeram then
+    if OctoTWT_CONFIG.skeram then
         -- skeram hax
         --The Prophet Skeram
-        --_G['TWTWarning']:Hide()
+        --_G['OctoTWTWarning']:Hide()
         --if UnitAffectingCombat('player') then
         --    if UnitName('target') == 'The Prophet Skeram' and TWT.custom['The Prophet Skeram'] ~= 0 then
 
-        --            _G['TWTWarningText']:SetText("|cff00ff00- REAL -");
-        --            _G['TWTWarning']:Show()
+        --            _G['OctoTWTWarningText']:SetText("|cff00ff00- REAL -");
+        --            _G['OctoTWTWarning']:Show()
         --        else
-        --            _G['TWTWarningText']:SetText("- CLONE -");
-        --            _G['TWTWarning']:Show()
+        --            _G['OctoTWTWarningText']:SetText("- CLONE -");
+        --            _G['OctoTWTWarning']:Show()
         --        end
         --    end
         --end
@@ -1156,22 +1174,22 @@ function TWT.send(msg)
 end
 
 function TWT.UnitDetailedThreatSituation(limit)
-    SendAddonMessage(TWT.UDTS .. (TWT_CONFIG.tankMode and '_TM' or ''), "limit=" .. limit, TWT.channel)
+    SendAddonMessage(TWT.UDTS .. (OctoTWT_CONFIG.tankMode and '_TM' or ''), "limit=" .. limit, TWT.channel)
 end
 
 function TWT.updateUI(from)
 
-    --twtdebug('update ui call from [' .. (from or '') .. ']')
+    --OctoTWTDebug('update ui call from [' .. (from or '') .. ']')
 
     TWT.checkTargetFrames()
 
-    if TWT_CONFIG.debug then
-        _G['pps']:SetText('Traffic: ' .. TWT.round((totalPackets / (GetTime() - timeStart)) * 10) / 10
+    if OctoTWT_CONFIG.debug then
+        _G['OctoTWTpps']:SetText('Traffic: ' .. TWT.round((totalPackets / (GetTime() - timeStart)) * 10) / 10
                 .. 'packets/s (' .. TWT.round(totalData / (GetTime() - timeStart)) .. ' cps)'
                 .. TWT.round(uiUpdates / (GetTime() - timeStart)) .. ' ups ')
-        _G['pps']:Show()
+        _G['OctoTWTpps']:Show()
     else
-        _G['pps']:Hide()
+        _G['OctoTWTpps']:Hide()
     end
 
     uiUpdates = uiUpdates + 1
@@ -1182,7 +1200,7 @@ function TWT.updateUI(from)
 
     TWT.hideThreatFrames()
 
-    if not UnitAffectingCombat('player') and not _G['TWTMainSettings']:IsVisible() then
+    if not UnitAffectingCombat('player') and not _G['OctoTWTMainSettings']:IsVisible() then
         TWT.updateTargetFrameThreatIndicators(-1)
         return false
     end
@@ -1191,7 +1209,7 @@ function TWT.updateUI(from)
         return false
     end
 
-    if _G['TWTMainSettings']:IsVisible() and not UnitAffectingCombat('player') then
+    if _G['OctoTWTMainSettings']:IsVisible() and not UnitAffectingCombat('player') then
         TWT.tankName = 'Tenk'
     end
 
@@ -1199,91 +1217,91 @@ function TWT.updateUI(from)
 
     for name, data in TWT.ohShitHereWeSortAgain(TWT.threats, true) do
 
-        if data and TWT.threats[TWT.name] and index < TWT_CONFIG.visibleBars then
+        if data and TWT.threats[TWT.name] and index < OctoTWT_CONFIG.visibleBars then
 
             index = index + 1
             if not TWT.threatsFrames[index] then
-                TWT.threatsFrames[index] = CreateFrame('Frame', 'TWThreat' .. index, _G["TWTMain"], 'TWThreat')
+                TWT.threatsFrames[index] = CreateFrame('Frame', 'OctoTWThreat' .. index, _G["OctoTWTMain"], 'OctoTWThreat')
             end
 
-            _G['TWThreat' .. index]:SetAlpha(TWT_CONFIG.combatAlpha)
-            _G['TWThreat' .. index]:SetWidth(TWT.windowWidth - 2)
+            _G['OctoTWThreat' .. index]:SetAlpha(OctoTWT_CONFIG.combatAlpha)
+            _G['OctoTWThreat' .. index]:SetWidth(TWT.windowWidth - 2)
 
-            _G['TWThreat' .. index .. 'Name']:SetFont("Interface\\AddOns\\OctoUI\\Modules\\Threat\\fonts\\" .. TWT_CONFIG.font .. ".ttf", 15, "OUTLINE")
-            _G['TWThreat' .. index .. 'TPS']:SetFont("Interface\\AddOns\\OctoUI\\Modules\\Threat\\fonts\\" .. TWT_CONFIG.font .. ".ttf", 15, "OUTLINE")
-            _G['TWThreat' .. index .. 'Threat']:SetFont("Interface\\AddOns\\OctoUI\\Modules\\Threat\\fonts\\" .. TWT_CONFIG.font .. ".ttf", 15, "OUTLINE")
-            _G['TWThreat' .. index .. 'Perc']:SetFont("Interface\\AddOns\\OctoUI\\Modules\\Threat\\fonts\\" .. TWT_CONFIG.font .. ".ttf", 15, "OUTLINE")
+            _G['OctoTWThreat' .. index .. 'Name']:SetFont("Interface\\AddOns\\OctoUI\\Modules\\Threat\\fonts\\" .. OctoTWT_CONFIG.font .. ".ttf", 15, "OUTLINE")
+            _G['OctoTWThreat' .. index .. 'TPS']:SetFont("Interface\\AddOns\\OctoUI\\Modules\\Threat\\fonts\\" .. OctoTWT_CONFIG.font .. ".ttf", 15, "OUTLINE")
+            _G['OctoTWThreat' .. index .. 'Threat']:SetFont("Interface\\AddOns\\OctoUI\\Modules\\Threat\\fonts\\" .. OctoTWT_CONFIG.font .. ".ttf", 15, "OUTLINE")
+            _G['OctoTWThreat' .. index .. 'Perc']:SetFont("Interface\\AddOns\\OctoUI\\Modules\\Threat\\fonts\\" .. OctoTWT_CONFIG.font .. ".ttf", 15, "OUTLINE")
 
-            _G['TWThreat' .. index]:SetHeight(TWT_CONFIG.barHeight - 1)
-            _G['TWThreat' .. index .. 'BG']:SetHeight(TWT_CONFIG.barHeight - 2)
+            _G['OctoTWThreat' .. index]:SetHeight(OctoTWT_CONFIG.barHeight - 1)
+            _G['OctoTWThreat' .. index .. 'BG']:SetHeight(OctoTWT_CONFIG.barHeight - 2)
 
             TWT.threatsFrames[index]:ClearAllPoints()
-            TWT.threatsFrames[index]:SetPoint("TOPLEFT", _G["TWTMain"], "TOPLEFT", 0,
-                    (TWT_CONFIG.labelRow and -40 or -20) +
-                            TWT_CONFIG.barHeight - 1 - index * TWT_CONFIG.barHeight)
+            TWT.threatsFrames[index]:SetPoint("TOPLEFT", _G["OctoTWTMain"], "TOPLEFT", 0,
+                    (OctoTWT_CONFIG.labelRow and -40 or -20) +
+                            OctoTWT_CONFIG.barHeight - 1 - index * OctoTWT_CONFIG.barHeight)
 
 
             -- icons
-            _G['TWThreat' .. index .. 'AGRO']:Hide()
-            _G['TWThreat' .. index .. 'Role']:Show()
+            _G['OctoTWThreat' .. index .. 'AGRO']:Hide()
+            _G['OctoTWThreat' .. index .. 'Role']:Show()
             if name ~= TWT.AGRO then
 
-                _G['TWThreat' .. index .. 'Role']:SetWidth(TWT_CONFIG.barHeight - 2)
-                _G['TWThreat' .. index .. 'Role']:SetHeight(TWT_CONFIG.barHeight - 2)
-                _G['TWThreat' .. index .. 'Name']:SetPoint('LEFT', _G['TWThreat' .. index .. 'Role'], 'RIGHT', 1 + (TWT_CONFIG.barHeight / 15), -1)
+                _G['OctoTWThreat' .. index .. 'Role']:SetWidth(OctoTWT_CONFIG.barHeight - 2)
+                _G['OctoTWThreat' .. index .. 'Role']:SetHeight(OctoTWT_CONFIG.barHeight - 2)
+                _G['OctoTWThreat' .. index .. 'Name']:SetPoint('LEFT', _G['OctoTWThreat' .. index .. 'Role'], 'RIGHT', 1 + (OctoTWT_CONFIG.barHeight / 15), -1)
                 if TWT.roles[name] then
-                    _G['TWThreat' .. index .. 'Role']:SetTexture('Interface\\Icons\\' .. TWT.roles[name])
-                    _G['TWThreat' .. index .. 'Role']:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-                    _G['TWThreat' .. index .. 'Role']:Show()
+                    _G['OctoTWThreat' .. index .. 'Role']:SetTexture('Interface\\Icons\\' .. TWT.roles[name])
+                    _G['OctoTWThreat' .. index .. 'Role']:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+                    _G['OctoTWThreat' .. index .. 'Role']:Show()
                 else
-                    _G['TWThreat' .. index .. 'Role']:SetTexture('Interface\\Glues\\CharacterCreate\\UI-CharacterCreate-Classes')
-                    _G['TWThreat' .. index .. 'Role']:SetTexCoord(unpack(TWT.classCoords[data.class]))
+                    _G['OctoTWThreat' .. index .. 'Role']:SetTexture('Interface\\Glues\\CharacterCreate\\UI-CharacterCreate-Classes')
+                    _G['OctoTWThreat' .. index .. 'Role']:SetTexCoord(unpack(TWT.classCoords[data.class]))
                 end
 
             else
-                _G['TWThreat' .. index .. 'AGRO']:Show()
-                _G['TWThreat' .. index .. 'Role']:Hide()
+                _G['OctoTWThreat' .. index .. 'AGRO']:Show()
+                _G['OctoTWThreat' .. index .. 'Role']:Hide()
             end
 
 
             -- tps
-            _G['TWThreat' .. index .. 'TPS']:SetText(data.tps)
+            _G['OctoTWThreat' .. index .. 'TPS']:SetText(data.tps)
 
             -- labels
-            TWT.setBarLabels(_G['TWThreat' .. index .. 'Perc'], _G['TWThreat' .. index .. 'Threat'], _G['TWThreat' .. index .. 'TPS'])
+            TWT.setBarLabels(_G['OctoTWThreat' .. index .. 'Perc'], _G['OctoTWThreat' .. index .. 'Threat'], _G['OctoTWThreat' .. index .. 'TPS'])
 
             -- perc
-            _G['TWThreat' .. index .. 'Perc']:SetText(TWT.round(data.perc) .. '%')
+            _G['OctoTWThreat' .. index .. 'Perc']:SetText(TWT.round(data.perc) .. '%')
 
             if TWT.name ~= TWT.tankName and name == TWT.AGRO then
-                _G['TWThreat' .. index .. 'Perc']:SetText(100 - TWT.round(TWT.threats[TWT.name].perc) .. '%')
+                _G['OctoTWThreat' .. index .. 'Perc']:SetText(100 - TWT.round(TWT.threats[TWT.name].perc) .. '%')
             end
 
             -- name
-            _G['TWThreat' .. index .. 'Name']:SetText(TWT.classColors['priest'].c .. name)
+            _G['OctoTWThreat' .. index .. 'Name']:SetText(TWT.classColors['priest'].c .. name)
 
             -- bar width and color
             local color = TWT.classColors[data.class]
 
             if name == TWT.name then
 
-                if TWT_CONFIG.aggroSound and data.perc >= TWT_CONFIG.aggroThreshold and time() - TWT.lastAggroWarningSoundTime > 5
-                        and not TWT_CONFIG.fullScreenGlow then
+                if OctoTWT_CONFIG.aggroSound and data.perc >= OctoTWT_CONFIG.aggroThreshold and time() - TWT.lastAggroWarningSoundTime > 5
+                        and not OctoTWT_CONFIG.fullScreenGlow then
                     PlaySoundFile('Interface\\AddOns\\OctoUI\\Modules\\Threat\\sounds\\warn.ogg')
                     TWT.lastAggroWarningSoundTime = time()
                 end
 
-                if TWT_CONFIG.fullScreenGlow and data.perc >= TWT_CONFIG.aggroThreshold and time() - TWT.lastAggroWarningGlowTime > 5 then
+                if OctoTWT_CONFIG.fullScreenGlow and data.perc >= OctoTWT_CONFIG.aggroThreshold and time() - TWT.lastAggroWarningGlowTime > 5 then
                     TWT.glowFader:Show()
                     TWT.lastAggroWarningGlowTime = time()
-                    if TWT_CONFIG.aggroSound then
+                    if OctoTWT_CONFIG.aggroSound then
                         PlaySoundFile('Interface\\AddOns\\OctoUI\\Modules\\Threat\\sounds\\warn.ogg')
                     end
                 end
 
                 TWT.updateTitleBarText(TWT.targetName .. ' (' .. TWT.round(data.perc) .. '%)')
 
-                _G['TWThreat' .. index .. 'Threat']:SetText(TWT.formatNumber(data.threat))
+                _G['OctoTWThreat' .. index .. 'Threat']:SetText(TWT.formatNumber(data.threat))
 
                 TWT.barAnimator:animateTo(index, data.perc)
 
@@ -1291,28 +1309,28 @@ function TWT.updateUI(from)
 
                 TWT.barAnimator:animateTo(index, nil)
 
-                _G['TWThreat' .. index .. 'BG']:SetWidth(TWT.windowWidth - 2)
-                _G['TWThreat' .. index .. 'Threat']:SetText('+' .. TWT.formatNumber(data.threat - TWT.threats[TWT.name].threat))
+                _G['OctoTWThreat' .. index .. 'BG']:SetWidth(TWT.windowWidth - 2)
+                _G['OctoTWThreat' .. index .. 'Threat']:SetText('+' .. TWT.formatNumber(data.threat - TWT.threats[TWT.name].threat))
 
                 local colorLimit = 50
 
                 if TWT.threats[TWT.name].perc >= 0 and TWT.threats[TWT.name].perc < colorLimit then
-                    _G['TWThreat' .. index .. 'BG']:SetVertexColor(TWT.threats[TWT.name].perc / colorLimit, 1, 0, 0.9)
+                    _G['OctoTWThreat' .. index .. 'BG']:SetVertexColor(TWT.threats[TWT.name].perc / colorLimit, 1, 0, 0.9)
                 elseif TWT.threats[TWT.name].perc >= colorLimit then
-                    _G['TWThreat' .. index .. 'BG']:SetVertexColor(1, 1 - (TWT.threats[TWT.name].perc - colorLimit) / colorLimit, 0, 0.9)
+                    _G['OctoTWThreat' .. index .. 'BG']:SetVertexColor(1, 1 - (TWT.threats[TWT.name].perc - colorLimit) / colorLimit, 0, 0.9)
                 end
 
                 if TWT.tankName == TWT.name then
-                    _G['TWThreat' .. index .. 'BG']:SetVertexColor(1, 0, 0, 1)
-                    _G['TWThreat' .. index .. 'Perc']:SetText('')
+                    _G['OctoTWThreat' .. index .. 'BG']:SetVertexColor(1, 0, 0, 1)
+                    _G['OctoTWThreat' .. index .. 'Perc']:SetText('')
                 end
 
             else
 
                 TWT.barAnimator:animateTo(index, data.perc)
 
-                _G['TWThreat' .. index .. 'Threat']:SetText(TWT.formatNumber(data.threat))
-                _G['TWThreat' .. index .. 'BG']:SetVertexColor(color.r, color.g, color.b, 0.9)
+                _G['OctoTWThreat' .. index .. 'Threat']:SetText(TWT.formatNumber(data.threat))
+                _G['OctoTWThreat' .. index .. 'BG']:SetVertexColor(color.r, color.g, color.b, 0.9)
             end
 
             if data.tank then
@@ -1322,7 +1340,7 @@ function TWT.updateUI(from)
             end
 
             if name == TWT.name then
-                _G['TWThreat' .. index .. 'BG']:SetVertexColor(1, 0.2, 0.2, 1)
+                _G['OctoTWThreat' .. index .. 'BG']:SetVertexColor(1, 0.2, 0.2, 1)
                 TWT.updateTargetFrameThreatIndicators(data.perc)
             end
 
@@ -1332,15 +1350,15 @@ function TWT.updateUI(from)
 
     end
 
-    if TWT_CONFIG.tankMode then
+    if OctoTWT_CONFIG.tankMode then
 
-        _G['TMEF1']:Hide()
-        _G['TMEF2']:Hide()
-        _G['TMEF3']:Hide()
-        _G['TMEF4']:Hide()
-        _G['TMEF5']:Hide()
+        _G['OctoTMEF1']:Hide()
+        _G['OctoTMEF2']:Hide()
+        _G['OctoTMEF3']:Hide()
+        _G['OctoTMEF4']:Hide()
+        _G['OctoTMEF5']:Hide()
 
-        _G['TWTMainTankModeWindow']:SetHeight(0)
+        _G['OctoTWTMainTankModeWindow']:SetHeight(0)
 
         if TWT.tableSize(TWT.tankModeThreats) > 1 then
 
@@ -1351,33 +1369,33 @@ function TWT.updateUI(from)
                 if i > 5 then
                     break
                 end
-                _G['TWTMainTankModeWindow']:SetHeight(i * 25 + 23)
+                _G['OctoTWTMainTankModeWindow']:SetHeight(i * 25 + 23)
 
-                _G['TMEF' .. i .. 'Target']:SetText(data.creature)
-                _G['TMEF' .. i .. 'Player']:SetText(TWT.classColors[TWT.getClass(data.name)].c .. data.name)
-                _G['TMEF' .. i .. 'Perc']:SetText(TWT.round(data.perc) .. '%')
-                _G['TMEF' .. i .. 'TargetButton']:SetID(guid)
-                _G['TMEF' .. i]:SetPoint("TOPLEFT", _G["TWTMainTankModeWindow"], "TOPLEFT", 0, -21 + 24 - i * 25)
+                _G['OctoTMEF' .. i .. 'Target']:SetText(data.creature)
+                _G['OctoTMEF' .. i .. 'Player']:SetText(TWT.classColors[TWT.getClass(data.name)].c .. data.name)
+                _G['OctoTMEF' .. i .. 'Perc']:SetText(TWT.round(data.perc) .. '%')
+                _G['OctoTMEF' .. i .. 'TargetButton']:SetID(guid)
+                _G['OctoTMEF' .. i]:SetPoint("TOPLEFT", _G["OctoTWTMainTankModeWindow"], "TOPLEFT", 0, -21 + 24 - i * 25)
 
-                _G['TMEF' .. i .. 'RaidTargetIcon']:Hide()
+                _G['OctoTMEF' .. i .. 'RaidTargetIcon']:Hide()
 
                 if data.perc >= 0 and data.perc < 50 then
-                    _G['TMEF' .. i .. 'BG']:SetVertexColor(data.perc / 50, 1, 0, 0.5)
+                    _G['OctoTMEF' .. i .. 'BG']:SetVertexColor(data.perc / 50, 1, 0, 0.5)
                 else
-                    _G['TMEF' .. i .. 'BG']:SetVertexColor(1, 1 - (data.perc - 50) / 50, 0, 0.5)
+                    _G['OctoTMEF' .. i .. 'BG']:SetVertexColor(1, 1 - (data.perc - 50) / 50, 0, 0.5)
                 end
 
-                _G['TMEF' .. i]:Show()
+                _G['OctoTMEF' .. i]:Show()
 
-                _G['TWTMainTankModeWindow']:Show()
+                _G['OctoTWTMainTankModeWindow']:Show()
 
             end
 
         else
-            _G['TWTMainTankModeWindow']:Hide()
+            _G['OctoTWTMainTankModeWindow']:Hide()
         end
     else
-        _G['TWTMainTankModeWindow']:Hide()
+        _G['OctoTWTMainTankModeWindow']:Hide()
     end
 
 end
@@ -1389,7 +1407,7 @@ TWT.barAnimator.frames = {}
 function TWT.barAnimator:animateTo(index, perc, instant)
 
     if perc == nil then
-        TWT.barAnimator.frames['TWThreat' .. index .. 'BG'] = perc
+        TWT.barAnimator.frames['OctoTWThreat' .. index .. 'BG'] = perc
         return false
     end
 
@@ -1398,10 +1416,10 @@ function TWT.barAnimator:animateTo(index, perc, instant)
 
     local width = TWT.round((TWT.windowWidth - 2) * perc / 100)
     if instant then
-        _G['TWThreat' .. index .. 'BG']:SetWidth(width)
+        _G['OctoTWThreat' .. index .. 'BG']:SetWidth(width)
         return true
     end
-    TWT.barAnimator.frames['TWThreat' .. index .. 'BG'] = width
+    TWT.barAnimator.frames['OctoTWThreat' .. index .. 'BG'] = width
 end
 
 TWT.barAnimator:SetScript("OnShow", function()
@@ -1459,21 +1477,21 @@ TWT.threatQuery:SetScript("OnUpdate", function()
         if UnitAffectingCombat('player') and UnitAffectingCombat('target') then
 
             if TWT.targetName == '' then
-                twtdebug('threatQuery target = blank ')
+                OctoTWTDebug('threatQuery target = blank ')
                 -- try to re-get target
                 TWT.targetChanged()
                 return false
             end
 
-            if TWT_CONFIG.glow or TWT_CONFIG.perc or
-                    TWT_CONFIG.glowUF or TWT_CONFIG.percUF or
-                    TWT_CONFIG.fullScreenGlow or TWT_CONFIG.tankmode or
-                    TWT_CONFIG.visible then
+            if OctoTWT_CONFIG.glow or OctoTWT_CONFIG.perc or
+                    OctoTWT_CONFIG.glowUF or OctoTWT_CONFIG.percUF or
+                    OctoTWT_CONFIG.fullScreenGlow or OctoTWT_CONFIG.tankmode or
+                    OctoTWT_CONFIG.visible then
                 if TWT.healerMasterTarget == '' then
-                    TWT.UnitDetailedThreatSituation(TWT_CONFIG.visibleBars - 1)
+                    TWT.UnitDetailedThreatSituation(OctoTWT_CONFIG.visibleBars - 1)
                 end
             else
-                twtdebug('not asking threat situation')
+                OctoTWTDebug('not asking threat situation')
             end
 
         end
@@ -1521,28 +1539,28 @@ end
 
 function TWT.updateTargetFrameThreatIndicators(perc)
 
-    if TWT_CONFIG.fullScreenGlow then
-        _G['TWTFullScreenGlow']:Show()
+    if OctoTWT_CONFIG.fullScreenGlow then
+        _G['OctoTWTFullScreenGlow']:Show()
     else
-        _G['TWTFullScreenGlow']:Hide()
+        _G['OctoTWTFullScreenGlow']:Hide()
     end
 
     if perc == -1 then
         TWT.updateTitleBarText()
-        _G['TWThreatDisplayTarget']:Hide()
-        _G['TWThreatDisplayTargetUF']:Hide()
+        _G['OctoTWThreatDisplayTarget']:Hide()
+        _G['OctoTWThreatDisplayTargetUF']:Hide()
 
         --TWT.hideThreatFrames()
 
         return false
     end
 
-    if not TWT_CONFIG.glow and not TWT_CONFIG.perc and not TWT.targetFrameVisible then
-        _G['TWThreatDisplayTarget']:Hide()
+    if not OctoTWT_CONFIG.glow and not OctoTWT_CONFIG.perc and not TWT.targetFrameVisible then
+        _G['OctoTWThreatDisplayTarget']:Hide()
     end
 
-    if not TWT_CONFIG.glowUF and not TWT_CONFIG.percUF and not TWT.UFtargetFrameVisible then
-        _G['TWThreatDisplayTargetUF']:Hide()
+    if not OctoTWT_CONFIG.glowUF and not OctoTWT_CONFIG.percUF and not TWT.UFtargetFrameVisible then
+        _G['OctoTWThreatDisplayTargetUF']:Hide()
     end
 
     if not TWT.targetFrameVisible and not TWT.UFtargetFrameVisible then
@@ -1550,70 +1568,70 @@ function TWT.updateTargetFrameThreatIndicators(perc)
     end
 
     if TWT.targetFrameVisible then
-        _G['TWThreatDisplayTarget']:Show()
+        _G['OctoTWThreatDisplayTarget']:Show()
     end
     if TWT.UFtargetFrameVisible then
-        _G['TWThreatDisplayTargetUF']:Show()
+        _G['OctoTWThreatDisplayTargetUF']:Show()
     end
 
     perc = TWT.round(perc)
 
-    if TWT_CONFIG.glow then
+    if OctoTWT_CONFIG.glow then
 
         local unitClassification = UnitClassification('target')
         if unitClassification == 'worldboss' then
             unitClassification = 'elite'
         end
 
-        _G['TWThreatDisplayTargetGlow']:SetTexture('Interface\\AddOns\\OctoUI\\Modules\\Threat\\images\\' .. unitClassification)
+        _G['OctoTWThreatDisplayTargetGlow']:SetTexture('Interface\\AddOns\\OctoUI\\Modules\\Threat\\images\\' .. unitClassification)
 
         if perc >= 0 and perc < 50 then
-            _G['TWThreatDisplayTargetGlow']:SetVertexColor(perc / 50, 1, 0, perc / 50)
+            _G['OctoTWThreatDisplayTargetGlow']:SetVertexColor(perc / 50, 1, 0, perc / 50)
         elseif perc >= 50 then
-            _G['TWThreatDisplayTargetGlow']:SetVertexColor(1, 1 - (perc - 50) / 50, 0, 1)
+            _G['OctoTWThreatDisplayTargetGlow']:SetVertexColor(1, 1 - (perc - 50) / 50, 0, 1)
         end
 
-        _G['TWThreatDisplayTargetGlow']:Show()
+        _G['OctoTWThreatDisplayTargetGlow']:Show()
     else
-        _G['TWThreatDisplayTargetGlow']:Hide()
+        _G['OctoTWThreatDisplayTargetGlow']:Hide()
     end
 
-    if TWT_CONFIG.glowUF and _G['ElvUF_Target'] then
+    if OctoTWT_CONFIG.glowUF and _G['ElvUF_Target'] then
 
         if perc >= 0 and perc < 50 then
-            _G['TWThreatDisplayTargetUFGlow']:SetVertexColor(perc / 50, 1, 0, perc / 50)
+            _G['OctoTWThreatDisplayTargetUFGlow']:SetVertexColor(perc / 50, 1, 0, perc / 50)
         elseif perc >= 50 then
-            _G['TWThreatDisplayTargetUFGlow']:SetVertexColor(1, 1 - (perc - 50) / 50, 0, 1)
+            _G['OctoTWThreatDisplayTargetUFGlow']:SetVertexColor(1, 1 - (perc - 50) / 50, 0, 1)
         end
 
-        _G['TWThreatDisplayTargetUFGlow']:Show()
+        _G['OctoTWThreatDisplayTargetUFGlow']:Show()
     else
-        _G['TWThreatDisplayTargetUFGlow']:Hide()
+        _G['OctoTWThreatDisplayTargetUFGlow']:Hide()
     end
 
-    if TWT_CONFIG.perc then
+    if OctoTWT_CONFIG.perc then
 
-        if TWT_CONFIG.tankMode then
-            _G['TWThreatDisplayTargetNumericBG']:SetPoint('TOPLEFT', 24, -7)
-            _G['TWThreatDisplayTargetNumericBG']:SetWidth(79)
-            _G['TWThreatDisplayTargetNumericBorder']:SetPoint('TOPLEFT', 20, -3)
-            _G['TWThreatDisplayTargetNumericBorder']:SetWidth(128)
-            _G['TWThreatDisplayTargetNumericBorder']:SetTexture('Interface\\AddOns\\OctoUI\\Modules\\Threat\\images\\numericthreatborder_wide')
-            _G['TWThreatDisplayTargetNumericPerc']:SetPoint('TOPLEFT', -1, 3)
-            _G['TWThreatDisplayTargetNumericPerc']:SetWidth(128)
+        if OctoTWT_CONFIG.tankMode then
+            _G['OctoTWThreatDisplayTargetNumericBG']:SetPoint('TOPLEFT', 24, -7)
+            _G['OctoTWThreatDisplayTargetNumericBG']:SetWidth(79)
+            _G['OctoTWThreatDisplayTargetNumericBorder']:SetPoint('TOPLEFT', 20, -3)
+            _G['OctoTWThreatDisplayTargetNumericBorder']:SetWidth(128)
+            _G['OctoTWThreatDisplayTargetNumericBorder']:SetTexture('Interface\\AddOns\\OctoUI\\Modules\\Threat\\images\\numericthreatborder_wide')
+            _G['OctoTWThreatDisplayTargetNumericPerc']:SetPoint('TOPLEFT', -1, 3)
+            _G['OctoTWThreatDisplayTargetNumericPerc']:SetWidth(128)
         else
-            _G['TWThreatDisplayTargetNumericBG']:SetPoint('TOPLEFT', 44, -7)
-            _G['TWThreatDisplayTargetNumericBG']:SetWidth(36)
-            _G['TWThreatDisplayTargetNumericBorder']:SetPoint('TOPLEFT', 38, -3)
-            _G['TWThreatDisplayTargetNumericBorder']:SetWidth(64)
-            _G['TWThreatDisplayTargetNumericBorder']:SetTexture('Interface\\AddOns\\OctoUI\\Modules\\Threat\\images\\numericthreatborder')
-            _G['TWThreatDisplayTargetNumericPerc']:SetPoint('TOPLEFT', 31, 3)
-            _G['TWThreatDisplayTargetNumericPerc']:SetWidth(64)
+            _G['OctoTWThreatDisplayTargetNumericBG']:SetPoint('TOPLEFT', 44, -7)
+            _G['OctoTWThreatDisplayTargetNumericBG']:SetWidth(36)
+            _G['OctoTWThreatDisplayTargetNumericBorder']:SetPoint('TOPLEFT', 38, -3)
+            _G['OctoTWThreatDisplayTargetNumericBorder']:SetWidth(64)
+            _G['OctoTWThreatDisplayTargetNumericBorder']:SetTexture('Interface\\AddOns\\OctoUI\\Modules\\Threat\\images\\numericthreatborder')
+            _G['OctoTWThreatDisplayTargetNumericPerc']:SetPoint('TOPLEFT', 31, 3)
+            _G['OctoTWThreatDisplayTargetNumericPerc']:SetWidth(64)
         end
 
         local tankModePerc = 0
 
-        if TWT_CONFIG.tankMode then
+        if OctoTWT_CONFIG.tankMode then
             local second = ''
             local index = 0
             for name, data in TWT.ohShitHereWeSortAgain(TWT.threats, true) do
@@ -1626,12 +1644,12 @@ function TWT.updateTargetFrameThreatIndicators(perc)
                 end
             end
             if second ~= '' then
-                _G['TWThreatDisplayTargetNumericPerc']:SetText(second)
+                _G['OctoTWThreatDisplayTargetNumericPerc']:SetText(second)
             else
-                _G['TWThreatDisplayTargetNumericPerc']:SetText(perc .. '%')
+                _G['OctoTWThreatDisplayTargetNumericPerc']:SetText(perc .. '%')
             end
         else
-            _G['TWThreatDisplayTargetNumericPerc']:SetText(perc .. '%')
+            _G['OctoTWThreatDisplayTargetNumericPerc']:SetText(perc .. '%')
         end
 
         if tankModePerc ~= 0 then
@@ -1639,46 +1657,46 @@ function TWT.updateTargetFrameThreatIndicators(perc)
         end
 
         if perc >= 0 and perc < 50 then
-            _G['TWThreatDisplayTargetNumericBG']:SetVertexColor(perc / 50, 1, 0, 1)
+            _G['OctoTWThreatDisplayTargetNumericBG']:SetVertexColor(perc / 50, 1, 0, 1)
         elseif perc >= 50 then
-            _G['TWThreatDisplayTargetNumericBG']:SetVertexColor(1, 1 - (perc - 50) / 50, 0)
+            _G['OctoTWThreatDisplayTargetNumericBG']:SetVertexColor(1, 1 - (perc - 50) / 50, 0)
         end
 
-        _G['TWThreatDisplayTargetNumericPerc']:Show()
-        _G['TWThreatDisplayTargetNumericBG']:Show()
-        _G['TWThreatDisplayTargetNumericBorder']:Show()
+        _G['OctoTWThreatDisplayTargetNumericPerc']:Show()
+        _G['OctoTWThreatDisplayTargetNumericBG']:Show()
+        _G['OctoTWThreatDisplayTargetNumericBorder']:Show()
     else
-        _G['TWThreatDisplayTargetNumericPerc']:Hide()
-        _G['TWThreatDisplayTargetNumericBG']:Hide()
-        _G['TWThreatDisplayTargetNumericBorder']:Hide()
+        _G['OctoTWThreatDisplayTargetNumericPerc']:Hide()
+        _G['OctoTWThreatDisplayTargetNumericBG']:Hide()
+        _G['OctoTWThreatDisplayTargetNumericBorder']:Hide()
     end
 
-    if TWT_CONFIG.percUF and _G['ElvUF_Target'] then
+    if OctoTWT_CONFIG.percUF and _G['ElvUF_Target'] then
 
         local offset = 0
-        if TWT_CONFIG.percUFbottom then
+        if OctoTWT_CONFIG.percUFbottom then
             offset = -_G['ElvUF_Target']:GetHeight() - 32 / 2
         end
 
-        if TWT_CONFIG.tankMode then
-            _G['TWThreatDisplayTargetUFNumericBG']:SetPoint('TOPLEFT', 0, 18 + offset)
-            _G['TWThreatDisplayTargetUFNumericBG']:SetWidth(76)
-            _G['TWThreatDisplayTargetUFNumericBorder']:SetPoint('TOPLEFT', -6, 19 + offset)
-            _G['TWThreatDisplayTargetUFNumericBorder']:SetTexture('Interface\\AddOns\\OctoUI\\Modules\\Threat\\images\\numericthreatborder_pfui_wide')
-            _G['TWThreatDisplayTargetUFNumericPerc']:SetPoint('TOPLEFT', -26, 25 + offset)
-            _G['TWThreatDisplayTargetUFNumericPerc']:SetWidth(128)
+        if OctoTWT_CONFIG.tankMode then
+            _G['OctoTWThreatDisplayTargetUFNumericBG']:SetPoint('TOPLEFT', 0, 18 + offset)
+            _G['OctoTWThreatDisplayTargetUFNumericBG']:SetWidth(76)
+            _G['OctoTWThreatDisplayTargetUFNumericBorder']:SetPoint('TOPLEFT', -6, 19 + offset)
+            _G['OctoTWThreatDisplayTargetUFNumericBorder']:SetTexture('Interface\\AddOns\\OctoUI\\Modules\\Threat\\images\\numericthreatborder_pfui_wide')
+            _G['OctoTWThreatDisplayTargetUFNumericPerc']:SetPoint('TOPLEFT', -26, 25 + offset)
+            _G['OctoTWThreatDisplayTargetUFNumericPerc']:SetWidth(128)
         else
-            _G['TWThreatDisplayTargetUFNumericBG']:SetPoint('TOPLEFT', 0, 18 + offset)
-            _G['TWThreatDisplayTargetUFNumericBG']:SetWidth(37)
-            _G['TWThreatDisplayTargetUFNumericBorder']:SetPoint('TOPLEFT', -6, 19 + offset)
-            _G['TWThreatDisplayTargetUFNumericBorder']:SetTexture('Interface\\AddOns\\OctoUI\\Modules\\Threat\\images\\numericthreatborder_pfui')
-            _G['TWThreatDisplayTargetUFNumericPerc']:SetPoint('TOPLEFT', -12, 25 + offset)
-            _G['TWThreatDisplayTargetUFNumericPerc']:SetWidth(64)
+            _G['OctoTWThreatDisplayTargetUFNumericBG']:SetPoint('TOPLEFT', 0, 18 + offset)
+            _G['OctoTWThreatDisplayTargetUFNumericBG']:SetWidth(37)
+            _G['OctoTWThreatDisplayTargetUFNumericBorder']:SetPoint('TOPLEFT', -6, 19 + offset)
+            _G['OctoTWThreatDisplayTargetUFNumericBorder']:SetTexture('Interface\\AddOns\\OctoUI\\Modules\\Threat\\images\\numericthreatborder_pfui')
+            _G['OctoTWThreatDisplayTargetUFNumericPerc']:SetPoint('TOPLEFT', -12, 25 + offset)
+            _G['OctoTWThreatDisplayTargetUFNumericPerc']:SetWidth(64)
         end
 
         local tankModePerc = 0
 
-        if TWT_CONFIG.tankMode then
+        if OctoTWT_CONFIG.tankMode then
             local second = ''
             local index = 0
             for name, data in TWT.ohShitHereWeSortAgain(TWT.threats, true) do
@@ -1690,12 +1708,12 @@ function TWT.updateTargetFrameThreatIndicators(perc)
                 end
             end
             if second ~= '' then
-                _G['TWThreatDisplayTargetUFNumericPerc']:SetText(second)
+                _G['OctoTWThreatDisplayTargetUFNumericPerc']:SetText(second)
             else
-                _G['TWThreatDisplayTargetUFNumericPerc']:SetText(perc .. '%')
+                _G['OctoTWThreatDisplayTargetUFNumericPerc']:SetText(perc .. '%')
             end
         else
-            _G['TWThreatDisplayTargetUFNumericPerc']:SetText(perc .. '%')
+            _G['OctoTWThreatDisplayTargetUFNumericPerc']:SetText(perc .. '%')
         end
 
         if tankModePerc ~= 0 then
@@ -1703,64 +1721,64 @@ function TWT.updateTargetFrameThreatIndicators(perc)
         end
 
         if perc >= 0 and perc < 50 then
-            _G['TWThreatDisplayTargetUFNumericBG']:SetVertexColor(perc / 50, 1, 0, 1)
+            _G['OctoTWThreatDisplayTargetUFNumericBG']:SetVertexColor(perc / 50, 1, 0, 1)
         elseif perc >= 50 then
-            _G['TWThreatDisplayTargetUFNumericBG']:SetVertexColor(1, 1 - (perc - 50) / 50, 0)
+            _G['OctoTWThreatDisplayTargetUFNumericBG']:SetVertexColor(1, 1 - (perc - 50) / 50, 0)
         end
 
-        _G['TWThreatDisplayTargetUFNumericPerc']:Show()
-        _G['TWThreatDisplayTargetUFNumericBG']:Show()
-        _G['TWThreatDisplayTargetUFNumericBorder']:Show()
+        _G['OctoTWThreatDisplayTargetUFNumericPerc']:Show()
+        _G['OctoTWThreatDisplayTargetUFNumericBG']:Show()
+        _G['OctoTWThreatDisplayTargetUFNumericBorder']:Show()
     else
-        _G['TWThreatDisplayTargetUFNumericPerc']:Hide()
-        _G['TWThreatDisplayTargetUFNumericBG']:Hide()
-        _G['TWThreatDisplayTargetUFNumericBorder']:Hide()
+        _G['OctoTWThreatDisplayTargetUFNumericPerc']:Hide()
+        _G['OctoTWThreatDisplayTargetUFNumericBG']:Hide()
+        _G['OctoTWThreatDisplayTargetUFNumericBorder']:Hide()
     end
 
 end
 
-function TWTMainWindow_Resizing()
-    _G['TWTMain']:SetAlpha(0.4)
+function OctoTWTMainWindow_Resizing()
+    _G['OctoTWTMain']:SetAlpha(0.4)
 end
 
-function TWTMainMainWindow_Resized()
-    _G['TWTMain']:SetAlpha(UnitAffectingCombat('player') and TWT_CONFIG.combatAlpha or TWT_CONFIG.oocAlpha)
+function OctoTWTMainMainWindow_Resized()
+    _G['OctoTWTMain']:SetAlpha(UnitAffectingCombat('player') and OctoTWT_CONFIG.combatAlpha or OctoTWT_CONFIG.oocAlpha)
 
-    TWT_CONFIG.visibleBars = TWT.round((_G['TWTMain']:GetHeight() - (TWT_CONFIG.labelRow and 40 or 20)) / TWT_CONFIG.barHeight)
-    TWT_CONFIG.visibleBars = TWT_CONFIG.visibleBars < 4 and 4 or TWT_CONFIG.visibleBars
+    OctoTWT_CONFIG.visibleBars = TWT.round((_G['OctoTWTMain']:GetHeight() - (OctoTWT_CONFIG.labelRow and 40 or 20)) / OctoTWT_CONFIG.barHeight)
+    OctoTWT_CONFIG.visibleBars = OctoTWT_CONFIG.visibleBars < 4 and 4 or OctoTWT_CONFIG.visibleBars
 
-    FrameHeightSlider_OnValueChanged()
+    OctoTWTFrameHeightSlider_OnValueChanged()
 end
 
-function FrameHeightSlider_OnValueChanged()
-    TWT_CONFIG.barHeight = _G['TWTMainSettingsFrameHeightSlider']:GetValue()
+function OctoTWTFrameHeightSlider_OnValueChanged()
+    OctoTWT_CONFIG.barHeight = _G['OctoTWTMainSettingsFrameHeightSlider']:GetValue()
 
-    _G['TWTMain']:SetHeight(TWT_CONFIG.barHeight * TWT_CONFIG.visibleBars + (TWT_CONFIG.labelRow and 40 or 20))
+    _G['OctoTWTMain']:SetHeight(OctoTWT_CONFIG.barHeight * OctoTWT_CONFIG.visibleBars + (OctoTWT_CONFIG.labelRow and 40 or 20))
 
     TWT.setMinMaxResize()
-    TWT.updateUI('FrameHeightSlider_OnValueChanged')
+    TWT.updateUI('OctoTWTFrameHeightSlider_OnValueChanged')
 end
 
 --Upstream re-anchored both windows here so a scale change did not move whatever the
---user had dragged into place. That does not survive this port. TWTMain is
+--user had dragged into place. That does not survive this port. OctoTWTMain is
 --movable="false" in the XML and has no saved position of its own, so it is owned by
 --an OctoUI mover instead (see TM:Initialize) -- re-anchoring it here fights the mover,
 --and TWT.init drives this through SetValue before the frame's rect has resolved, at
 --which point GetLeft()/GetTop() are meaningless and it parked the window below the
---bottom of the screen. Scale TWTMain and leave its position to the mover.
-function WindowScaleSlider_OnValueChanged()
-    TWT_CONFIG.windowScale = _G['TWTMainSettingsWindowScaleSlider']:GetValue()
+--bottom of the screen. Scale OctoTWTMain and leave its position to the mover.
+function OctoTWTWindowScaleSlider_OnValueChanged()
+    OctoTWT_CONFIG.windowScale = _G['OctoTWTMainSettingsWindowScaleSlider']:GetValue()
 
-    _G['TWTMain']:SetScale(TWT_CONFIG.windowScale)
+    _G['OctoTWTMain']:SetScale(OctoTWT_CONFIG.windowScale)
 
     --The tank mode window is still movable="true" and drag-positioned, so it does
     --need its position carried across the scale change -- but only once its rect
     --resolves. Before that GetLeft() is nil and the arithmetic below would throw.
-    local tank = _G['TWTMainTankModeWindow']
+    local tank = _G['OctoTWTMainTankModeWindow']
     local sx, sy = tank:GetLeft(), tank:GetTop()
     local ss = tank:GetEffectiveScale()
 
-    tank:SetScale(TWT_CONFIG.windowScale)
+    tank:SetScale(OctoTWT_CONFIG.windowScale)
 
     if sx and sy and ss then
         local scaled = tank:GetEffectiveScale()
@@ -1768,55 +1786,55 @@ function WindowScaleSlider_OnValueChanged()
         tank:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", (sx * ss) / scaled, (sy * ss) / scaled)
     end
 
-    if TWT_CONFIG.tankModeStick ~= 'Free' then
-        TWTTankModeWindowChangeStick_OnClick(TWT_CONFIG.tankModeStick)
+    if OctoTWT_CONFIG.tankModeStick ~= 'Free' then
+        OctoTWTTankModeWindowChangeStick_OnClick(OctoTWT_CONFIG.tankModeStick)
     end
 end
 
-function CombatOpacitySlider_OnValueChanged()
-    TWT_CONFIG.combatAlpha = _G['TWTMainSettingsCombatAlphaSlider']:GetValue()
-    _G['TWTMain']:SetAlpha(UnitAffectingCombat('player') and TWT_CONFIG.combatAlpha or TWT_CONFIG.oocAlpha)
+function OctoTWTCombatOpacitySlider_OnValueChanged()
+    OctoTWT_CONFIG.combatAlpha = _G['OctoTWTMainSettingsCombatAlphaSlider']:GetValue()
+    _G['OctoTWTMain']:SetAlpha(UnitAffectingCombat('player') and OctoTWT_CONFIG.combatAlpha or OctoTWT_CONFIG.oocAlpha)
 end
 
-function OOCombatSlider_OnValueChanged()
-    TWT_CONFIG.oocAlpha = _G['TWTMainSettingsOOCAlphaSlider']:GetValue()
-    _G['TWTMain']:SetAlpha(UnitAffectingCombat('player') and TWT_CONFIG.combatAlpha or TWT_CONFIG.oocAlpha)
+function OctoTWTOOCombatSlider_OnValueChanged()
+    OctoTWT_CONFIG.oocAlpha = _G['OctoTWTMainSettingsOOCAlphaSlider']:GetValue()
+    _G['OctoTWTMain']:SetAlpha(UnitAffectingCombat('player') and OctoTWT_CONFIG.combatAlpha or OctoTWT_CONFIG.oocAlpha)
 end
 
-function AggroThresholdSlider_OnValueChanged()
-    TWT_CONFIG.aggroThreshold = _G['TWTMainSettingsAggroThresholdSlider']:GetValue()
+function OctoTWTAggroThresholdSlider_OnValueChanged()
+    OctoTWT_CONFIG.aggroThreshold = _G['OctoTWTMainSettingsAggroThresholdSlider']:GetValue()
 end
 
-function TWTChangeSetting_OnClick(checked, code)
+function OctoTWTChangeSetting_OnClick(checked, code)
     if code == 'lock' then
-        checked = not TWT_CONFIG[code]
+        checked = not OctoTWT_CONFIG[code]
         if checked then
-            _G['TWTMainLockButton']:SetNormalTexture('Interface\\AddOns\\OctoUI\\Modules\\Threat\\images\\icon_locked')
+            _G['OctoTWTMainLockButton']:SetNormalTexture('Interface\\AddOns\\OctoUI\\Modules\\Threat\\images\\icon_locked')
         else
-            _G['TWTMainLockButton']:SetNormalTexture('Interface\\AddOns\\OctoUI\\Modules\\Threat\\images\\icon_unlocked')
+            _G['OctoTWTMainLockButton']:SetNormalTexture('Interface\\AddOns\\OctoUI\\Modules\\Threat\\images\\icon_unlocked')
         end
     end
-    TWT_CONFIG[code] = checked
+    OctoTWT_CONFIG[code] = checked
     if code == 'tankMode' then
         if checked then
             TWT.testBars(true)
-            TWT_CONFIG.fullScreenGlow = false
-            TWT_CONFIG.aggroSound = false
-            _G['TWTMainSettingsFullScreenGlow']:SetChecked(TWT_CONFIG.fullScreenGlow)
-            _G['TWTMainSettingsFullScreenGlow']:Disable()
-            _G['TWTMainSettingsAggroSound']:SetChecked(TWT_CONFIG.fullScreenGlow)
-            _G['TWTMainSettingsAggroSound']:Disable()
+            OctoTWT_CONFIG.fullScreenGlow = false
+            OctoTWT_CONFIG.aggroSound = false
+            _G['OctoTWTMainSettingsFullScreenGlow']:SetChecked(OctoTWT_CONFIG.fullScreenGlow)
+            _G['OctoTWTMainSettingsFullScreenGlow']:Disable()
+            _G['OctoTWTMainSettingsAggroSound']:SetChecked(OctoTWT_CONFIG.fullScreenGlow)
+            _G['OctoTWTMainSettingsAggroSound']:Disable()
 
-            _G['TWTMainTankModeWindowStickTopButton']:Show()
-            _G['TWTMainTankModeWindowStickRightButton']:Show()
-            _G['TWTMainTankModeWindowStickBottomButton']:Show()
-            _G['TWTMainTankModeWindowStickLeftButton']:Show()
+            _G['OctoTWTMainTankModeWindowStickTopButton']:Show()
+            _G['OctoTWTMainTankModeWindowStickRightButton']:Show()
+            _G['OctoTWTMainTankModeWindowStickBottomButton']:Show()
+            _G['OctoTWTMainTankModeWindowStickLeftButton']:Show()
 
-            _G['TWTMainTankModeWindow']:Show()
+            _G['OctoTWTMainTankModeWindow']:Show()
         else
-            _G['TWTMainSettingsFullScreenGlow']:Enable()
-            _G['TWTMainSettingsAggroSound']:Enable()
-            _G['TWTMainTankModeWindow']:Hide()
+            _G['OctoTWTMainSettingsFullScreenGlow']:Enable()
+            _G['OctoTWTMainSettingsAggroSound']:Enable()
+            _G['OctoTWTMainTankModeWindow']:Hide()
         end
     end
     if code == 'aggroSound' and checked and not UnitAffectingCombat('player') then
@@ -1828,110 +1846,110 @@ function TWTChangeSetting_OnClick(checked, code)
     end
 
     if code == 'percUFtop' then
-        TWT_CONFIG.percUFbottom = false
-        _G['TWTMainSettingsPercNumbersUFbottom']:SetChecked(TWT_CONFIG.percUFbottom)
+        OctoTWT_CONFIG.percUFbottom = false
+        _G['OctoTWTMainSettingsPercNumbersUFbottom']:SetChecked(OctoTWT_CONFIG.percUFbottom)
     end
     if code == 'percUFbottom' then
-        TWT_CONFIG.percUFtop = false
-        _G['TWTMainSettingsPercNumbersUFtop']:SetChecked(TWT_CONFIG.percUFtop)
+        OctoTWT_CONFIG.percUFtop = false
+        _G['OctoTWTMainSettingsPercNumbersUFtop']:SetChecked(OctoTWT_CONFIG.percUFtop)
     end
 
     TWT.setColumnLabels()
 
-    if TWT_CONFIG.labelRow then
-        _G['TWTMainBarsBG']:SetPoint('TOPLEFT', 1, -40)
-        _G['TWTMainNameLabel']:Show()
+    if OctoTWT_CONFIG.labelRow then
+        _G['OctoTWTMainBarsBG']:SetPoint('TOPLEFT', 1, -40)
+        _G['OctoTWTMainNameLabel']:Show()
     else
-        _G['TWTMainBarsBG']:SetPoint('TOPLEFT', 1, -20)
-        _G['TWTMainNameLabel']:Hide()
-        _G['TWTMainTPSLabel']:Hide()
-        _G['TWTMainThreatLabel']:Hide()
-        _G['TWTMainPercLabel']:Hide()
+        _G['OctoTWTMainBarsBG']:SetPoint('TOPLEFT', 1, -20)
+        _G['OctoTWTMainNameLabel']:Hide()
+        _G['OctoTWTMainTPSLabel']:Hide()
+        _G['OctoTWTMainThreatLabel']:Hide()
+        _G['OctoTWTMainPercLabel']:Hide()
     end
 
-    FrameHeightSlider_OnValueChanged()
+    OctoTWTFrameHeightSlider_OnValueChanged()
 
-    TWT.updateUI('TWTChangeSetting_OnClick')
+    TWT.updateUI('OctoTWTChangeSetting_OnClick')
 end
 
 function TWT.setColumnLabels()
-    _G['TWTMain']:SetWidth(TWT.windowStartWidth - 70 - 70 - 70)
+    _G['OctoTWTMain']:SetWidth(TWT.windowStartWidth - 70 - 70 - 70)
 
     TWT.nameLimit = 5
 
-    if TWT_CONFIG.colPerc then
-        _G['TWTMainPercLabel']:Show()
-        _G['TWTMain']:SetWidth(_G['TWTMain']:GetWidth() + 70)
+    if OctoTWT_CONFIG.colPerc then
+        _G['OctoTWTMainPercLabel']:Show()
+        _G['OctoTWTMain']:SetWidth(_G['OctoTWTMain']:GetWidth() + 70)
         TWT.nameLimit = TWT.nameLimit + 8
     else
-        _G['TWTMainPercLabel']:Hide()
+        _G['OctoTWTMainPercLabel']:Hide()
     end
 
-    if TWT_CONFIG.colThreat then
-        _G['TWTMain']:SetWidth(_G['TWTMain']:GetWidth() + 70)
+    if OctoTWT_CONFIG.colThreat then
+        _G['OctoTWTMain']:SetWidth(_G['OctoTWTMain']:GetWidth() + 70)
         TWT.nameLimit = TWT.nameLimit + 8
 
-        if TWT_CONFIG.colPerc then
-            _G['TWTMainThreatLabel']:SetPoint('TOPRIGHT', _G['TWTMain'], -10 - 70 - 5, -21)
+        if OctoTWT_CONFIG.colPerc then
+            _G['OctoTWTMainThreatLabel']:SetPoint('TOPRIGHT', _G['OctoTWTMain'], -10 - 70 - 5, -21)
         else
-            _G['TWTMainThreatLabel']:SetPoint('TOPRIGHT', _G['TWTMain'], -10, -21)
+            _G['OctoTWTMainThreatLabel']:SetPoint('TOPRIGHT', _G['OctoTWTMain'], -10, -21)
         end
 
-        _G['TWTMainThreatLabel']:Show()
+        _G['OctoTWTMainThreatLabel']:Show()
     else
-        _G['TWTMainThreatLabel']:Hide()
+        _G['OctoTWTMainThreatLabel']:Hide()
     end
 
-    if TWT_CONFIG.colTPS then
-        _G['TWTMain']:SetWidth(_G['TWTMain']:GetWidth() + 70)
+    if OctoTWT_CONFIG.colTPS then
+        _G['OctoTWTMain']:SetWidth(_G['OctoTWTMain']:GetWidth() + 70)
         TWT.nameLimit = TWT.nameLimit + 8
 
-        if TWT_CONFIG.colThreat then
-            if TWT_CONFIG.colPerc then
-                _G['TWTMainTPSLabel']:SetPoint('TOPRIGHT', _G['TWTMain'], -10 - 70 - 70, -21)
+        if OctoTWT_CONFIG.colThreat then
+            if OctoTWT_CONFIG.colPerc then
+                _G['OctoTWTMainTPSLabel']:SetPoint('TOPRIGHT', _G['OctoTWTMain'], -10 - 70 - 70, -21)
             else
-                _G['TWTMainTPSLabel']:SetPoint('TOPRIGHT', _G['TWTMain'], -10 - 70, -21)
+                _G['OctoTWTMainTPSLabel']:SetPoint('TOPRIGHT', _G['OctoTWTMain'], -10 - 70, -21)
             end
-        elseif TWT_CONFIG.colPerc then
-            _G['TWTMainTPSLabel']:SetPoint('TOPRIGHT', _G['TWTMain'], -10 - 70, -21)
+        elseif OctoTWT_CONFIG.colPerc then
+            _G['OctoTWTMainTPSLabel']:SetPoint('TOPRIGHT', _G['OctoTWTMain'], -10 - 70, -21)
         else
-            _G['TWTMainTPSLabel']:SetPoint('TOPRIGHT', _G['TWTMain'], 'TOPRIGHT', -10, -21)
+            _G['OctoTWTMainTPSLabel']:SetPoint('TOPRIGHT', _G['OctoTWTMain'], 'TOPRIGHT', -10, -21)
         end
 
-        _G['TWTMainTPSLabel']:Show()
+        _G['OctoTWTMainTPSLabel']:Show()
     else
-        _G['TWTMainTPSLabel']:Hide()
+        _G['OctoTWTMainTPSLabel']:Hide()
     end
 
     if TWT.nameLimit < 14 then
         TWT.nameLimit = 14
     end
 
-    if _G['TWTMain']:GetWidth() < 190 then
-        _G['TWTMain']:SetWidth(190)
+    if _G['OctoTWTMain']:GetWidth() < 190 then
+        _G['OctoTWTMain']:SetWidth(190)
     end
 
-    TWT.windowWidth = _G['TWTMain']:GetWidth()
+    TWT.windowWidth = _G['OctoTWTMain']:GetWidth()
 
     TWT.setMinMaxResize()
 end
 
 function TWT.setMinMaxResize()
-    _G['TWTMain']:SetMinResize(TWT.windowWidth, TWT_CONFIG.barHeight * TWT.minBars + (TWT_CONFIG.labelRow and 40 or 20))
-    _G['TWTMain']:SetMaxResize(TWT.windowWidth, TWT_CONFIG.barHeight * TWT.maxBars + (TWT_CONFIG.labelRow and 40 or 20))
+    _G['OctoTWTMain']:SetMinResize(TWT.windowWidth, OctoTWT_CONFIG.barHeight * TWT.minBars + (OctoTWT_CONFIG.labelRow and 40 or 20))
+    _G['OctoTWTMain']:SetMaxResize(TWT.windowWidth, OctoTWT_CONFIG.barHeight * TWT.maxBars + (OctoTWT_CONFIG.labelRow and 40 or 20))
 end
 
 function TWT.setBarLabels(perc, threat, tps)
 
-    if TWT_CONFIG.colPerc then
+    if OctoTWT_CONFIG.colPerc then
         perc:Show()
     else
         perc:Hide()
     end
 
-    if TWT_CONFIG.colThreat then
+    if OctoTWT_CONFIG.colThreat then
 
-        if TWT_CONFIG.colPerc then
+        if OctoTWT_CONFIG.colPerc then
             threat:SetPoint('RIGHT', -10 - 70 + 4, 0)
         else
             threat:SetPoint('RIGHT', -10 + 4, 0)
@@ -1942,15 +1960,15 @@ function TWT.setBarLabels(perc, threat, tps)
         threat:Hide()
     end
 
-    if TWT_CONFIG.colTPS then
+    if OctoTWT_CONFIG.colTPS then
 
-        if TWT_CONFIG.colThreat then
-            if TWT_CONFIG.colPerc then
+        if OctoTWT_CONFIG.colThreat then
+            if OctoTWT_CONFIG.colPerc then
                 tps:SetPoint('RIGHT', -10 - 70 - 70 + 4, 0)
             else
                 tps:SetPoint('RIGHT', -10 - 70 + 4, 0)
             end
-        elseif TWT_CONFIG.colPerc then
+        elseif OctoTWT_CONFIG.colPerc then
             tps:SetPoint('RIGHT', -10 - 70 + 4, 0)
         else
             tps:SetPoint('RIGHT', -10 + 4, 0)
@@ -2062,89 +2080,89 @@ function TWT.testBars(show)
         TWT.combatEnd()
     end
 end
-function TWTCloseButton_OnClick()
-    _G['TWTMain']:Hide()
-    twtprint('Window closed. Type |cff69ccf0/twt show|cffffffff or |cff69ccf0/twtshow|cffffffff to restore it.')
-    TWT_CONFIG.visible = false
+function OctoTWTCloseButton_OnClick()
+    _G['OctoTWTMain']:Hide()
+    OctoTWTPrint('Window closed. Type |cff69ccf0/twt show|cffffffff or |cff69ccf0/twtshow|cffffffff to restore it.')
+    OctoTWT_CONFIG.visible = false
 end
 
-function TWTTankModeWindowCloseButton_OnClick()
-    twtprint('Tank Mode disabled. Type |cff69ccf0/twt tankmode|cffffffff to enable it or go into settings.')
-    TWTChangeSetting_OnClick(false, 'tankMode')
-    _G['TWTMainSettingsTankMode']:SetChecked(false)
+function OctoTWTTankModeWindowCloseButton_OnClick()
+    OctoTWTPrint('Tank Mode disabled. Type |cff69ccf0/twt tankmode|cffffffff to enable it or go into settings.')
+    OctoTWTChangeSetting_OnClick(false, 'tankMode')
+    _G['OctoTWTMainSettingsTankMode']:SetChecked(false)
 end
 
-function TWTTankModeWindowChangeStick_OnClick(to)
+function OctoTWTTankModeWindowChangeStick_OnClick(to)
     if to then
-        TWT_CONFIG.tankModeStick = to
+        OctoTWT_CONFIG.tankModeStick = to
     end
-    if TWT_CONFIG.tankModeStick == 'Top' then
-        _G['TWTMainTankModeWindow']:ClearAllPoints()
-        _G['TWTMainTankModeWindow']:SetPoint('BOTTOMLEFT', _G['TWTMain'], 'TOPLEFT', 0, 1)
-    elseif TWT_CONFIG.tankModeStick == 'Right' then
-        _G['TWTMainTankModeWindow']:ClearAllPoints()
-        _G['TWTMainTankModeWindow']:SetPoint('TOPLEFT', _G['TWTMain'], 'TOPRIGHT', 1, 0)
-    elseif TWT_CONFIG.tankModeStick == 'Bottom' then
-        _G['TWTMainTankModeWindow']:ClearAllPoints()
-        _G['TWTMainTankModeWindow']:SetPoint('TOPLEFT', _G['TWTMain'], 'BOTTOMLEFT', 0, -1)
-    elseif TWT_CONFIG.tankModeStick == 'Left' then
-        _G['TWTMainTankModeWindow']:ClearAllPoints()
-        _G['TWTMainTankModeWindow']:SetPoint('TOPRIGHT', _G['TWTMain'], 'TOPLEFT', -1, 0)
+    if OctoTWT_CONFIG.tankModeStick == 'Top' then
+        _G['OctoTWTMainTankModeWindow']:ClearAllPoints()
+        _G['OctoTWTMainTankModeWindow']:SetPoint('BOTTOMLEFT', _G['OctoTWTMain'], 'TOPLEFT', 0, 1)
+    elseif OctoTWT_CONFIG.tankModeStick == 'Right' then
+        _G['OctoTWTMainTankModeWindow']:ClearAllPoints()
+        _G['OctoTWTMainTankModeWindow']:SetPoint('TOPLEFT', _G['OctoTWTMain'], 'TOPRIGHT', 1, 0)
+    elseif OctoTWT_CONFIG.tankModeStick == 'Bottom' then
+        _G['OctoTWTMainTankModeWindow']:ClearAllPoints()
+        _G['OctoTWTMainTankModeWindow']:SetPoint('TOPLEFT', _G['OctoTWTMain'], 'BOTTOMLEFT', 0, -1)
+    elseif OctoTWT_CONFIG.tankModeStick == 'Left' then
+        _G['OctoTWTMainTankModeWindow']:ClearAllPoints()
+        _G['OctoTWTMainTankModeWindow']:SetPoint('TOPRIGHT', _G['OctoTWTMain'], 'TOPLEFT', -1, 0)
     end
 end
 
-function TWTSettingsToggle_OnClick()
-    if _G['TWTMainSettings']:IsVisible() == 1 then
-        _G['TWTMainSettings']:Hide()
+function OctoTWTSettingsToggle_OnClick()
+    if _G['OctoTWTMainSettings']:IsVisible() == 1 then
+        _G['OctoTWTMainSettings']:Hide()
         TWT.testBars(false)
 
-        _G['TWTMainTankModeWindowStickTopButton']:Hide()
-        _G['TWTMainTankModeWindowStickRightButton']:Hide()
-        _G['TWTMainTankModeWindowStickBottomButton']:Hide()
-        _G['TWTMainTankModeWindowStickLeftButton']:Hide()
+        _G['OctoTWTMainTankModeWindowStickTopButton']:Hide()
+        _G['OctoTWTMainTankModeWindowStickRightButton']:Hide()
+        _G['OctoTWTMainTankModeWindowStickBottomButton']:Hide()
+        _G['OctoTWTMainTankModeWindowStickLeftButton']:Hide()
 
     else
-        _G['TWTMainSettings']:Show()
+        _G['OctoTWTMainSettings']:Show()
 
-        if TWT_CONFIG.tankMode then
-            TWTTankModeWindowChangeStick_OnClick()
-            _G['TWTMainTankModeWindowStickTopButton']:Show()
-            _G['TWTMainTankModeWindowStickRightButton']:Show()
-            _G['TWTMainTankModeWindowStickBottomButton']:Show()
-            _G['TWTMainTankModeWindowStickLeftButton']:Show()
+        if OctoTWT_CONFIG.tankMode then
+            OctoTWTTankModeWindowChangeStick_OnClick()
+            _G['OctoTWTMainTankModeWindowStickTopButton']:Show()
+            _G['OctoTWTMainTankModeWindowStickRightButton']:Show()
+            _G['OctoTWTMainTankModeWindowStickBottomButton']:Show()
+            _G['OctoTWTMainTankModeWindowStickLeftButton']:Show()
         end
 
         TWT.testBars(true)
     end
 end
 
-function TWTFontButton_OnClick()
-    if _G['TWTMainSettingsFontList']:IsVisible() then
-        _G['TWTMainSettingsFontList']:Hide()
+function OctoTWTFontButton_OnClick()
+    if _G['OctoTWTMainSettingsFontList']:IsVisible() then
+        _G['OctoTWTMainSettingsFontList']:Hide()
     else
-        _G['TWTMainSettingsFontList']:Show()
+        _G['OctoTWTMainSettingsFontList']:Show()
     end
 end
 
-function TWTFontSelect(id)
-    TWT_CONFIG.font = TWT.fonts[id]
-    _G['TWTMainSettingsFontButton']:SetText(TWT_CONFIG.font)
-    TWT.updateUI('TWTFontSelect')
+function OctoTWTFontSelect(id)
+    OctoTWT_CONFIG.font = TWT.fonts[id]
+    _G['OctoTWTMainSettingsFontButton']:SetText(OctoTWT_CONFIG.font)
+    TWT.updateUI('OctoTWTFontSelect')
 end
 
-function TWTTargetButton_OnClick(index)
+function OctoTWTTargetButton_OnClick(index)
 
     if TWT.tankModeThreats[__parsestring(index)] then
         AssistByName(TWT.tankModeThreats[__parsestring(index)].name)
         return true
     end
 
-    twtprint('Cannot target tankmode target.')
+    OctoTWTPrint('Cannot target tankmode target.')
 
     return false
 end
 
-function __explode(str, delimiter)
+function OctoTWTExplode(str, delimiter)
     local result = {}
     local from = 1
     local delim_from, delim_to = __find(str, delimiter, from, 1, true)
@@ -2266,10 +2284,10 @@ end
 
 function TWT.updateTitleBarText(text)
     if not text then
-        _G['TWTMainTitle']:SetText(TWT.addonName .. ' |cffabd473v' .. TWT.addonVer)
+        _G['OctoTWTMainTitle']:SetText(TWT.addonName .. ' |cffabd473v' .. TWT.addonVer)
         return true
     end
-    _G['TWTMainTitle']:SetText(text)
+    _G['OctoTWTMainTitle']:SetText(text)
 end
 
 
@@ -2344,7 +2362,7 @@ function TWT.round(num, numDecimalPlaces)
 end
 
 function TWT.version(ver)
-    local verEx = __explode(ver, '.')
+    local verEx = OctoTWTExplode(ver, '.')
 
     if verEx[3] then
         -- new versioning with 3 numbers
@@ -2371,20 +2389,22 @@ end
 local TM = E:NewModule("ThreatMeter")
 E.ThreatMeter = TM
 
---This port kept the upstream frame names, so it collides head-on with the
---standalone TWThreat addon if that is also installed: both XMLs define TWTMain,
---TWTFullScreenGlow, TMEF1-5 and every TWTMainSettings* frame, and both tocs
---declare TWT_CONFIG. Folder order loads OctoUI first, so the standalone's XML
---wins every one of those _G keys and TWT.init() below silently drives the other
---addon's frames instead of ours. Defer to it and say so once; our own TWTMain
---is hidden="true" in the XML, so bailing leaves nothing on screen.
+--The frame-name collision this guard was written for is gone. Every global this port
+--owns now carries an Octo prefix -- OctoTWTMain, OctoTWTFullScreenGlow, OctoTMEF1-5,
+--every OctoTWTMainSettings* frame and OctoTWT_CONFIG -- so the standalone TWThreat
+--addon can be installed alongside it and neither takes the other's _G keys.
+--
+--The guard stays anyway, because two threat meters drawing two windows and both
+--answering the same addon channel is still not what anyone wants, and a deliberate
+--"one of us stands down" is better than whichever half the user notices first. It is
+--now a choice rather than a workaround, which is why the message says so differently.
 local function StandaloneLoaded()
     return IsAddOnLoaded("TWThreat") and true or false
 end
 
 function TM:Initialize()
     if StandaloneLoaded() then
-        E:Print("Built-in threat meter stayed off: the standalone TWThreat addon is loaded and the two share frame names. Disable TWThreat at character select to use this one.")
+        E:Print("Built-in threat meter stayed off: the standalone TWThreat addon is loaded and there is no point running two. Disable TWThreat at character select to use this one instead.")
         return
     end
     if not E.private.general.threatMeter then
@@ -2398,7 +2418,7 @@ function TM:Initialize()
     --wherever init happened to leave it with no way for anyone to move it. Anchor it
     --once, then hand it over -- CreateMover reads the current point as its default,
     --so the SetPoint has to come first. /moveui moves it from here on.
-    local frame = _G["TWTMain"]
+    local frame = _G["OctoTWTMain"]
     if frame then
         frame:ClearAllPoints()
         frame:SetPoint("CENTER", E.UIParent, "CENTER", 0, 200)
@@ -2413,7 +2433,7 @@ function TM:Initialize()
         frame:RegisterForDrag("LeftButton")
 
         frame:SetScript("OnDragStart", function()
-            if TWT_CONFIG and TWT_CONFIG.lock then return end
+            if OctoTWT_CONFIG and OctoTWT_CONFIG.lock then return end
 
             local mover = _G["ThreatMeterMover"]
             if mover then mover:StartMoving() end

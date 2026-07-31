@@ -2,7 +2,7 @@
     xsi:schemaLocation="http://www.blizzard.com/wow/ui/..\FrameXML\UI.xsd">
     <Script file="TWThreat.lua"/>
 
-    <Frame name="TankModeExtraFrameTemplate" virtual="true">
+    <Frame name="OctoTankModeExtraFrameTemplate" virtual="true">
         <Size>
             <AbsDimension x="300" y="24"/>
         </Size>
@@ -103,14 +103,14 @@
                 </Anchors>
                 <Scripts>
                     <OnClick>
-                        TWTTargetButton_OnClick(this:GetID())
+                        OctoTWTTargetButton_OnClick(this:GetID())
                     </OnClick>
                 </Scripts>
             </Button>
         </Frames>
     </Frame>
 
-    <Button name="TWTFontFrameTemplate" inherits="UIPanelButtonTemplate" virtual="true">
+    <Button name="OctoTWTFontFrameTemplate" inherits="UIPanelButtonTemplate" virtual="true">
         <NormalTexture/>
         <PushedTexture/>
         <HighlightTexture name="$parentHT" file="Interface\AddOns\OctoUI\Modules\Threat\images\textures\Smooth" alphaMode="ADD"/>
@@ -142,12 +142,12 @@
         </Anchors>
         <Scripts>
             <OnClick>
-                TWTFontSelect(this:GetID())
+                OctoTWTFontSelect(this:GetID())
             </OnClick>
         </Scripts>
     </Button>
 
-    <Frame name="TWThreat" virtual="true">
+    <Frame name="OctoTWThreat" virtual="true">
         <Size>
             <AbsDimension x="1" y="19"/>
         </Size>
@@ -260,7 +260,7 @@
         </Layers>
     </Frame>
 
-    <Slider name="TWTSliderTemplate" orientation="HORIZONTAL" enableMouse="true" virtual="true">
+    <Slider name="OctoTWTSliderTemplate" orientation="HORIZONTAL" enableMouse="true" virtual="true">
         <Size x="144" y="17"/>
         <HitRectInsets left="0" right="0" top="-10" bottom="-10"/>
         <Backdrop bgFile="Interface\Buttons\UI-SliderBar-Background"
@@ -274,7 +274,7 @@
         </ThumbTexture>
     </Slider>
 
-    <Frame name="TWTFullScreenGlow" alpha="0" hidden="true" toplevel="false" frameStrata="LOW">
+    <Frame name="OctoTWTFullScreenGlow" alpha="0" hidden="true" toplevel="false" frameStrata="LOW">
         <Layers>
             <Layer level="BACKGROUND">
                 <Texture name="$parentTexture" file="Interface\AddOns\OctoUI\Modules\Threat\images\fs_glow" alphaMode="ADD">
@@ -286,13 +286,13 @@
         </Layers>
     </Frame>
 
-    <Font name="Mono" font="Interface\AddOns\OctoUI\Modules\Threat\fonts\RobotoMono.ttf" virtual="true">
+    <Font name="OctoTWTMono" font="Interface\AddOns\OctoUI\Modules\Threat\fonts\RobotoMono.ttf" virtual="true">
         <FontHeight>
             <AbsValue val="10"/>
         </FontHeight>
     </Font>
 
-    <Frame name="TWTWarning" hidden="true" parent="UIParent">
+    <Frame name="OctoTWTWarning" hidden="true" parent="UIParent">
         <Size>
             <AbsDimension x="500" y="40"/>
         </Size>
@@ -320,7 +320,7 @@
         </Layers>
     </Frame>
 
-    <Frame name="TWTMain" hidden="true" toplevel="true"
+    <Frame name="OctoTWTMain" hidden="true" toplevel="true"
            parent="UIParent" movable="false" enableMouse="true" resizable="true">
         <Size>
             <AbsDimension x="300"/>
@@ -370,7 +370,7 @@
             </Layer>
             <Layer level="OVERLAY">
 
-                <FontString name="CombatHeal" font="Fonts\FRIZQT__.TTF" text="+1242" hidden="true">
+                <FontString name="OctoTWTCombatHeal" font="Fonts\FRIZQT__.TTF" text="+1242" hidden="true">
                     <FontHeight val="40"/>
                     <Color r="0.1" g="1" b="0.1" a="1"/>
                     <Shadow>
@@ -382,7 +382,7 @@
                     </Size>
                 </FontString>
 
-                <FontString name="pps" inherits="GameFontHighlightSmall" text="pps"
+                <FontString name="OctoTWTpps" inherits="GameFontHighlightSmall" text="pps"
                             justifyH="LEFT" hidden="true">
                     <Size>
                         <AbsDimension x="305" y="20"/>
@@ -469,7 +469,7 @@
             <OnDragStart>
                 -- upstream compared the lock icon's texture path; the config
                 -- flag is the actual source of truth and survives path moves
-                if TWT_CONFIG and not TWT_CONFIG.lock
+                if OctoTWT_CONFIG and not OctoTWT_CONFIG.lock
                 then
                 this:StartMoving();
                 this.isMoving = true;
@@ -497,7 +497,7 @@
                 </Anchors>
                 <Scripts>
                     <OnClick>
-                        TWTSettingsToggle_OnClick()
+                        OctoTWTSettingsToggle_OnClick()
                     </OnClick>
                     <OnEnter>
                         GameTooltip:ClearLines();
@@ -526,7 +526,7 @@
                 </Anchors>
                 <Scripts>
                     <OnClick>
-                        TWTChangeSetting_OnClick(0, 'lock')
+                        OctoTWTChangeSetting_OnClick(0, 'lock')
                     </OnClick>
                     <OnEnter>
                         GameTooltip:ClearLines();
@@ -555,7 +555,7 @@
                 </Anchors>
                 <Scripts>
                     <OnClick>
-                        TWTCloseButton_OnClick()
+                        OctoTWTCloseButton_OnClick()
                     </OnClick>
                     <OnEnter>
                         GameTooltip:ClearLines();
@@ -569,7 +569,7 @@
                 </Scripts>
             </Button>
 
-            <Button name="TWTResizeButton">
+            <Button name="OctoTWTResizeButton">
                 <NormalTexture file="Interface\AddOns\OctoUI\Modules\Threat\images\ResizeGrip"/>
                 <HighlightTexture file="Interface\AddOns\OctoUI\Modules\Threat\images\ResizeGrip" alphaMode="ADD"/>
                 <Size>
@@ -584,13 +584,13 @@
                 </Anchors>
                 <Scripts>
                     <OnMouseDown>
-                        TWTMain:StartSizing("BOTTOMRIGHT")
-                        TWTMain:SetUserPlaced(true)
-                        TWTMainWindow_Resizing()
+                        OctoTWTMain:StartSizing("BOTTOMRIGHT")
+                        OctoTWTMain:SetUserPlaced(true)
+                        OctoTWTMainWindow_Resizing()
                     </OnMouseDown>
                     <OnMouseUp>
-                        TWTMain:StopMovingOrSizing()
-                        TWTMainMainWindow_Resized()
+                        OctoTWTMain:StopMovingOrSizing()
+                        OctoTWTMainMainWindow_Resized()
                     </OnMouseUp>
                     <OnClick>
                     </OnClick>
@@ -600,7 +600,7 @@
         </Frames>
     </Frame>
 
-    <Frame name="TWTMainSettings" hidden="true" toplevel="true"
+    <Frame name="OctoTWTMainSettings" hidden="true" toplevel="true"
            movable="true" enableMouse="true">
         <Size>
             <AbsDimension x="300" y="320"/>
@@ -677,7 +677,7 @@
                 </Anchors>
                 <Scripts>
                     <OnClick>
-                        TWTSettingsToggle_OnClick()
+                        OctoTWTSettingsToggle_OnClick()
                     </OnClick>
                     <OnEnter>
                         GameTooltip:ClearLines();
@@ -707,7 +707,7 @@
                 </Anchors>
                 <Scripts>
                     <OnClick>
-                        TWTSettingsTab_OnClick(this:GetID())
+                        OctoTWTSettingsTab_OnClick(this:GetID())
                     </OnClick>
                 </Scripts>
             </Button>
@@ -728,7 +728,7 @@
                 </Anchors>
                 <Scripts>
                     <OnClick>
-                        TWTSettingsTab_OnClick(this:GetID())
+                        OctoTWTSettingsTab_OnClick(this:GetID())
                     </OnClick>
                 </Scripts>
             </Button>
@@ -749,7 +749,7 @@
                 </Anchors>
                 <Scripts>
                     <OnClick>
-                        TWTSettingsTab_OnClick(this:GetID())
+                        OctoTWTSettingsTab_OnClick(this:GetID())
                     </OnClick>
                 </Scripts>
             </Button>
@@ -768,7 +768,7 @@
                 </Anchors>
                 <Frames>
 
-                    <CheckButton name="TWTMainSettingsShowInCombat" hidden="false">
+                    <CheckButton name="OctoTWTMainSettingsShowInCombat" hidden="false">
                         <Size>
                             <AbsDimension x="20" y="20"/>
                         </Size>
@@ -797,7 +797,7 @@
                         </Frames>
                         <Scripts>
                             <OnClick>
-                                TWTChangeSetting_OnClick(this:GetChecked(), 'showInCombat')
+                                OctoTWTChangeSetting_OnClick(this:GetChecked(), 'showInCombat')
                             </OnClick>
                             <OnEnter>
                                 GameTooltip:ClearLines();
@@ -817,7 +817,7 @@
                         <DisabledCheckedTexture file="Interface\Buttons\UI-CheckBox-Check-Disabled"/>
                     </CheckButton>
 
-                    <CheckButton name="TWTMainSettingsHideOOC" hidden="false">
+                    <CheckButton name="OctoTWTMainSettingsHideOOC" hidden="false">
                         <Size>
                             <AbsDimension x="20" y="20"/>
                         </Size>
@@ -846,7 +846,7 @@
                         </Frames>
                         <Scripts>
                             <OnClick>
-                                TWTChangeSetting_OnClick(this:GetChecked(), 'hideOOC')
+                                OctoTWTChangeSetting_OnClick(this:GetChecked(), 'hideOOC')
                             </OnClick>
                             <OnEnter>
                                 GameTooltip:ClearLines();
@@ -866,7 +866,7 @@
                         <DisabledCheckedTexture file="Interface\Buttons\UI-CheckBox-Check-Disabled"/>
                     </CheckButton>
 
-                    <CheckButton name="TWTMainSettingsTankMode" hidden="false">
+                    <CheckButton name="OctoTWTMainSettingsTankMode" hidden="false">
                         <Size>
                             <AbsDimension x="20" y="20"/>
                         </Size>
@@ -895,7 +895,7 @@
                         </Frames>
                         <Scripts>
                             <OnClick>
-                                TWTChangeSetting_OnClick(this:GetChecked(), 'tankMode')
+                                OctoTWTChangeSetting_OnClick(this:GetChecked(), 'tankMode')
                             </OnClick>
                             <OnEnter>
                                 GameTooltip:ClearLines();
@@ -918,7 +918,7 @@
                         <DisabledCheckedTexture file="Interface\Buttons\UI-CheckBox-Check-Disabled"/>
                     </CheckButton>
 
-                    <CheckButton name="TWTMainSettingsLabelRow" hidden="false">
+                    <CheckButton name="OctoTWTMainSettingsLabelRow" hidden="false">
                         <Size>
                             <AbsDimension x="20" y="20"/>
                         </Size>
@@ -947,7 +947,7 @@
                         </Frames>
                         <Scripts>
                             <OnClick>
-                                TWTChangeSetting_OnClick(this:GetChecked(), 'labelRow')
+                                OctoTWTChangeSetting_OnClick(this:GetChecked(), 'labelRow')
                             </OnClick>
                             <OnEnter>
                                 GameTooltip:ClearLines();
@@ -967,7 +967,7 @@
                         <DisabledCheckedTexture file="Interface\Buttons\UI-CheckBox-Check-Disabled"/>
                     </CheckButton>
 
-                    <Button name="TWTMainSettingsHealerMasterTargetButton" inherits="UIPanelButtonTemplate"
+                    <Button name="OctoTWTMainSettingsHealerMasterTargetButton" inherits="UIPanelButtonTemplate"
                             text="From Target" hidden="true">
                         <NormalTexture name="$parentNT" file="Interface\AddOns\OctoUI\Modules\Threat\images\textures\Smooth"
                                        alphaMode="ADD">
@@ -1003,7 +1003,7 @@
                         </Layers>
                         <Scripts>
                             <OnClick>
-                                TWTHealerMasterTarget_OnClick()
+                                OctoTWTHealerMasterTarget_OnClick()
                             </OnClick>
                             <OnEnter>
                                 GameTooltip:ClearLines();
@@ -1020,7 +1020,7 @@
                         </Scripts>
                     </Button>
 
-                    <Slider name="TWTMainSettingsWindowScaleSlider" inherits="TWTSliderTemplate"
+                    <Slider name="OctoTWTMainSettingsWindowScaleSlider" inherits="OctoTWTSliderTemplate"
                             minValue="0.5" maxValue="1.5" valueStep="0.05">
                         <Anchors>
                             <Anchor point="TOPLEFT">
@@ -1087,12 +1087,12 @@
                         </Layers>
                         <Scripts>
                             <OnValueChanged>
-                                WindowScaleSlider_OnValueChanged()
+                                OctoTWTWindowScaleSlider_OnValueChanged()
                             </OnValueChanged>
                         </Scripts>
                     </Slider>
 
-                    <Slider name="TWTMainSettingsCombatAlphaSlider" inherits="TWTSliderTemplate"
+                    <Slider name="OctoTWTMainSettingsCombatAlphaSlider" inherits="OctoTWTSliderTemplate"
                             minValue="0.5" maxValue="1" valueStep="0.05">
                         <Anchors>
                             <Anchor point="TOPLEFT">
@@ -1146,12 +1146,12 @@
                         </Layers>
                         <Scripts>
                             <OnValueChanged>
-                                CombatOpacitySlider_OnValueChanged()
+                                OctoTWTCombatOpacitySlider_OnValueChanged()
                             </OnValueChanged>
                         </Scripts>
                     </Slider>
 
-                    <Slider name="TWTMainSettingsOOCAlphaSlider" inherits="TWTSliderTemplate"
+                    <Slider name="OctoTWTMainSettingsOOCAlphaSlider" inherits="OctoTWTSliderTemplate"
                             minValue="0.5" maxValue="1" valueStep="0.05">
                         <Anchors>
                             <Anchor point="TOPLEFT">
@@ -1205,7 +1205,7 @@
                         </Layers>
                         <Scripts>
                             <OnValueChanged>
-                                OOCombatSlider_OnValueChanged()
+                                OctoTWTOOCombatSlider_OnValueChanged()
                             </OnValueChanged>
                         </Scripts>
                     </Slider>
@@ -1228,7 +1228,7 @@
                 </Anchors>
                 <Frames>
 
-                    <Button name="TWTMainSettingsFontButton" inherits="UIPanelButtonTemplate" text="Font">
+                    <Button name="OctoTWTMainSettingsFontButton" inherits="UIPanelButtonTemplate" text="Font">
                         <NormalTexture name="$parentNT" file="Interface\AddOns\OctoUI\Modules\Threat\images\textures\Smooth"
                                        alphaMode="ADD">
                         </NormalTexture>
@@ -1263,11 +1263,11 @@
                         </Layers>
                         <Scripts>
                             <OnClick>
-                                TWTFontButton_OnClick()
+                                OctoTWTFontButton_OnClick()
                             </OnClick>
                         </Scripts>
                     </Button>
-                    <Frame name="TWTMainSettingsFontList" hidden="true" frameStrata="DIALOG">
+                    <Frame name="OctoTWTMainSettingsFontList" hidden="true" frameStrata="DIALOG">
                         <Size>
                             <AbsDimension x="140" y="240"/>
                         </Size>
@@ -1275,7 +1275,7 @@
                                   tile="false">
                         </Backdrop>
                         <Anchors>
-                            <Anchor point="TOP" relativeTo="TWTMainSettingsFontButton">
+                            <Anchor point="TOP" relativeTo="OctoTWTMainSettingsFontButton">
                                 <Offset>
                                     <AbsDimension x="0" y="-16"/>
                                 </Offset>
@@ -1286,7 +1286,7 @@
                         </Frames>
                     </Frame>
 
-                    <Slider name="TWTMainSettingsFrameHeightSlider" inherits="TWTSliderTemplate"
+                    <Slider name="OctoTWTMainSettingsFrameHeightSlider" inherits="OctoTWTSliderTemplate"
                             minValue="20" maxValue="30" valueStep="2">
                         <Anchors>
                             <Anchor point="TOPLEFT">
@@ -1340,12 +1340,12 @@
                         </Layers>
                         <Scripts>
                             <OnValueChanged>
-                                FrameHeightSlider_OnValueChanged()
+                                OctoTWTFrameHeightSlider_OnValueChanged()
                             </OnValueChanged>
                         </Scripts>
                     </Slider>
 
-                    <CheckButton name="TWTMainSettingsColumnsTPS" hidden="false">
+                    <CheckButton name="OctoTWTMainSettingsColumnsTPS" hidden="false">
                         <Size>
                             <AbsDimension x="20" y="20"/>
                         </Size>
@@ -1374,7 +1374,7 @@
                         </Frames>
                         <Scripts>
                             <OnClick>
-                                TWTChangeSetting_OnClick(this:GetChecked(), 'colTPS')
+                                OctoTWTChangeSetting_OnClick(this:GetChecked(), 'colTPS')
                             </OnClick>
                             <OnEnter>
                                 GameTooltip:ClearLines();
@@ -1393,7 +1393,7 @@
                         <DisabledCheckedTexture file="Interface\Buttons\UI-CheckBox-Check-Disabled"/>
                     </CheckButton>
 
-                    <CheckButton name="TWTMainSettingsColumnsThreat" hidden="false">
+                    <CheckButton name="OctoTWTMainSettingsColumnsThreat" hidden="false">
                         <Size>
                             <AbsDimension x="20" y="20"/>
                         </Size>
@@ -1422,7 +1422,7 @@
                         </Frames>
                         <Scripts>
                             <OnClick>
-                                TWTChangeSetting_OnClick(this:GetChecked(), 'colThreat')
+                                OctoTWTChangeSetting_OnClick(this:GetChecked(), 'colThreat')
                             </OnClick>
                             <OnEnter>
                                 GameTooltip:ClearLines();
@@ -1441,7 +1441,7 @@
                         <DisabledCheckedTexture file="Interface\Buttons\UI-CheckBox-Check-Disabled"/>
                     </CheckButton>
 
-                    <CheckButton name="TWTMainSettingsColumnsPercent" hidden="false">
+                    <CheckButton name="OctoTWTMainSettingsColumnsPercent" hidden="false">
                         <Size>
                             <AbsDimension x="20" y="20"/>
                         </Size>
@@ -1470,7 +1470,7 @@
                         </Frames>
                         <Scripts>
                             <OnClick>
-                                TWTChangeSetting_OnClick(this:GetChecked(), 'colPerc')
+                                OctoTWTChangeSetting_OnClick(this:GetChecked(), 'colPerc')
                             </OnClick>
                             <OnEnter>
                                 GameTooltip:ClearLines();
@@ -1506,7 +1506,7 @@
                 </Anchors>
                 <Frames>
 
-                    <CheckButton name="TWTMainSettingsTargetFrameGlow" hidden="false">
+                    <CheckButton name="OctoTWTMainSettingsTargetFrameGlow" hidden="false">
                         <Size>
                             <AbsDimension x="20" y="20"/>
                         </Size>
@@ -1535,7 +1535,7 @@
                         </Frames>
                         <Scripts>
                             <OnClick>
-                                TWTChangeSetting_OnClick(this:GetChecked(), 'glow')
+                                OctoTWTChangeSetting_OnClick(this:GetChecked(), 'glow')
                             </OnClick>
                             <OnEnter>
                                 GameTooltip:ClearLines();
@@ -1559,7 +1559,7 @@
                         <DisabledCheckedTexture file="Interface\Buttons\UI-CheckBox-Check-Disabled"/>
                     </CheckButton>
 
-                    <CheckButton name="TWTMainSettingsPercNumbers" hidden="false">
+                    <CheckButton name="OctoTWTMainSettingsPercNumbers" hidden="false">
                         <Size>
                             <AbsDimension x="20" y="20"/>
                         </Size>
@@ -1588,7 +1588,7 @@
                         </Frames>
                         <Scripts>
                             <OnClick>
-                                TWTChangeSetting_OnClick(this:GetChecked(), 'perc')
+                                OctoTWTChangeSetting_OnClick(this:GetChecked(), 'perc')
                             </OnClick>
                             <OnEnter>
                                 GameTooltip:ClearLines();
@@ -1609,7 +1609,7 @@
                     </CheckButton>
 
 
-                    <CheckButton name="TWTMainSettingsTargetFrameGlowUF" hidden="false">
+                    <CheckButton name="OctoTWTMainSettingsTargetFrameGlowUF" hidden="false">
                         <Size>
                             <AbsDimension x="20" y="20"/>
                         </Size>
@@ -1638,7 +1638,7 @@
                         </Frames>
                         <Scripts>
                             <OnClick>
-                                TWTChangeSetting_OnClick(this:GetChecked(), 'glowUF')
+                                OctoTWTChangeSetting_OnClick(this:GetChecked(), 'glowUF')
                             </OnClick>
                             <OnEnter>
                                 GameTooltip:ClearLines();
@@ -1662,7 +1662,7 @@
                         <DisabledCheckedTexture file="Interface\Buttons\UI-CheckBox-Check-Disabled"/>
                     </CheckButton>
 
-                    <CheckButton name="TWTMainSettingsPercNumbersUF" hidden="false">
+                    <CheckButton name="OctoTWTMainSettingsPercNumbersUF" hidden="false">
                         <Size>
                             <AbsDimension x="20" y="20"/>
                         </Size>
@@ -1691,7 +1691,7 @@
                         </Frames>
                         <Scripts>
                             <OnClick>
-                                TWTChangeSetting_OnClick(this:GetChecked(), 'percUF')
+                                OctoTWTChangeSetting_OnClick(this:GetChecked(), 'percUF')
                             </OnClick>
                             <OnEnter>
                                 GameTooltip:ClearLines();
@@ -1711,7 +1711,7 @@
                         <DisabledCheckedTexture file="Interface\Buttons\UI-CheckBox-Check-Disabled"/>
                     </CheckButton>
 
-                    <CheckButton name="TWTMainSettingsPercNumbersUFtop" hidden="false">
+                    <CheckButton name="OctoTWTMainSettingsPercNumbersUFtop" hidden="false">
                         <Size>
                             <AbsDimension x="20" y="20"/>
                         </Size>
@@ -1740,7 +1740,7 @@
                         </Frames>
                         <Scripts>
                             <OnClick>
-                                TWTChangeSetting_OnClick(this:GetChecked(), 'percUFtop')
+                                OctoTWTChangeSetting_OnClick(this:GetChecked(), 'percUFtop')
                             </OnClick>
                             <OnEnter>
                                 GameTooltip:ClearLines();
@@ -1760,7 +1760,7 @@
                         <DisabledCheckedTexture file="Interface\Buttons\UI-CheckBox-Check-Disabled"/>
                     </CheckButton>
 
-                    <CheckButton name="TWTMainSettingsPercNumbersUFbottom" hidden="false">
+                    <CheckButton name="OctoTWTMainSettingsPercNumbersUFbottom" hidden="false">
                         <Size>
                             <AbsDimension x="20" y="20"/>
                         </Size>
@@ -1789,7 +1789,7 @@
                         </Frames>
                         <Scripts>
                             <OnClick>
-                                TWTChangeSetting_OnClick(this:GetChecked(), 'percUFbottom')
+                                OctoTWTChangeSetting_OnClick(this:GetChecked(), 'percUFbottom')
                             </OnClick>
                             <OnEnter>
                                 GameTooltip:ClearLines();
@@ -1810,7 +1810,7 @@
                     </CheckButton>
 
 
-                    <CheckButton name="TWTMainSettingsFullScreenGlow" hidden="false">
+                    <CheckButton name="OctoTWTMainSettingsFullScreenGlow" hidden="false">
                         <Size>
                             <AbsDimension x="20" y="20"/>
                         </Size>
@@ -1839,7 +1839,7 @@
                         </Frames>
                         <Scripts>
                             <OnClick>
-                                TWTChangeSetting_OnClick(this:GetChecked(), 'fullScreenGlow')
+                                OctoTWTChangeSetting_OnClick(this:GetChecked(), 'fullScreenGlow')
                             </OnClick>
                             <OnEnter>
                                 GameTooltip:ClearLines();
@@ -1860,7 +1860,7 @@
                         <DisabledCheckedTexture file="Interface\Buttons\UI-CheckBox-Check-Disabled"/>
                     </CheckButton>
 
-                    <CheckButton name="TWTMainSettingsAggroSound" hidden="false">
+                    <CheckButton name="OctoTWTMainSettingsAggroSound" hidden="false">
                         <Size>
                             <AbsDimension x="20" y="20"/>
                         </Size>
@@ -1889,7 +1889,7 @@
                         </Frames>
                         <Scripts>
                             <OnClick>
-                                TWTChangeSetting_OnClick(this:GetChecked(), 'aggroSound')
+                                OctoTWTChangeSetting_OnClick(this:GetChecked(), 'aggroSound')
                             </OnClick>
                             <OnEnter>
                                 GameTooltip:ClearLines();
@@ -1910,7 +1910,7 @@
                         <DisabledCheckedTexture file="Interface\Buttons\UI-CheckBox-Check-Disabled"/>
                     </CheckButton>
 
-                    <Slider name="TWTMainSettingsAggroThresholdSlider" inherits="TWTSliderTemplate"
+                    <Slider name="OctoTWTMainSettingsAggroThresholdSlider" inherits="OctoTWTSliderTemplate"
                             minValue="65" maxValue="95" valueStep="1">
                         <Anchors>
                             <Anchor point="TOPLEFT">
@@ -1977,7 +1977,7 @@
                         </Layers>
                         <Scripts>
                             <OnValueChanged>
-                                AggroThresholdSlider_OnValueChanged()
+                                OctoTWTAggroThresholdSlider_OnValueChanged()
                             </OnValueChanged>
                         </Scripts>
                     </Slider>
@@ -2005,7 +2005,7 @@
         </Scripts>
     </Frame>
 
-    <Frame name="TWTMainTankModeWindow" hidden="true" toplevel="true"
+    <Frame name="OctoTWTMainTankModeWindow" hidden="true" toplevel="true"
            parent="UIParent" movable="true" enableMouse="true">
         <Size>
             <AbsDimension x="300" y="60"/>
@@ -2067,7 +2067,7 @@
                 </Anchors>
                 <Scripts>
                     <OnClick>
-                        TWTTankModeWindowCloseButton_OnClick()
+                        OctoTWTTankModeWindowCloseButton_OnClick()
                     </OnClick>
                     <OnEnter>
                         GameTooltip:ClearLines();
@@ -2096,7 +2096,7 @@
                 </Anchors>
                 <Scripts>
                     <OnClick>
-                        TWTTankModeWindowChangeStick_OnClick('Top')
+                        OctoTWTTankModeWindowChangeStick_OnClick('Top')
                     </OnClick>
                     <OnEnter>
                         GameTooltip:ClearLines();
@@ -2125,7 +2125,7 @@
                 </Anchors>
                 <Scripts>
                     <OnClick>
-                        TWTTankModeWindowChangeStick_OnClick('Right')
+                        OctoTWTTankModeWindowChangeStick_OnClick('Right')
                     </OnClick>
                     <OnEnter>
                         GameTooltip:ClearLines();
@@ -2154,7 +2154,7 @@
                 </Anchors>
                 <Scripts>
                     <OnClick>
-                        TWTTankModeWindowChangeStick_OnClick('Bottom')
+                        OctoTWTTankModeWindowChangeStick_OnClick('Bottom')
                     </OnClick>
                     <OnEnter>
                         GameTooltip:ClearLines();
@@ -2183,7 +2183,7 @@
                 </Anchors>
                 <Scripts>
                     <OnClick>
-                        TWTTankModeWindowChangeStick_OnClick('Left')
+                        OctoTWTTankModeWindowChangeStick_OnClick('Left')
                     </OnClick>
                     <OnEnter>
                         GameTooltip:ClearLines();
@@ -2198,11 +2198,11 @@
                 </Scripts>
             </Button>
 
-            <Frame name="TMEF1" hidden="true" inherits="TankModeExtraFrameTemplate"/>
-            <Frame name="TMEF2" hidden="true" inherits="TankModeExtraFrameTemplate"/>
-            <Frame name="TMEF3" hidden="true" inherits="TankModeExtraFrameTemplate"/>
-            <Frame name="TMEF4" hidden="true" inherits="TankModeExtraFrameTemplate"/>
-            <Frame name="TMEF5" hidden="true" inherits="TankModeExtraFrameTemplate"/>
+            <Frame name="OctoTMEF1" hidden="true" inherits="OctoTankModeExtraFrameTemplate"/>
+            <Frame name="OctoTMEF2" hidden="true" inherits="OctoTankModeExtraFrameTemplate"/>
+            <Frame name="OctoTMEF3" hidden="true" inherits="OctoTankModeExtraFrameTemplate"/>
+            <Frame name="OctoTMEF4" hidden="true" inherits="OctoTankModeExtraFrameTemplate"/>
+            <Frame name="OctoTMEF5" hidden="true" inherits="OctoTankModeExtraFrameTemplate"/>
 
         </Frames>
         <Scripts>
@@ -2214,7 +2214,7 @@
             <OnDragStart>
                 -- upstream compared the lock icon's texture path; the config
                 -- flag is the actual source of truth and survives path moves
-                if TWT_CONFIG and not TWT_CONFIG.lock
+                if OctoTWT_CONFIG and not OctoTWT_CONFIG.lock
                 then
                 this:StartMoving();
                 this.isMoving = true;
@@ -2223,12 +2223,12 @@
             <OnDragStop>
                 this:StopMovingOrSizing();
                 this.isMoving = false;
-                TWTTankModeWindowChangeStick_OnClick('Free')
+                OctoTWTTankModeWindowChangeStick_OnClick('Free')
             </OnDragStop>
         </Scripts>
     </Frame>
 
-    <Frame name="TWThreatDisplayTarget" frameStrata="LOW" hidden="true">
+    <Frame name="OctoTWThreatDisplayTarget" frameStrata="LOW" hidden="true">
         <Size>
             <AbsDimension x="232" y="100"/>
         </Size>
@@ -2300,7 +2300,7 @@
         </Layers>
     </Frame>
 
-    <Frame name="TWThreatDisplayTargetUF" frameStrata="LOW" hidden="true">
+    <Frame name="OctoTWThreatDisplayTargetUF" frameStrata="LOW" hidden="true">
         <Size>
             <AbsDimension x="2" y="2"/>
         </Size>
@@ -2378,7 +2378,7 @@
         </Layers>
     </Frame>
 
-    <Frame name="TWTWithAddonList" hidden="true" toplevel="true" parent="UIParent" movable="true" enableMouse="true">
+    <Frame name="OctoTWTWithAddonList" hidden="true" toplevel="true" parent="UIParent" movable="true" enableMouse="true">
         <Size>
             <AbsDimension x="540" y="210"/>
         </Size>
@@ -2421,7 +2421,7 @@
                         </Anchor>
                     </Anchors>
                 </FontString>
-                <FontString name="$parentText" inherits="Mono" text="">
+                <FontString name="$parentText" inherits="OctoTWTMono" text="">
                     <Anchors>
                         <Anchor point="CENTER">
                             <Offset>
@@ -2455,7 +2455,7 @@
                 </Anchors>
                 <Scripts>
                     <OnClick>
-                        QueryWho_OnClick()
+                        OctoTWTQueryWho_OnClick()
                     </OnClick>
                 </Scripts>
             </Button>
@@ -2476,7 +2476,7 @@
                 </Anchors>
                 <Scripts>
                     <OnClick>
-                        getglobal('TWTWithAddonList'):Hide()
+                        getglobal('OctoTWTWithAddonList'):Hide()
                     </OnClick>
                 </Scripts>
             </Button>

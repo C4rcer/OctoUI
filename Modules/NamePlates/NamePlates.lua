@@ -360,9 +360,19 @@ function mod:OnShow(self, isUpdate)
 	self.UnitFrame.Name:ClearAllPoints()
 
 	mod:ConfigureElement_HealthBar(self.UnitFrame)
+
+	--The anchor chain is cast bar -> power bar -> health bar, and all three used to be
+	--configured only when the health bar was enabled. Friendly players and friendly NPCs
+	--ship with the health bar off and the cast bar on, so their cast bars were never
+	--given an anchor, a height or a font -- which is what raised "Font not set" on the
+	--first friendly cast in range. Position and style all three unconditionally; whether
+	--each one is *shown* is its own business, decided by its own enable flag in
+	--UpdateElement_Power and UpdateElement_Cast. ConfigureElement_HealthBar above
+	--already worked this way, which is why the chain resolves at all.
+	mod:ConfigureElement_PowerBar(self.UnitFrame)
+	mod:ConfigureElement_CastBar(self.UnitFrame)
+
 	if mod.db.units[unitType].healthbar.enable then
-		mod:ConfigureElement_PowerBar(self.UnitFrame)
-		mod:ConfigureElement_CastBar(self.UnitFrame)
 		mod:ConfigureElement_Glow(self.UnitFrame)
 
 		--set both unconditionally: UpdateAuraIcons releases the icons when disabled,
@@ -485,10 +495,16 @@ function mod:UpdateElement_All(frame, noTargetFrame, filterIgnore)
 	if healthShown then
 		mod:UpdateElement_Health(frame)
 		mod:UpdateElement_HealthColor(frame)
-		mod:UpdateElement_Power(frame)
-		mod:UpdateElement_Cast(frame, nil, frame.unit)
 		mod:UpdateElement_Auras(frame)
 	end
+
+	--Outside that gate, because both are configured unconditionally now and both already
+	--decide for themselves: UpdateElement_Power hides and collapses the bar to a hairline
+	--unless the health bar is shown, and UpdateElement_Cast returns unless the unit type's
+	--castbar.enable is set. Left inside, a friendly plate never collapsed its power bar,
+	--so the cast bar below it sat a few pixels low.
+	mod:UpdateElement_Power(frame)
+	mod:UpdateElement_Cast(frame, nil, frame.unit)
 	mod:UpdateElement_RaidIcon(frame)
 	mod:UpdateElement_Name(frame)
 	mod:UpdateElement_Level(frame)

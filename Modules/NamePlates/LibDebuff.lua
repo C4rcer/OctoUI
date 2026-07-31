@@ -95,6 +95,15 @@ local function cmatch(str, pattern)
 	return ra, rb, rc, rd, re
 end
 
+--Public: the damage meter's combat-log fallback needs exactly this, and writing a
+--second copy of the capture-reordering logic would mean two things to keep right when
+--a locale turns out to order its arguments differently. Takes a raw combat log line and
+--one of Blizzard's format strings, returns the captures in the order the *format string*
+--declares them, whatever order the locale prints them in.
+function lib:Match(str, pattern)
+	return cmatch(str, pattern)
+end
+
 --[[ durations ]]--
 function lib:GetMaxRank(effect)
 	local durations = Durations()

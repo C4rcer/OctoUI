@@ -23,7 +23,7 @@ E.PopupDialogs = {}
 E.StaticPopup_DisplayedFrames = {}
 
 E.PopupDialogs["ELVUI_UPDATE_AVAILABLE"] = {
-	text = L["ElvUI is five or more revisions out of date. You can download the newest version from https://github.com/ElvUI-TBC/ElvUI/"],
+	text = L["OctoUI is five or more revisions out of date. You can download the newest version from https://github.com/C4rcer/OctoUI"],
 	hasEditBox = 1,
 	OnShow = function()
 		this.editBox:SetAutoFocus(false)
@@ -97,12 +97,9 @@ E.PopupDialogs["ELVUI_EDITBOX"] = {
 	hideOnEscape = 1,
 }
 
-E.PopupDialogs["CLIENT_UPDATE_REQUEST"] = {
-	text = L["Detected that your ElvUI Config addon is out of date. Not having your ElvUI Config addon up to date will result in missing options."],
-	button1 = OKAY,
-	OnAccept = E.noop,
-	showAlert = 1
-}
+--CLIENT_UPDATE_REQUEST removed: it asked the user to update a separate ElvUI_Config
+--addon, which stopped existing when this fork merged into a single addon, and nothing
+--ever called StaticPopup_Show on it in the first place.
 
 E.PopupDialogs["CLIQUE_ADVERT"] = {
 	text = L["Using the healer layout it is highly recommended you download the addon Clique if you wish to have the click-to-heal function."],

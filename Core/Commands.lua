@@ -272,8 +272,17 @@ function E:MeterReport(msg)
 		return
 	end
 
+	--Which of the two sources is running, and for the fallback how much of the combat
+	--log this client actually handed over. A fallback with no format strings behind it
+	--is a window that will stay empty forever, and that has to be visible rather than
+	--looking like nothing is happening.
+	local source, patterns, events = M:MeterSource()
+	if source == "combatlog" then
+		E:Print(format("|cffff9900combat log fallback|r - nampower's events are not on this client, so the meter is reading the log instead: %d format strings, %d events. Less accurate, and capped by the log's own range.", patterns or 0, events or 0))
+	end
+
 	if not M.MeterAvailable() then
-		E:Print("|cffff0000nampower's combat events are not available|r - the meter reads those rather than parsing the combat log, so it has nothing to work from.")
+		E:Print("|cffff0000No usable source.|r nampower's combat events are not available, and this client did not provide the combat log format strings to fall back on either.")
 		return
 	end
 
@@ -291,6 +300,17 @@ function E:MeterReport(msg)
 
 	E:Print(format("%s -- %.1fs, %d sources", segment, duration, getn(rows)))
 
+	--The banked fights, so the window's segment button is not the only way to know
+	--what is in there
+	local past = M:MeterHistory()
+	if getn(past) > 0 then
+		local line = ""
+		for i = 1, getn(past) do
+			line = line..format("%s%s (%.0fs)", (i > 1) and ", " or "", past[i].label, past[i].duration)
+		end
+		E:Print(format("%d banked: %s", getn(past), line))
+	end
+
 	if getn(rows) == 0 then
 		E:Print("nothing recorded yet")
 		return
@@ -301,6 +321,15 @@ function E:MeterReport(msg)
 		if row.damage > 0 or row.healing > 0 then
 			E:Print(format("%d. %s  %d dmg (%.1f dps)%s", i, row.name, row.damage, row.dps,
 				row.healing > 0 and format("  %d heal (%.1f hps)", row.healing, row.hps) or ""))
+
+			--Per-spell breakdown, which until now was recorded and never shown anywhere.
+			--The window has a click-through view of the same data; this is the version
+			--that can be pasted into a chat window.
+			local spells = M:MeterSpells(segment, row.guid, "damage")
+			for s = 1, getn(spells) do
+				E:Print(format("      |cff999999%s  %d  %.0f%%  %d hits|r",
+					spells[s].name, spells[s].damage, spells[s].share * 100, spells[s].hits))
+			end
 		end
 	end
 end
@@ -320,7 +349,7 @@ end
 --screen by the saved position, it is scaled or faded to nothing, or it is sized to
 --zero height. Reports all of them at once rather than one reload per guess.
 function E:ThreatReport()
-	local frame = _G["TWTMain"]
+	local frame = _G["OctoTWTMain"]
 
 	E:Print(format("module: %s, private toggle: %s, standalone TWThreat: %s",
 		E:GetModule("ThreatMeter", true) and "registered" or "|cffff0000MISSING|r",
@@ -338,7 +367,7 @@ function E:ThreatReport()
 
 	E:Print(format("size: %.0f x %.0f, scale %.2f (config %.2f)",
 		frame:GetWidth(), frame:GetHeight(), frame:GetEffectiveScale(),
-		(TWT_CONFIG and TWT_CONFIG.windowScale) or 0))
+		(OctoTWT_CONFIG and OctoTWT_CONFIG.windowScale) or 0))
 
 	--nil means the frame has never been given a position it could resolve
 	local left, top = frame:GetLeft(), frame:GetTop()
@@ -360,28 +389,28 @@ function E:ThreatReport()
 			onScreen and "|cff00ff00on screen|r" or "|cffff0000off screen|r"))
 	end
 
-	if TWT_CONFIG then
+	if OctoTWT_CONFIG then
 		E:Print(format("config: visible %s, hideOOC %s, showInCombat %s, bars %d, bar height %d",
-			tostring(TWT_CONFIG.visible), tostring(TWT_CONFIG.hideOOC),
-			tostring(TWT_CONFIG.showInCombat), TWT_CONFIG.visibleBars or 0,
-			TWT_CONFIG.barHeight or 0))
+			tostring(OctoTWT_CONFIG.visible), tostring(OctoTWT_CONFIG.hideOOC),
+			tostring(OctoTWT_CONFIG.showInCombat), OctoTWT_CONFIG.visibleBars or 0,
+			OctoTWT_CONFIG.barHeight or 0))
 	else
-		E:Print("|cffff0000TWT_CONFIG is nil|r - saved variables never loaded.")
+		E:Print("|cffff0000OctoTWT_CONFIG is nil|r - saved variables never loaded.")
 	end
 end
 
 --Puts the window back in the middle of the screen at a sane size, for when the saved
 --position or scale has put it somewhere unreachable. /twt has no equivalent.
 function E:ThreatReset()
-	local frame = _G["TWTMain"]
+	local frame = _G["OctoTWTMain"]
 	if not frame then
 		E:Print("|cffff0000TWTMain does not exist.|r")
 		return
 	end
 
-	if TWT_CONFIG then
-		TWT_CONFIG.visible = true
-		TWT_CONFIG.windowScale = 1
+	if OctoTWT_CONFIG then
+		OctoTWT_CONFIG.visible = true
+		OctoTWT_CONFIG.windowScale = 1
 	end
 
 	frame:SetScale(1)

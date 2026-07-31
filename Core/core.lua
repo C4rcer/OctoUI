@@ -835,7 +835,7 @@ local function SendRecieve()
 			local msg, ver = tonumber(arg2), tonumber(E.version)
 			if msg and (msg > ver) then -- you're outdated D:
 				if not E.recievedOutOfDateMessage then
-					E:Print(L["ElvUI is out of date. You can download the newest version from https://github.com/ElvUI-TBC/ElvUI/"])
+					E:Print(L["OctoUI is out of date. You can download the newest version from https://github.com/C4rcer/OctoUI"])
 
 					if msg and ((msg - ver) >= 0.01) then
 						E:StaticPopup_Show("ELVUI_UPDATE_AVAILABLE")

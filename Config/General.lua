@@ -335,7 +335,7 @@ E.Options.args.general = {
 					order = 16,
 					type = "toggle",
 					name = RAID_CONTROL,
-					desc = L["Enables the ElvUI Raid Control panel."],
+					desc = L["Enables the OctoUI Raid Control panel."],
 					get = function(info) return E.private.general.raidUtility end,
 					set = function(info, value) E.private.general.raidUtility = value E:StaticPopup_Show("PRIVATE_RL") end
 				},
@@ -897,7 +897,7 @@ E.Options.args.general = {
 					desc = L["Which stats the panel lists. A stat left on still shows when it is zero -- an empty row is an answer."],
 					disabled = function() return not E.db.general.characterStats.enable end,
 					values = function() return B:GetCharacterStatRows() end,
-					get = function(info, key) return E.db.general.characterStats.rows[key] ~= false end,
+					get = function(info, key) return B:CharacterStatRowEnabled(key) end,
 					set = function(info, key, value)
 						E.db.general.characterStats.rows[key] = value
 						B:UpdateCharacterStats()

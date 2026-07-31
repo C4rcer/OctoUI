@@ -380,10 +380,81 @@ L["Melee Crit"] = true;
 L["Agility"] = true;
 L["Intellect"] = true;
 L["Spirit"] = true;
+--School-specific spell power; shown only when it beats the generic figure
+L["Arcane Damage"] = true;
+L["Fire Damage"] = true;
+L["Frost Damage"] = true;
+L["Holy Damage"] = true;
+L["Nature Damage"] = true;
+L["Shadow Damage"] = true;
+--API-sourced rows
+L["Attack Power"] = true;
+L["Ranged Attack Power"] = true;
+L["Defense"] = true;
+L["Dodge"] = true;
+L["Parry"] = true;
+L["Block"] = true;
+L["Block Value"] = true;
+L["Arcane Resistance"] = true;
+L["Fire Resistance"] = true;
+L["Frost Resistance"] = true;
+L["Holy Resistance"] = true;
+L["Nature Resistance"] = true;
+L["Shadow Resistance"] = true;
 --%s is an attribute name, one of the three above.
 L["STATS_INCOMPLETE"] = "Gear, buffs and talents only. The base every character gets from %s is not calculated yet, so this is not your real total.";
+--Shown for a row whose stat has no scan patterns and whose API this client does not have.
+L["STATS_NO_API"] = "This client does not provide a function for this stat, so there is nothing to read. The row is kept so it appears by itself if a future client adds one.";
+--%.2f is the measured crit rate, %d the number of casts behind it.
+L["STATS_CRIT_MEASURED"] = "Measured: %.2f%% over %d casts. The figure above is calculated; this one is what actually happened.";
+--%.1f is Intellect per 1%% crit.
+L["STATS_CRIT_IMPLIED"] = "That rate implies %.1f Intellect per 1%% crit. If it stays far from the calculated figure over a few hundred casts, this server uses a different formula.";
 
 --Experience datatext
 L["Remaining"] = true;
 L["Rested"] = true;
 L["Kills to Level"] = true;
+
+
+--Strings that reached the options tree and the chat frame without ever having a
+--locale entry. AceLocale is registered silent (the fourth argument to NewLocale), so
+--an unknown key quietly returns the key string instead of raising -- which is why
+--these worked at all, and why nothing ever pointed them out. Grouped by the file that
+--uses them.
+
+--Core/ClassCache.lua
+L["Class DB cache wiped."] = true;
+L["Class session cache wiped."] = true;
+
+--Core/StaticPopups.lua
+L["OctoUI is five or more revisions out of date. You can download the newest version from https://github.com/C4rcer/OctoUI"] = true;
+L["Accepting this will reset the UnitFrame settings for %s. Are you sure?"] = true;
+L["Error resetting UnitFrame."] = true;
+
+--Core/core.lua
+L["OctoUI is out of date. You can download the newest version from https://github.com/C4rcer/OctoUI"] = true;
+
+--Modules/Bags/Bags.lua
+L["Vendor / Delete Grays"] = true;
+L["Vendored gray items for: %s"] = true;
+L["Vendoring Grays"] = true;
+
+--Modules/Blizzard/CaptureBar.lua
+L["PvP"] = true;
+
+--Modules/Blizzard/ColorPicker.lua
+L["Copy"] = true;
+L["Paste"] = true;
+
+--Modules/DataTexts/Durability.lua
+L["Durability"] = true;
+
+--Modules/DataTexts/Time.lua
+L["Saved Instance(s)"] = true;
+L["Realm Time:"] = true;
+
+--Modules/Misc/BagItemClick.lua
+L["Hold [Shift] to use item."] = true;
+
+--Modules/UnitFrames/UnitFrames.lua
+L["You cannot copy settings from the same unit."] = true;

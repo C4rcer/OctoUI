@@ -114,6 +114,14 @@ P["general"] = {
 		["rows"] = {
 			["spellPower"] = true,
 			["healingPower"] = true,
+			--On, but each only draws while it exceeds the generic spell power; a school
+			--with no gear behind it has nothing to add to the row above it.
+			["spellPowerArcane"] = true,
+			["spellPowerFire"] = true,
+			["spellPowerFrost"] = true,
+			["spellPowerHoly"] = true,
+			["spellPowerNature"] = true,
+			["spellPowerShadow"] = true,
 			["spellHit"] = true,
 			["spellCrit"] = true,
 			["haste"] = true,
@@ -124,6 +132,21 @@ P["general"] = {
 			["armorPen"] = true,
 			["meleeHit"] = true,
 			["meleeCrit"] = true,
+			["attackPower"] = true,
+			["rangedAttackPower"] = true,
+			["defense"] = true,
+			["dodge"] = true,
+			["parry"] = true,
+			["block"] = true,
+			["blockValue"] = true,
+			--Off: the 1.12 paperdoll already shows resistances beside the character
+			--model. Listed so they can be switched on, not so they appear twice.
+			["resistArcane"] = false,
+			["resistFire"] = false,
+			["resistFrost"] = false,
+			["resistHoly"] = false,
+			["resistNature"] = false,
+			["resistShadow"] = false,
 		}
 	}
 }

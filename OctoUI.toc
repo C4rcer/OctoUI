@@ -4,7 +4,7 @@
 ## Author: Carcer - N'Zoth. Based on ElvUI by Elv and Simpy, 1.12.1 backport by the ElvUI-Vanilla contributors.
 ## Version: 1.0.0
 ## SavedVariables: ElvDB, ElvPrivateDB, GAME_LOCALE
-## SavedVariablesPerCharacter: ElvCharacterDB, TWT_CONFIG
+## SavedVariablesPerCharacter: ElvCharacterDB, OctoTWT_CONFIG, TWT_CONFIG
 ## OptionalDeps: SharedMedia, Tukui, ButtonFacade
 
 # Compatibility polyfills. MUST stay first: everything below assumes select,
