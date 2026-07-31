@@ -181,6 +181,9 @@ function M:Initialize()
 	self:LoadLootRoll()
 	self:LoadChatBubbles()
 
+	--Needs nampower's structured combat events; bails quietly without them
+	self:InitializeDamageMeter()
+
 	--Ported from ShaguTweaks, see each file for attribution
 	self:LoadAutoStance()
 	self:LoadAutoDismount()

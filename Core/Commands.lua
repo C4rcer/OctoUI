@@ -263,6 +263,48 @@ function E:QueueReport()
 	E:Print("Queue watch |cff00ff00on|r - every press now prints how much of the current cast was left, and a queued press prints a second line. Compare the two against the windows above. Run /octoui-queue again to stop.")
 end
 
+--Damage meter totals, before there is any window to read them in. `overall` unless
+--"current" is passed, so a fight can be checked against a whole session.
+function E:MeterReport(msg)
+	local M = E:GetModule("Misc", true)
+	if not (M and M.MeterData) then
+		E:Print("|cffff0000Damage meter is not loaded.|r")
+		return
+	end
+
+	if not M.MeterAvailable() then
+		E:Print("|cffff0000nampower's combat events are not available|r - the meter reads those rather than parsing the combat log, so it has nothing to work from.")
+		return
+	end
+
+	if msg and lower(msg) == "reset" then
+		M:ResetMeter()
+		E:Print("Meter reset.")
+		return
+	elseif msg and lower(msg) == "debug" then
+		E:Print(format("Meter event dump %s.", M:ToggleMeterDebug() and "|cff00ff00on|r - every damage event in range now prints its raw arguments" or "|cffff9900off|r"))
+		return
+	end
+
+	local segment = (msg and lower(msg) == "current") and "current" or "overall"
+	local rows, duration = M:MeterData(segment)
+
+	E:Print(format("%s -- %.1fs, %d sources", segment, duration, getn(rows)))
+
+	if getn(rows) == 0 then
+		E:Print("nothing recorded yet")
+		return
+	end
+
+	for i = 1, getn(rows) do
+		local row = rows[i]
+		if row.damage > 0 or row.healing > 0 then
+			E:Print(format("%d. %s  %d dmg (%.1f dps)%s", i, row.name, row.damage, row.dps,
+				row.healing > 0 and format("  %d heal (%.1f hps)", row.healing, row.hps) or ""))
+		end
+	end
+end
+
 --Delegates: the interesting state is all locals of Modules/Bags/Sort.lua.
 function E:BagSortReport()
 	local B = E:GetModule("Bags", true)
@@ -461,6 +503,7 @@ function E:LoadCommands()
 	self:RegisterChatCommand("octoui-threat", "ThreatReport")
 	self:RegisterChatCommand("octoui-bags", "BagSortReport")
 	self:RegisterChatCommand("octoui-queue", "QueueReport")
+	self:RegisterChatCommand("octoui-dps", "MeterReport")
 	self:RegisterChatCommand("octoui-threatreset", "ThreatReset")
 
 	if E:GetModule("ActionBars") and E.private.actionbar.enable then

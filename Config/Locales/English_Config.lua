@@ -1281,3 +1281,15 @@ L["Below"] = true
 --Auto loot
 L["Auto Loot"] = true
 L["Take everything from a corpse on a normal right click, with no need to hold shift."] = true
+
+--Damage meter
+L["Damage Meter"] = true
+L["Reads nampower's combat events rather than parsing the combat log, so it needs nampower installed. Shift and drag the window to move it, or use /moveui."] = true
+L["Bars"] = true
+L["How many rows the window shows. Takes a reload to change."] = true
+L["Overall"] = true
+L["Healing"] = true
+L["Merge Pet Damage"] = true
+L["Count a pet's damage towards whoever summoned it, rather than giving the pet its own row."] = true
+L["Credit Damage Shields to the Caster"] = true
+L["A damage shield is normally credited to whoever is wearing it, which is what the game reports and what other meters show. Turn this on to credit it to whoever applied it instead -- an imp's Fire Shield on a tank counting as the warlock's damage. Approximate: it follows the last aura a group member cast on that unit."] = true

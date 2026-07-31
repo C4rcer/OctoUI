@@ -118,6 +118,59 @@ E.Options.args.general = {
 					get = function(info) return E.private.general.lootRoll end,
 					set = function(info, value) E.private.general.lootRoll = value E:StaticPopup_Show("PRIVATE_RL") end
 				},
+				damageMeterGroup = {
+					order = 11.4,
+					type = "group",
+					guiInline = true,
+					name = L["Damage Meter"],
+					get = function(info) return E.db.general.damageMeter[ info[getn(info)] ] end,
+					set = function(info, value)
+						E.db.general.damageMeter[ info[getn(info)] ] = value
+						E:GetModule("Misc"):UpdateMeterWindow()
+					end,
+					args = {
+						description = {
+							order = 1,
+							type = "description",
+							name = L["Reads nampower's combat events rather than parsing the combat log, so it needs nampower installed. Shift and drag the window to move it, or use /moveui."]
+						},
+						enable = {
+							order = 2,
+							type = "toggle",
+							name = L["Enable"],
+							set = function(info, value)
+								E.db.general.damageMeter.enable = value
+								E:GetModule("Misc"):ToggleMeterWindow()
+							end
+						},
+						mergePets = {
+							order = 2.5,
+							type = "toggle",
+							name = L["Merge Pet Damage"],
+							desc = L["Count a pet's damage towards whoever summoned it, rather than giving the pet its own row."]
+						},
+						shieldToCaster = {
+							order = 2.6,
+							type = "toggle",
+							name = L["Credit Damage Shields to the Caster"],
+							desc = L["A damage shield is normally credited to whoever is wearing it, which is what the game reports and what other meters show. Turn this on to credit it to whoever applied it instead -- an imp's Fire Shield on a tank counting as the warlock's damage. Approximate: it follows the last aura a group member cast on that unit."]
+						},
+						bars = {
+							order = 3,
+							type = "range",
+							name = L["Bars"],
+							min = 3, max = 20, step = 1,
+							desc = L["How many rows the window shows. Takes a reload to change."]
+						},
+						width = {
+							order = 4,
+							type = "range",
+							name = L["Width"],
+							min = 120, max = 400, step = 5,
+							desc = L["How many rows the window shows. Takes a reload to change."]
+						}
+					}
+				},
 				autoLoot = {
 					order = 11.5,
 					type = "toggle",

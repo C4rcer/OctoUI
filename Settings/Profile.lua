@@ -8,6 +8,19 @@ P["general"] = {
 	--Right click loots everything. Off by default because it is a real change to how
 	--looting behaves, see the note in Modules\Misc\Loot.lua.
 	["autoLoot"] = false,
+
+	--Damage meter, see Modules\Misc\DamageMeter.lua. Needs nampower for its combat
+	--events; the window simply never appears without it.
+	["damageMeter"] = {
+		["enable"] = true,
+		["bars"] = 9,
+		["width"] = 310,
+		["height"] = 15,
+		["segment"] = "current",
+		["mode"] = "damage",
+		["mergePets"] = true,
+		["shieldToCaster"] = false,
+	},
 	["messageRedirect"] = DEFAULT_CHAT_FRAME:GetName(),
 	["stickyFrames"] = true,
 	["loginmessage"] = true,
