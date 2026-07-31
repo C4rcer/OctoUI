@@ -8,6 +8,7 @@ local getn, setn, tremove, tContains, tinsert, wipe = table.getn, table.setn, tr
 local lower = string.lower
 --WoW API / Variables
 local CreateFrame = CreateFrame
+local select = select
 local IsAddOnLoaded = IsAddOnLoaded
 local UnitIsDeadOrGhost, InCinematic = UnitIsDeadOrGhost, InCinematic
 local GetBindingFromClick, RunBinding = GetBindingFromClick, RunBinding
@@ -464,6 +465,22 @@ E.PopupDialogs["MODULE_COPY_CONFIRM"] = {
 
 local MAX_STATIC_POPUPS = 4
 
+--1.12 does not push a frame level change down to a frame's children: they keep the
+--absolute level they were handed when they were created. Raising a popup on its own
+--therefore lifts its own backdrop and text over its own buttons, which then render
+--dimmed behind the panel and cannot be clicked at all -- exactly what the reload
+--prompt opened from /oc does. Anything the popup owns has to move with it.
+local function ShiftFrameLevels(frame, delta)
+	frame:SetFrameLevel(frame:GetFrameLevel() + delta)
+
+	for i = 1, frame:GetNumChildren() do
+		local child = select(i, frame:GetChildren())
+		if child then
+			ShiftFrameLevels(child, delta)
+		end
+	end
+end
+
 function E:StaticPopup_OnShow()
 	PlaySound("igMainMenuOpen")
 
@@ -486,9 +503,11 @@ function E:StaticPopup_OnShow()
 			this.frameStrataIncreased = true
 			this:SetFrameStrata("FULLSCREEN_DIALOG")
 
-			local popupFrameLevel = this:GetFrameLevel()
-			if popupFrameLevel < 100 then
-				this:SetFrameLevel(popupFrameLevel+100)
+			--recorded rather than recomputed on hide: if the boost was skipped, undoing it
+			--anyway drags the popup below whatever it was sitting on to begin with
+			if this:GetFrameLevel() < 100 then
+				this.frameLevelBoost = 100
+				ShiftFrameLevels(this, 100)
 			end
 		end
 	end
@@ -614,9 +633,9 @@ function E:StaticPopup_OnHide()
 		this.frameStrataIncreased = nil
 		this:SetFrameStrata("DIALOG")
 
-		local popupFrameLevel = this:GetFrameLevel()
-		if popupFrameLevel > 100 then
-			this:SetFrameLevel(popupFrameLevel-100)
+		if this.frameLevelBoost then
+			ShiftFrameLevels(this, -this.frameLevelBoost)
+			this.frameLevelBoost = nil
 		end
 	end
 end

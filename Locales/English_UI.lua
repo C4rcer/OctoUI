@@ -363,3 +363,22 @@ L["Exploration Markers"] = true;
 L["Show a marker on unexplored areas revealed by the world map overlay."] = true;
 L["Reveal Unexplored"] = true;
 L["Exploration Point"] = true;
+
+--Character stats panel
+L["Spell Power"] = true;
+L["Healing Power"] = true;
+L["Spell Hit"] = true;
+L["Spell Crit"] = true;
+L["Haste"] = true;
+L["Casting Speed"] = true;
+L["Mana Regen"] = true;
+L["Mana While Casting"] = true;
+L["Spell Penetration"] = true;
+L["Armor Penetration"] = true;
+L["Melee Hit"] = true;
+L["Melee Crit"] = true;
+L["Agility"] = true;
+L["Intellect"] = true;
+L["Spirit"] = true;
+--%s is an attribute name, one of the three above.
+L["STATS_INCOMPLETE"] = "Gear, buffs and talents only. The base every character gets from %s is not calculated yet, so this is not your real total.";

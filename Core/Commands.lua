@@ -11,6 +11,8 @@ local EnableAddOn, DisableAddOn, DisableAllAddOns = EnableAddOn, DisableAddOn, D
 local SetCVar = SetCVar
 local ReloadUI = ReloadUI
 local GetAddOnInfo = GetAddOnInfo
+local IsAddOnLoaded = IsAddOnLoaded
+local GetScreenWidth, GetScreenHeight = GetScreenWidth, GetScreenHeight
 
 function E:EnableAddon(addon)
 	local _, _, _, _, _, reason, _ = GetAddOnInfo(addon)
@@ -153,6 +155,91 @@ function E:EnableBlizzardAddOns()
 	end
 end
 
+--Why the threat window is not on screen. Every one of these has been a real cause
+--at least once: the module never initialised, the frame is hidden, it is parked off
+--screen by the saved position, it is scaled or faded to nothing, or it is sized to
+--zero height. Reports all of them at once rather than one reload per guess.
+function E:ThreatReport()
+	local frame = _G["TWTMain"]
+
+	E:Print(format("module: %s, private toggle: %s, standalone TWThreat: %s",
+		E:GetModule("ThreatMeter", true) and "registered" or "|cffff0000MISSING|r",
+		E.private.general.threatMeter and "on" or "|cffff0000off|r",
+		IsAddOnLoaded("TWThreat") and "|cffff0000loaded (conflicts)|r" or "not loaded"))
+
+	if not frame then
+		E:Print("|cffff0000TWTMain does not exist|r - the XML never loaded. A newly added file needs a full exit of WoW.exe, not a reload.")
+		return
+	end
+
+	E:Print(format("frame: shown %s, visible %s, alpha %.2f, strata %s, level %d",
+		tostring(frame:IsShown()), tostring(frame:IsVisible()), frame:GetAlpha(),
+		frame:GetFrameStrata(), frame:GetFrameLevel()))
+
+	E:Print(format("size: %.0f x %.0f, scale %.2f (config %.2f)",
+		frame:GetWidth(), frame:GetHeight(), frame:GetEffectiveScale(),
+		(TWT_CONFIG and TWT_CONFIG.windowScale) or 0))
+
+	--nil means the frame has never been given a position it could resolve
+	local left, top = frame:GetLeft(), frame:GetTop()
+	if not (left and top) then
+		E:Print("position: |cffff0000unresolved|r - the frame has no usable anchor, so it is drawn nowhere.")
+	else
+		--both sides converted to real pixels: GetLeft is in the frame's own units and
+		--GetScreenWidth is in UIParent's, and comparing the two directly is nonsense
+		local scale = frame:GetEffectiveScale()
+		local uiScale = E.UIParent:GetEffectiveScale()
+		local pxLeft, pxTop = left * scale, top * scale
+		local pxWidth = GetScreenWidth() * uiScale
+		local pxHeight = GetScreenHeight() * uiScale
+		local onScreen = pxTop > 0 and pxTop <= pxHeight + frame:GetHeight() * scale
+			and pxLeft < pxWidth and pxLeft > -(frame:GetWidth() * scale)
+
+		E:Print(format("position: left %.0f top %.0f px on a %.0f x %.0f px screen -- %s",
+			pxLeft, pxTop, pxWidth, pxHeight,
+			onScreen and "|cff00ff00on screen|r" or "|cffff0000off screen|r"))
+	end
+
+	if TWT_CONFIG then
+		E:Print(format("config: visible %s, hideOOC %s, showInCombat %s, bars %d, bar height %d",
+			tostring(TWT_CONFIG.visible), tostring(TWT_CONFIG.hideOOC),
+			tostring(TWT_CONFIG.showInCombat), TWT_CONFIG.visibleBars or 0,
+			TWT_CONFIG.barHeight or 0))
+	else
+		E:Print("|cffff0000TWT_CONFIG is nil|r - saved variables never loaded.")
+	end
+end
+
+--Puts the window back in the middle of the screen at a sane size, for when the saved
+--position or scale has put it somewhere unreachable. /twt has no equivalent.
+function E:ThreatReset()
+	local frame = _G["TWTMain"]
+	if not frame then
+		E:Print("|cffff0000TWTMain does not exist.|r")
+		return
+	end
+
+	if TWT_CONFIG then
+		TWT_CONFIG.visible = true
+		TWT_CONFIG.windowScale = 1
+	end
+
+	frame:SetScale(1)
+	frame:SetAlpha(1)
+	frame:Show()
+
+	--the mover owns the anchor, so moving the frame alone would be undone on the next
+	--reload; reset the mover when there is one and only free-hand it when there is not
+	if E.CreatedMovers and E.CreatedMovers["ThreatMeterMover"] then
+		E:ResetMovers(L["Threat Meter"])
+		E:Print("Threat window mover reset to its default position at scale 1.")
+	else
+		frame:ClearAllPoints()
+		frame:SetPoint("CENTER", E.UIParent, "CENTER", 0, 0)
+		E:Print("Threat window reset to the centre of the screen at scale 1.")
+	end
+end
+
 --Nameplate debuff timers are reconstructed from three separate things -- the bundled
 --duration table, a tooltip scan for the spell name, and combat-log timestamps -- and
 --when no timer appears there is no way to tell which one failed by looking at the
@@ -253,6 +340,8 @@ function E:LoadCommands()
 	self:RegisterChatCommand("farmmode", "FarmMode")
 	self:RegisterChatCommand("enableblizzard", "EnableBlizzardAddOns")
 	self:RegisterChatCommand("octoui-dots", "DebuffTimerReport")
+	self:RegisterChatCommand("octoui-threat", "ThreatReport")
+	self:RegisterChatCommand("octoui-threatreset", "ThreatReset")
 
 	if E:GetModule("ActionBars") and E.private.actionbar.enable then
 		self:RegisterChatCommand("kb", E:GetModule("ActionBars").ActivateBindMode)

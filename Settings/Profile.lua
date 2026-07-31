@@ -87,6 +87,28 @@ P["general"] = {
 				["yOffset"] = 0,
 			}
 		}
+	},
+
+	--Panel of stats the 1.12 paperdoll has no row for, see Modules\Blizzard\CharacterStats.lua.
+	--A row key is a LibStats stat key, so a row added to ROWS there needs an entry
+	--here as well or it defaults to hidden.
+	["characterStats"] = {
+		["enable"] = true,
+		["position"] = "RIGHT",
+		["rows"] = {
+			["spellPower"] = true,
+			["healingPower"] = true,
+			["spellHit"] = true,
+			["spellCrit"] = true,
+			["haste"] = true,
+			["castingSpeed"] = true,
+			["mp5"] = true,
+			["manaWhileCasting"] = true,
+			["spellPen"] = true,
+			["armorPen"] = true,
+			["meleeHit"] = true,
+			["meleeCrit"] = true,
+		}
 	}
 }
 
@@ -316,6 +338,11 @@ P["nameplates"] = {
 			},
 			["showName"] = true,
 			["showLevel"] = false,
+			--SuperWoW GUIDs make mob power readable, see Modules\NamePlates\Elements\PowerBar.lua
+			["powerbar"] = {
+				["enable"] = true,
+				["height"] = 4,
+			},
 			["castbar"] = {
 				["enable"] = true,
 				["height"] = 8,
@@ -373,6 +400,11 @@ P["nameplates"] = {
 			},
 			["showName"] = true,
 			["showLevel"] = true,
+			--SuperWoW GUIDs make mob power readable, see Modules\NamePlates\Elements\PowerBar.lua
+			["powerbar"] = {
+				["enable"] = true,
+				["height"] = 4,
+			},
 			["castbar"] = {
 				["enable"] = true,
 				["height"] = 8,
@@ -421,6 +453,11 @@ P["nameplates"] = {
 			},
 			["showName"] = true,
 			["showLevel"] = true,
+			--SuperWoW GUIDs make mob power readable, see Modules\NamePlates\Elements\PowerBar.lua
+			["powerbar"] = {
+				["enable"] = true,
+				["height"] = 4,
+			},
 			["castbar"] = {
 				["enable"] = true,
 				["height"] = 8,
@@ -481,6 +518,11 @@ P["nameplates"] = {
 			},
 			["showName"] = true,
 			["showLevel"] = true,
+			--SuperWoW GUIDs make mob power readable, see Modules\NamePlates\Elements\PowerBar.lua
+			["powerbar"] = {
+				["enable"] = true,
+				["height"] = 4,
+			},
 			["castbar"] = {
 				["enable"] = true,
 				["height"] = 8,

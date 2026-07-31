@@ -1,5 +1,6 @@
 local E, L, V, P, G = unpack(ElvUI); --Import: Engine, Locales, PrivateDB, ProfileDB, GlobalDB
 local CC = E:GetModule("ClassCache");
+local B = E:GetModule("Blizzard");
 
 --Cache global variables
 --Lua functions
@@ -7,6 +8,7 @@ local _G = _G
 local getn = table.getn
 --WoW API / Variables
 local FCF_GetNumActiveChatFrames = FCF_GetNumActiveChatFrames
+local IsAddOnLoaded = IsAddOnLoaded
 
 _G.GetLocale = function() return GAME_LOCALE end
 
@@ -198,9 +200,17 @@ E.Options.args.general = {
 					order = 12.61,
 					type = "toggle",
 					name = L["Threat Meter"],
-					desc = L["Enable the threat meter (adopted from TWThreat). Type /twt for its commands; the window has its own settings button."],
+					desc = function()
+						local desc = L["Enable the threat meter (adopted from TWThreat). Type /twt for its commands; the window has its own settings button."]
+						--The standalone addon owns the same frame names, see Modules/Threat/TWThreat.lua
+						if IsAddOnLoaded("TWThreat") then
+							return desc.."\n\n|cffff3333The standalone TWThreat addon is loaded and owns these frame names, so the built-in meter cannot run. Disable TWThreat at character select.|r"
+						end
+						return desc
+					end,
 					get = function(info) return E.private.general.threatMeter end,
-					set = function(info, value) E.private.general.threatMeter = value E:StaticPopup_Show("PRIVATE_RL") end
+					set = function(info, value) E.private.general.threatMeter = value E:StaticPopup_Show("PRIVATE_RL") end,
+					disabled = function() return IsAddOnLoaded("TWThreat") and true or false end
 				},
 				--Ported from ShaguTweaks-extras so one addon owns these features
 				macroTweaks = {
@@ -769,6 +779,65 @@ E.Options.args.general = {
 						["MONOCHROMEOUTLINE"] = "MONOCROMEOUTLINE",
 						["THICKOUTLINE"] = "THICKOUTLINE",
 					}
+				}
+			}
+		},
+		--Panel of stats the paperdoll has no row for, see Modules/Blizzard/CharacterStats.lua.
+		--Rows are generated from the same stat keys the panel uses, so a new stat needs no
+		--entry here -- only one in P.general.characterStats.rows.
+		characterStats = {
+			order = 7,
+			type = "group",
+			name = L["Character Stats"],
+			get = function(info) return E.db.general.characterStats[ info[getn(info)] ] end,
+			set = function(info, value)
+				E.db.general.characterStats[ info[getn(info)] ] = value
+				B:UpdateCharacterStats()
+			end,
+			args = {
+				header = {
+					order = 1,
+					type = "header",
+					name = L["Character Stats"]
+				},
+				description = {
+					order = 2,
+					type = "description",
+					name = L["A panel beside the character sheet showing the stats the 1.12 paperdoll has no row for. Values are read from your gear, buffs and talents."]
+				},
+				enable = {
+					order = 3,
+					type = "toggle",
+					name = L["Enable"]
+				},
+				position = {
+					order = 4,
+					type = "select",
+					name = L["Position"],
+					desc = L["Which side of the character sheet the panel attaches to."],
+					values = {
+						["RIGHT"] = L["Right"],
+						["LEFT"] = L["Left"]
+					},
+					disabled = function() return not E.db.general.characterStats.enable end,
+					set = function(info, value)
+						E.db.general.characterStats.position = value
+						B:PositionCharacterStats()
+						B:UpdateCharacterStats()
+					end
+				},
+				rows = {
+					order = 5,
+					type = "multiselect",
+					name = L["Rows"],
+					desc = L["Which stats the panel lists. A stat left on still shows when it is zero -- an empty row is an answer."],
+					disabled = function() return not E.db.general.characterStats.enable end,
+					values = function() return B:GetCharacterStatRows() end,
+					get = function(info, key) return E.db.general.characterStats.rows[key] ~= false end,
+					set = function(info, key, value)
+						E.db.general.characterStats.rows[key] = value
+						B:UpdateCharacterStats()
+					end
 				}
 			}
 		},

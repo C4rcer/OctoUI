@@ -189,6 +189,37 @@ local function GetUnitSettings(unit, name)
 					}
 				}
 			},
+			powerGroup = {
+				order = 2,
+				name = L["Power Bar"],
+				type = "group",
+				get = function(info) return E.db.nameplates.units[unit].powerbar[ info[getn(info) ]] end,
+				set = function(info, value) E.db.nameplates.units[unit].powerbar[ info[getn(info) ]] = value; NP:ConfigureAll() end,
+				args = {
+					header = {
+						order = 0,
+						type = "header",
+						name = L["Power Bar"]
+					},
+					description = {
+						order = 1,
+						type = "description",
+						name = L["Sits between the health bar and the cast bar. Only units with a mana pool get one -- rage and energy mobs sit at 0 and say nothing useful."]
+					},
+					enable = {
+						order = 2,
+						name = L["Enable"],
+						type = "toggle"
+					},
+					height = {
+						order = 3,
+						type = "range",
+						name = L["Height"],
+						min = 1, max = 12, step = 1,
+						disabled = function() return not E.db.nameplates.units[unit].powerbar.enable end
+					}
+				}
+			},
 			castGroup = {
 				order = 3,
 				name = L["Cast Bar"],

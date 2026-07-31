@@ -1257,3 +1257,18 @@ L["You need to hold this modifier down in order to blacklist an aura by right-cl
 L["Remove Borders"] = true
 L["Hide the round border and background art some addon buttons draw, leaving just the icon."] = true
 L["Gathers addon buttons off the minimap and lays them out in a row beneath it. Use /moveui to reposition the row."] = true
+
+L["Threat Meter"] = true
+L["Enable the threat meter (adopted from TWThreat). Type /twt for its commands; the window has its own settings button."] = true
+
+--Character stats panel
+L["Character Stats"] = true
+L["A panel beside the character sheet showing the stats the 1.12 paperdoll has no row for. Values are read from your gear, buffs and talents."] = true
+L["Which side of the character sheet the panel attaches to."] = true
+L["Rows"] = true
+L["Which stats the panel lists. A stat left on still shows when it is zero -- an empty row is an answer."] = true
+
+--Nameplate power bar
+L["Power Bar"] = true
+L["Sits between the health bar and the cast bar. Only units with a mana pool get one -- rage and energy mobs sit at 0 and say nothing useful."] = true
+

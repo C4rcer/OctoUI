@@ -1741,38 +1741,32 @@ function FrameHeightSlider_OnValueChanged()
     TWT.updateUI('FrameHeightSlider_OnValueChanged')
 end
 
+--Upstream re-anchored both windows here so a scale change did not move whatever the
+--user had dragged into place. That does not survive this port. TWTMain is
+--movable="false" in the XML and has no saved position of its own, so it is owned by
+--an OctoUI mover instead (see TM:Initialize) -- re-anchoring it here fights the mover,
+--and TWT.init drives this through SetValue before the frame's rect has resolved, at
+--which point GetLeft()/GetTop() are meaningless and it parked the window below the
+--bottom of the screen. Scale TWTMain and leave its position to the mover.
 function WindowScaleSlider_OnValueChanged()
     TWT_CONFIG.windowScale = _G['TWTMainSettingsWindowScaleSlider']:GetValue()
 
-    local x, y = _G['TWTMain']:GetLeft(), _G['TWTMain']:GetTop()
-    local sx, sy = _G['TWTMainTankModeWindow']:GetLeft(), _G['TWTMainTankModeWindow']:GetTop()
-    local s = _G['TWTMain']:GetEffectiveScale()
-    local ss = _G['TWTMainTankModeWindow']:GetEffectiveScale()
-    local posX, posY
-    local sposX, sposY
-
-    if x and y and s then
-        x, y = x * s, y * s
-        posX = x
-        posY = y
-    end
-    if sx and sy and ss then
-        sx, sy = sx * ss, sy * ss
-        sposX = sx
-        sposY = sy
-    end
-
     _G['TWTMain']:SetScale(TWT_CONFIG.windowScale)
-    _G['TWTMainTankModeWindow']:SetScale(TWT_CONFIG.windowScale)
 
-    s = _G['TWTMain']:GetEffectiveScale()
-    ss = _G['TWTMainTankModeWindow']:GetEffectiveScale()
-    posX, posY = posX / s, posY / s
-    sposX, sposY = sposX / ss, sposY / ss
-    _G['TWTMain']:ClearAllPoints()
-    _G['TWTMainTankModeWindow']:ClearAllPoints()
-    _G['TWTMain']:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", posX, posY)
-    _G['TWTMainTankModeWindow']:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", sposX, sposY)
+    --The tank mode window is still movable="true" and drag-positioned, so it does
+    --need its position carried across the scale change -- but only once its rect
+    --resolves. Before that GetLeft() is nil and the arithmetic below would throw.
+    local tank = _G['TWTMainTankModeWindow']
+    local sx, sy = tank:GetLeft(), tank:GetTop()
+    local ss = tank:GetEffectiveScale()
+
+    tank:SetScale(TWT_CONFIG.windowScale)
+
+    if sx and sy and ss then
+        local scaled = tank:GetEffectiveScale()
+        tank:ClearAllPoints()
+        tank:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", (sx * ss) / scaled, (sy * ss) / scaled)
+    end
 
     if TWT_CONFIG.tankModeStick ~= 'Free' then
         TWTTankModeWindowChangeStick_OnClick(TWT_CONFIG.tankModeStick)
@@ -2377,12 +2371,39 @@ end
 local TM = E:NewModule("ThreatMeter")
 E.ThreatMeter = TM
 
+--This port kept the upstream frame names, so it collides head-on with the
+--standalone TWThreat addon if that is also installed: both XMLs define TWTMain,
+--TWTFullScreenGlow, TMEF1-5 and every TWTMainSettings* frame, and both tocs
+--declare TWT_CONFIG. Folder order loads OctoUI first, so the standalone's XML
+--wins every one of those _G keys and TWT.init() below silently drives the other
+--addon's frames instead of ours. Defer to it and say so once; our own TWTMain
+--is hidden="true" in the XML, so bailing leaves nothing on screen.
+local function StandaloneLoaded()
+    return IsAddOnLoaded("TWThreat") and true or false
+end
+
 function TM:Initialize()
+    if StandaloneLoaded() then
+        E:Print("Built-in threat meter stayed off: the standalone TWThreat addon is loaded and the two share frame names. Disable TWThreat at character select to use this one.")
+        return
+    end
     if not E.private.general.threatMeter then
         return
     end
     TWT.enabled = true
     TWT.init()
+
+    --Position is OctoUI's job, not the port's: the window is movable="false" and
+    --nothing in here saves or restores a position, so without a mover it sits
+    --wherever init happened to leave it with no way for anyone to move it. Anchor it
+    --once, then hand it over -- CreateMover reads the current point as its default,
+    --so the SetPoint has to come first. /moveui moves it from here on.
+    local frame = _G["TWTMain"]
+    if frame then
+        frame:ClearAllPoints()
+        frame:SetPoint("CENTER", E.UIParent, "CENTER", 0, 200)
+        E:CreateMover(frame, "ThreatMeterMover", L["Threat Meter"], nil, nil, nil, "ALL,GENERAL")
+    end
 end
 
 local function InitializeCallback()
