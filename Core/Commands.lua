@@ -236,18 +236,13 @@ end
 function E:LoadCommands()
 	self:RegisterChatCommand("in", "DelayScriptCall")
 
-	--OctoUI names first, these are the documented ones
+	--The ElvUI names (/ec, /elvui, /egrid, /estatus) are deliberately NOT registered.
+	--Only the engine table, saved variables and AceConfig registry key stay "ElvUI",
+	--because profiles and mover positions are keyed off them; nothing a user types is.
 	self:RegisterChatCommand("oc", "ToggleConfig")
 	self:RegisterChatCommand("octoui", "ToggleConfig")
 	self:RegisterChatCommand("ocgrid", "Grid")
 	self:RegisterChatCommand("ocstatus", "ShowStatusReport")
-
-	--Kept as aliases: anyone coming from ElvUI will type these out of habit,
-	--and they cost nothing. Undocumented on purpose.
-	self:RegisterChatCommand("ec", "ToggleConfig")
-	self:RegisterChatCommand("elvui", "ToggleConfig")
-	self:RegisterChatCommand("egrid", "Grid")
-	self:RegisterChatCommand("estatus", "ShowStatusReport")
 
 	self:RegisterChatCommand("bgstats", "BGStats")
 	self:RegisterChatCommand("luaerror", "LuaError")

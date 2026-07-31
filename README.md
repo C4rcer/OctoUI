@@ -61,8 +61,7 @@ re-run it any time from the same place.
 | `/farmmode` | Enlarge the minimap for farming. |
 | `/in 1.5 /say hi` | Run a command after a delay. |
 
-If you are coming from ElvUI, the old names (`/ec`, `/elvui`, `/egrid`,
-`/estatus`) still work as aliases.
+
 
 ### Moving things
 
