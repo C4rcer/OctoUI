@@ -118,6 +118,17 @@ E.Options.args.general = {
 					get = function(info) return E.private.general.lootRoll end,
 					set = function(info, value) E.private.general.lootRoll = value E:StaticPopup_Show("PRIVATE_RL") end
 				},
+				autoLoot = {
+					order = 11.5,
+					type = "toggle",
+					name = L["Auto Loot"],
+					desc = L["Take everything from a corpse on a normal right click, with no need to hold shift."],
+					get = function(info) return E.db.general.autoLoot end,
+					set = function(info, value)
+						E.db.general.autoLoot = value
+						E:GetModule("Misc"):ApplyAutoLoot()
+					end
+				},
 				lootUnderMouse = {
 					order = 10,
 					type = "toggle",

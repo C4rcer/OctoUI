@@ -12,6 +12,7 @@ local floor, abs, mod = math.floor, math.abs, math.fmod
 local format, len, match, sub, gsub = string.format, string.len, string.match, string.sub, string.gsub
 --WoW API / Variables
 local BankFrameItemButton_OnUpdate = BankFrameItemButton_OnUpdate
+
 local BankFrameItemButton_UpdateLock = BankFrameItemButton_UpdateLock
 local CloseBag, CloseBackpack, CloseBankFrame = CloseBag, CloseBackpack, CloseBankFrame
 local CooldownFrame_SetTimer = CooldownFrame_SetTimer
@@ -53,6 +54,23 @@ local SEARCH = SEARCH
 
 local TooltipModule, SkinModule
 local SEARCH_STRING = ""
+
+--Every container id the bags and the bank are made of, in display order. Shared with
+--Sort.lua, which used to build its own copy: the two disagreed, this frame having
+--been given a hardcoded eighth bank container (11) that does not exist. The client
+--is consistent that there are six bank bags -- NUM_BANKBAGSLOTS is 6, and bank bags
+--occupy inventory slots 64-69, with ContainerIDToInventoryID(11) returning 70 and
+--GetInventoryItemLink rejecting it outright. Derived, not written out, so a server
+--that does add a seventh is picked up for free.
+B.BankIDs = {BANK_CONTAINER}
+for i = NUM_BAG_SLOTS + 1, NUM_BAG_SLOTS + NUM_BANKBAGSLOTS do
+	tinsert(B.BankIDs, i)
+end
+
+B.PlayerIDs = {}
+for i = 0, NUM_BAG_SLOTS do
+	tinsert(B.PlayerIDs, i)
+end
 
 function B:GetContainerFrame(arg)
 	if type(arg) == "boolean" and (arg == true) then
@@ -934,7 +952,7 @@ function B:ContructContainerFrame(name, isBank)
 	f.isBank = isBank
 	f.bottomOffset = 8
 	f.topOffset = isBank and 45 or 50
-	f.BagIDs = isBank and {-1, 5, 6, 7, 8, 9, 10, 11} or {0, 1, 2, 3, 4}
+	f.BagIDs = isBank and B.BankIDs or B.PlayerIDs
 	f.Bags = {}
 
 	local mover = (isBank and ElvUIBankMover) or ElvUIBagMover
@@ -1331,6 +1349,12 @@ local playerEnteringWorldFunc = function() B:UpdateBagTypes() B:Layout() end
 function B:PLAYER_ENTERING_WORLD()
 	self:UpdateGoldText()
 
+	--By now the movers have a resolved rect, so PostBagMove can actually read their
+	--quadrant. This is what picks up a saved mover position that disagrees with the
+	--defaults set in Initialize.
+	if ElvUIBagMover then B.PostBagMove(ElvUIBagMover) end
+	if ElvUIBankMover then B.PostBagMove(ElvUIBankMover) end
+
 	E:Delay(2, playerEnteringWorldFunc) -- Update bag types for bagslot coloring
 end
 
@@ -1625,10 +1649,21 @@ function B:Initialize()
 	--Set some variables on movers
 	ElvUIBagMover.textGrowUp = L["Bag Mover (Grow Up)"]
 	ElvUIBagMover.textGrowDown = L["Bag Mover (Grow Down)"]
-	ElvUIBagMover.POINT = "BOTTOM"
 	ElvUIBankMover.textGrowUp = L["Bank Mover (Grow Up)"]
 	ElvUIBankMover.textGrowDown = L["Bank Mover (Grow Down)"]
-	ElvUIBankMover.POINT = "BOTTOM"
+
+	--These used to be "BOTTOM" for both, which centres the frame on its 200px holder.
+	--The bank holder is pinned to LeftChatPanel's BOTTOMLEFT, hard against the screen
+	--edge, so half the bank window hung off it; the bag frame has the same geometry but
+	--grows inward from the right panel, which is why only the bank looked broken.
+	--PostBagMove works the corner out from the mover's screen quadrant, but it is the
+	--movers' postdrag callback and so never ran until something was dragged -- and
+	--calling it here does nothing either, because a mover created moments ago has no
+	--resolved rect yet and its GetCenter() returns nil. So: default to the corner each
+	--holder is actually anchored by, and let PostBagMove correct it later for anyone
+	--whose saved mover position sits somewhere else.
+	ElvUIBagMover.POINT = "BOTTOMRIGHT"
+	ElvUIBankMover.POINT = "BOTTOMLEFT"
 
 	--Create Bag Frame
 	self.BagFrame = self:ContructContainerFrame("ElvUI_ContainerFrame")

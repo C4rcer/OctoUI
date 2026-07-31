@@ -9,7 +9,7 @@ local ipairs, pairs, tonumber, select, unpack, pcall = ipairs, pairs, tonumber, 
 local getn, tinsert, tremove, tsort, twipe = table.getn, table.insert, table.remove, table.sort, table.wipe
 local floor, mod = math.floor, math.mod
 local band = bit.band
-local match, gmatch, find = string.match, string.gmatch, string.find
+local match, gmatch, find, format = string.match, string.gmatch, string.find, string.format
 --WoW API / Variables
 local ContainerIDToInventoryID = ContainerIDToInventoryID
 local CursorHasItem = CursorHasItem
@@ -22,19 +22,25 @@ local GetInventoryItemLink = GetInventoryItemLink
 local GetItemInfo = GetItemInfo
 local GetTime = GetTime
 local PickupContainerItem = PickupContainerItem
+local PickupInventoryItem = PickupInventoryItem
+local BankButtonIDToInvSlotID = BankButtonIDToInvSlotID
+local BANK_CONTAINER = BANK_CONTAINER
 local SplitContainerItem = SplitContainerItem
 local ARMOR, EN = ARMOR
 
-local bankBags = {BANK_CONTAINER}
 local MAX_MOVE_TIME = 1.25
 
-for i = NUM_BAG_SLOTS + 1, NUM_BAG_SLOTS + NUM_BANKBAGSLOTS do
-	tinsert(bankBags, i)
+--Copied rather than referenced so that nothing in here can mutate the lists the bag
+--frames are built from. See the note on B.BankIDs in Bags.lua for why these are not
+--derived from NUM_BAG_SLOTS/NUM_BANKBAGSLOTS any more.
+local bankBags = {}
+for _, id in ipairs(B.BankIDs) do
+	tinsert(bankBags, id)
 end
 
 local playerBags = {}
-for i = 0, NUM_BAG_SLOTS do
-	tinsert(playerBags, i)
+for _, id in ipairs(B.PlayerIDs) do
+	tinsert(playerBags, id)
 end
 
 local allBags = {}
@@ -299,6 +305,17 @@ end
 
 function B:PickupItem(bag, slot)
 	currentItemID = self:GetItemID(bag, slot)
+
+	--The main bank container is only half a container as far as 1.12 is concerned: it
+	--reads fine through GetContainerNumSlots and GetContainerItemLink, but Blizzard's
+	--own bank buttons pick up with PickupInventoryItem on an inventory slot, not with
+	--PickupContainerItem. Ask the wrong one and nothing lands on the cursor, no error
+	--is raised, and DoMove reports the move a success -- which is exactly how a bank
+	--sort planned 29 moves and shifted not a single item.
+	if bag == BANK_CONTAINER and BankButtonIDToInvSlotID and PickupInventoryItem then
+		return PickupInventoryItem(BankButtonIDToInvSlotID(slot))
+	end
+
 	return PickupContainerItem(bag, slot)
 end
 
@@ -330,8 +347,16 @@ function B:Encode_BagSlot(bag, slot)
 	return (bag * 100) + slot
 end
 
+--Subtraction rather than mod, because the bank container is bag -1 and Lua 5.0's
+--math.mod is C fmod: the result takes the sign of the *dividend*, so slot 1 of the
+--bank encodes to -99 and mod(-99, 100) gives back -99 instead of 1. Every bank
+--container move then read an empty slot, DoMove found no source item and bailed out
+--with "Confused.. Try Again!" before picking anything up -- which is the whole of why
+--bank sorting did nothing while bag sorting was fine. Bags 0-4 never go negative.
+--floor already rounds towards minus infinity, so bag * 100 is the exact base.
 function B:Decode_BagSlot(int)
-	return floor(int / 100), mod(int, 100)
+	local bag = floor(int / 100)
+	return bag, int - (bag * 100)
 end
 
 function B:IsPartial(bag, slot)
@@ -343,9 +368,14 @@ function B:EncodeMove(source, target)
 	return (source * 10000) + target
 end
 
+--Same trap one level up: a move is source * 10000 + target, and either half can be
+--a negative bank-container slot. Subtraction keeps t in [0, 10000) whatever the sign
+--of the move, which is what upstream's fix-up below already assumed -- it converts a
+--target that was itself negative back, and could never fire when mod handed it a
+--negative t.
 function B:DecodeMove(move)
 	local s = floor(move / 10000)
-	local t = mod(move, 10000)
+	local t = move - (s * 10000)
 	s = (t > 9000) and (s + 1) or s
 	t = (t > 9000) and (t - 10000) or t
 	return s, t
@@ -377,8 +407,11 @@ function B:IsSpecialtyBag(bagID)
 	local inventorySlot = ContainerIDToInventoryID(bagID)
 	if not inventorySlot then return false end
 
-	local bag = GetInventoryItemLink("player", inventorySlot)
-	if not bag then return false end
+	--pcall because the slot is only as trustworthy as ContainerIDToInventoryID: hand
+	--it a container the client has no inventory slot for and GetInventoryItemLink
+	--raises rather than returning nil, which aborts the whole sort from in here.
+	local ok, bag = pcall(GetInventoryItemLink, "player", inventorySlot)
+	if not ok or not bag then return false end
 
 	local family = GetItemFamily(bag, true)
 	if family == 0 or family == nil then return false end
@@ -624,6 +657,11 @@ function B.SortBags(...)
 end
 
 function B:StartStacking()
+	--kept for /octoui-bags: once the queue drains there is no way to tell a sort that
+	--found nothing to do from one that never got the chance to look
+	B.lastPlannedMoves = getn(moves)
+	B.failedPickups, B.lastFailedBag = 0, nil
+
 	twipe(bagMaxStacks)
 	twipe(bagStacks)
 	twipe(bagIDs)
@@ -712,6 +750,12 @@ function B:DoMove(move)
 
 	if CursorHasItem() then
 		B:PickupItem(targetBag, targetSlot)
+	else
+		--Nothing on the cursor means the pickup above did not take, so the place never
+		--happens and this move accomplishes nothing at all. Counted rather than treated
+		--as an error because it is silent by nature; /octoui-bags reports it.
+		B.failedPickups = (B.failedPickups or 0) + 1
+		B.lastFailedBag = sourceBag
 	end
 
 	return true, sourceItemID, source, targetItemID, target
@@ -807,6 +851,57 @@ function B:GetGroup(id)
 		return bags
 	end
 	return coreGroups[id]
+end
+
+--Why a bank sort did nothing. The bank is the awkward one of the two: its bag list
+--is built from Blizzard constants rather than the hardcoded list the bank frame
+--itself uses, its slots only read while the bank is open, and a sort that finds no
+--legal move looks exactly like a sort that never ran. Lives here rather than in
+--Core/Commands.lua because bankBags and moves are locals of this file.
+function B:SortReport()
+	E:Print(format("constants: BANK_CONTAINER %s, NUM_BAG_SLOTS %s, NUM_BANKBAGSLOTS %s",
+		tostring(BANK_CONTAINER), tostring(NUM_BAG_SLOTS), tostring(NUM_BANKBAGSLOTS)))
+
+	--Frame and sorter now share B.BankIDs, so this can no longer disagree with what the
+	--bank window is showing -- it is printed to catch the constants changing under us
+	local ids = ""
+	for _, id in ipairs(bankBags) do
+		ids = ids..(ids == "" and "" or ",")..id
+	end
+	E:Print(format("bank sort group: %d bags [%s] -- the bank frame shows 8 (-1 plus 5-11)",
+		getn(bankBags), ids))
+
+	local readable = 0
+	for _, id in ipairs(bankBags) do
+		local slots = GetContainerNumSlots(id) or 0
+		if slots > 0 then readable = readable + 1 end
+
+		--IsSpecialtyBag resolves the bag item through this; vanilla's version is only
+		--correct for bags 1-4, so a wrong or empty answer here for 5-11 means specialty
+		--bank bags (quivers, soul bags) are being treated as ordinary ones
+		local invID = ContainerIDToInventoryID and ContainerIDToInventoryID(id)
+		local ok, link = pcall(GetInventoryItemLink, "player", invID)
+
+		E:Print(format("  bag %d: %d slots, inventory id %s, bag item %s",
+			id, slots, tostring(invID),
+			(not ok) and "|cffff0000invalid slot|r" or (link and "found" or "none")))
+	end
+
+	E:Print(format("%d of %d bank containers readable -- 0 slots means either no bag in that slot or the bank is shut",
+		readable, getn(bankBags)))
+
+	--The decorator refuses to start while this is shown. If a previous run never
+	--finished it stays up, and every later click bails out instead of sorting.
+	E:Print(format("sort timer running: %s, moves the last sort planned: %s, disableBankSort %s",
+		tostring(B.SortUpdateTimer and B.SortUpdateTimer:IsShown()),
+		tostring(B.lastPlannedMoves or "no sort run yet"),
+		tostring(E.db.bags.disableBankSort)))
+
+	--A move whose pickup never reached the cursor is reported as a success by DoMove,
+	--so this is the only place the silence shows up
+	E:Print(format("moves whose pickup never reached the cursor: %s%s",
+		tostring(B.failedPickups or 0),
+		B.lastFailedBag and format(" (last in bag %d)", B.lastFailedBag) or ""))
 end
 
 function B:CommandDecorator(func, groupsDefaults)

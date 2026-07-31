@@ -17,6 +17,7 @@ local GetNumLootItems = GetNumLootItems
 local GiveMasterLoot = GiveMasterLoot
 local IsFishingLoot = IsFishingLoot
 local LootSlot = LootSlot
+local ConfirmLootSlot = ConfirmLootSlot
 local LootSlotIsCoin = LootSlotIsCoin
 local LootSlotIsItem = LootSlotIsItem
 local ResetCursor = ResetCursor
@@ -165,7 +166,47 @@ function M:UPDATE_MASTER_LOOT_LIST()
 	UIDropDownMenu_Refresh(GroupLootDropDown)
 end
 
+--[[
+	Loot everything on a right click instead of holding shift.
+
+	This client hands out the pieces but calls none of them. SuperWoW removes 1.12's
+	hardcoded shift-to-autoloot and exposes SetAutoloot(0|1) in its place, and it also
+	changes LootSlot: the second argument, forceloot, has to be 1 or the slot is not
+	actually taken. Neither does anything on its own -- something has to ask. Guda's
+	AutoLoot module was what asked, which is why this stopped working the moment Guda
+	was disabled rather than because of anything a UI did.
+
+	Both halves are kept. SetAutoloot is the real fix where it exists, because the
+	client loots before LOOT_OPENED is ever raised; the loop is the fallback for a
+	client without SuperWoW, and a harmless no-op otherwise since there is nothing left
+	to take by the time it runs.
+]]
+function M:ApplyAutoLoot()
+	--Looked up when called, never cached: SuperWoW registers its Lua functions after
+	--the addons have loaded, so a file-scope local would capture nil and stay nil.
+	if _G.SetAutoloot then
+		_G.SetAutoloot(E.db.general.autoLoot and 1 or 0)
+	end
+end
+
+function M:AutoLootAll()
+	if not E.db.general.autoLoot then return end
+
+	local items = GetNumLootItems()
+	if not items or items == 0 then return end
+
+	--backwards: taking a slot renumbers everything above it
+	for slot = items, 1, -1 do
+		LootSlot(slot, 1)
+
+		--bind-on-pickup puts up a confirmation that would otherwise stall the run
+		if ConfirmLootSlot then ConfirmLootSlot(slot) end
+	end
+end
+
 function M:LOOT_OPENED()
+	self:AutoLootAll()
+
 	lootFrame:Show()
 
 	if not lootFrame:IsShown() then
@@ -291,6 +332,8 @@ function M:LoadLoot()
 		CloseLoot()
 	end)
 	E.frames[lootFrame] = nil
+
+	self:ApplyAutoLoot()
 
 	self:RegisterEvent("LOOT_OPENED")
 	self:RegisterEvent("LOOT_SLOT_CLEARED")

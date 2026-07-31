@@ -8,7 +8,7 @@ local format, len, lower, match = string.format, string.len, string.lower, strin
 --WoW API / Variables
 local UIFrameFadeOut, UIFrameFadeIn = UIFrameFadeOut, UIFrameFadeIn
 local EnableAddOn, DisableAddOn, DisableAllAddOns = EnableAddOn, DisableAddOn, DisableAllAddOns
-local SetCVar = SetCVar
+local SetCVar, GetCVar = SetCVar, GetCVar
 local ReloadUI = ReloadUI
 local GetAddOnInfo = GetAddOnInfo
 local IsAddOnLoaded = IsAddOnLoaded
@@ -152,6 +152,124 @@ function E:EnableBlizzardAddOns()
 			EnableAddOn(addon)
 			E:Print("The following addon was re-enabled:", addon)
 		end
+	end
+end
+
+--Spell queueing is nampower's, not OctoUI's, and it is configured entirely through
+--CVars the DLL registers at load. Three things can be wrong and they need telling
+--apart: the DLL is not reaching this Lua state at all, it is loaded but the relevant
+--queue type is switched off, or it is loaded and queueing fine and the problem lies
+--elsewhere. Only the last is invisible without watching the event.
+local QUEUE_CVARS = {
+	"NP_QueueCastTimeSpells",
+	"NP_QueueInstantSpells",
+	"NP_QueueChannelingSpells",
+	"NP_QueueTargetingSpells",
+	"NP_QueueSpellsOnCooldown",
+	"NP_QueueOnSwingSpells",
+	"NP_SpellQueueWindowMs",
+	"NP_ChannelQueueWindowMs",
+	"NP_CooldownQueueWindowMs",
+}
+
+local QUEUE_API = {"QueueSpellByName", "CastSpellByNameNoQueue", "CastSpellNoQueue", "QueueScript"}
+
+local queueWatcher, queueWatching, queueHooked
+
+--How much of the current cast is left, in seconds, or nil when nothing is casting.
+--This is the number that decides whether a press queues, and it is the one thing the
+--player cannot see -- "sporadic" is what a 500ms window looks like from the outside.
+local function CastRemaining()
+	local bar = _G.ElvUF_Player and _G.ElvUF_Player.Castbar
+	if not (bar and bar:IsShown()) then return end
+
+	if bar.channeling then
+		return bar.value
+	elseif bar.casting then
+		return (bar.max or 0) - (bar.value or 0)
+	end
+end
+
+--Logged on the way past, so a press that never queued still leaves a line. The hooks
+--stay installed once added -- hooksecurefunc cannot be undone -- so everything they do
+--is behind the watching flag.
+local function LogCastAttempt(what)
+	if not queueWatching then return end
+
+	local remaining = CastRemaining()
+	if remaining then
+		E:Print(format("press %s with |cffffff00%.2fs|r left on the current cast", what, remaining))
+	else
+		E:Print(format("press %s (nothing casting)", what))
+	end
+end
+
+function E:QueueReport()
+	local seen = 0
+	for i = 1, getn(QUEUE_CVARS) do
+		local name = QUEUE_CVARS[i]
+		local value = GetCVar(name)
+		if value then seen = seen + 1 end
+
+		--"0" is a perfectly ordinary answer and the reason one of these is off by
+		--default: on-swing spells do not queue unless asked to
+		E:Print(format("%s = %s", name,
+			value and ((value == "0") and ("|cffff9900"..value.."|r") or value) or "|cffff0000nil|r"))
+	end
+
+	if seen == 0 then
+		E:Print("|cffff0000None of nampower's CVars exist|r - the DLL is not in this session. Check dlls.txt and Logs\\nampower_debug.log.")
+		return
+	end
+
+	local missing = ""
+	for i = 1, getn(QUEUE_API) do
+		if not _G[QUEUE_API[i]] then
+			missing = missing..((missing == "") and "" or ", ")..QUEUE_API[i]
+		end
+	end
+	E:Print(format("nampower Lua API: %s", (missing == "") and "|cff00ff00all present|r" or ("|cffff0000missing "..missing.."|r")))
+
+	--The only actual proof that a press was queued rather than dropped
+	if queueWatching then
+		queueWatcher:UnregisterAllEvents()
+		queueWatching = nil
+		E:Print("Queue watch |cffff9900off|r.")
+		return
+	end
+
+	if not queueWatcher then
+		queueWatcher = CreateFrame("Frame", "OctoUI_QueueWatch", E.UIParent)
+		queueWatcher:SetScript("OnEvent", function()
+			E:Print(format("|cff00ff00queued|r %s %s", tostring(arg1), tostring(arg2)))
+		end)
+	end
+
+	if not queueHooked then
+		queueHooked = true
+		hooksecurefunc("CastSpellByName", function(spell) LogCastAttempt(tostring(spell)) end)
+		hooksecurefunc("UseAction", function(slot) LogCastAttempt("action "..tostring(slot)) end)
+	end
+
+	--pcall: registering an event this client has never heard of raises, and that is
+	--itself the answer -- it means nampower never added its custom event codes
+	local ok = pcall(queueWatcher.RegisterEvent, queueWatcher, "SPELL_QUEUE_EVENT")
+	if not ok then
+		E:Print("|cffff0000SPELL_QUEUE_EVENT is not a known event|r - nampower did not register its custom events in this session.")
+		return
+	end
+
+	queueWatching = true
+	E:Print("Queue watch |cff00ff00on|r - every press now prints how much of the current cast was left, and a queued press prints a second line. Compare the two against the windows above. Run /octoui-queue again to stop.")
+end
+
+--Delegates: the interesting state is all locals of Modules/Bags/Sort.lua.
+function E:BagSortReport()
+	local B = E:GetModule("Bags", true)
+	if B and B.SortReport then
+		B:SortReport()
+	else
+		E:Print("|cffff0000Bags module is not loaded.|r")
 	end
 end
 
@@ -341,6 +459,8 @@ function E:LoadCommands()
 	self:RegisterChatCommand("enableblizzard", "EnableBlizzardAddOns")
 	self:RegisterChatCommand("octoui-dots", "DebuffTimerReport")
 	self:RegisterChatCommand("octoui-threat", "ThreatReport")
+	self:RegisterChatCommand("octoui-bags", "BagSortReport")
+	self:RegisterChatCommand("octoui-queue", "QueueReport")
 	self:RegisterChatCommand("octoui-threatreset", "ThreatReset")
 
 	if E:GetModule("ActionBars") and E.private.actionbar.enable then

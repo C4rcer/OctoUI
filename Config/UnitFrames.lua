@@ -1835,6 +1835,21 @@ E.Options.args.unitframe = {
 							name = L["Target On Mouse-Down"],
 							desc = L["Target units on mouse down rather than mouse up. \n\n|cffFF0000Warning: If you are using the addon 'Clique' you may have to adjust your clique settings when changing this."]
 						},
+						auraDurationPosition = {
+							order = 6.5,
+							type = "select",
+							name = L["Aura Timer Position"],
+							desc = L["Where the countdown sits on an aura icon. Above or below keeps it clear of the icon art at the cost of the space around the icon."],
+							values = {
+								["CENTER"] = L["Center"],
+								["ABOVE"] = L["Above"],
+								["BELOW"] = L["Below"]
+							},
+							set = function(info, value)
+								E.db.unitframe.auraDurationPosition = value
+								UF:Update_AllFrames()
+							end
+						},
 						auraBlacklistModifier = {
 							order = 7,
 							type = "select",

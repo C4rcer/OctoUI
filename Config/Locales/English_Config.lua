@@ -1272,3 +1272,12 @@ L["Which stats the panel lists. A stat left on still shows when it is zero -- an
 L["Power Bar"] = true
 L["Sits between the health bar and the cast bar. Only units with a mana pool get one -- rage and energy mobs sit at 0 and say nothing useful."] = true
 
+--Unit frame aura timers
+L["Aura Timer Position"] = true
+L["Where the countdown sits on an aura icon. Above or below keeps it clear of the icon art at the cost of the space around the icon."] = true
+L["Above"] = true
+L["Below"] = true
+
+--Auto loot
+L["Auto Loot"] = true
+L["Take everything from a corpse on a normal right click, with no need to hold shift."] = true

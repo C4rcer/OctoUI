@@ -673,7 +673,9 @@ local function BuildABConfig()
 					order = 6,
 					type = "toggle",
 					name = L["Show Empty Buttons"],
-					set = function(info, value) E.db.actionbar[barNum][ info[getn(info)] ] = value AB:UpdateButtonSettingsForBar(barNum) end,
+					--AB:UpdateButtonSettingsForBar has never existed; PositionAndSizeBar is what
+					--applies the grid, and it takes the bar name rather than the number.
+					set = function(info, value) E.db.actionbar[barNum][ info[getn(info)] ] = value AB:PositionAndSizeBar("bar"..barNum) end,
 					disabled = function() return not E.db.actionbar[barNum].enabled end
 				},
 				mouseover = {

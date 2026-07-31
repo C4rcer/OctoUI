@@ -5,6 +5,9 @@ P.farmSize = 340
 
 --Core
 P["general"] = {
+	--Right click loots everything. Off by default because it is a real change to how
+	--looting behaves, see the note in Modules\Misc\Loot.lua.
+	["autoLoot"] = false,
 	["messageRedirect"] = DEFAULT_CHAT_FRAME:GetName(),
 	["stickyFrames"] = true,
 	["loginmessage"] = true,
@@ -748,6 +751,9 @@ P["unitframe"] = {
 	["smartRaidFilter"] = true,
 	["targetOnMouseDown"] = false,
 	["auraBlacklistModifier"] = "SHIFT",
+	--Where the countdown sits on an aura icon. CENTER is ElvUI's own look; ABOVE and
+	--BELOW move it clear of the icon art entirely, at the cost of the space around it.
+	["auraDurationPosition"] = "CENTER",
 	["thinBorders"] = false,
 	["cooldown"] = {
 		["threshold"] = 4,

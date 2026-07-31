@@ -10,6 +10,7 @@ local ceil = math.ceil
 local mod = math.mod
 --WoW API / Variables
 local CreateFrame = CreateFrame
+local HasAction = HasAction
 local UIFrameFadeIn = UIFrameFadeIn
 local UIFrameFadeOut = UIFrameFadeOut
 
@@ -110,7 +111,29 @@ function AB:PositionAndSizeBar(barName)
 
 		_G[button:GetName().."Cooldown"]:SetModelScale(size / 48)
 
-		ActionButton_ShowGrid(button)
+		--showGrid was read by nothing at all -- the grid was turned on for every button
+		--regardless, so the option did nothing even before its setter errored. 1.12
+		--counts grid requests rather than holding a boolean, and this runs again on
+		--every config change, so the counter is reset here instead of climbing without
+		--bound.
+		--
+		--Hiding is done by hand rather than through ActionButton_HideGrid, which is not
+		--safe to call from here: 1.12's version takes no argument, resolves its button
+		--from the global `this`, and asks HasAction(ActionButton_GetPagedID(this)).
+		--Outside a script handler `this` is nil, and this addon replaces
+		--ActionButton_GetPagedID (further down this file) with one that indexes its
+		--argument -- so it raises, this whole function aborts part way through, and the
+		--bar is left unstyled and black until a reload. ActionButton_ShowGrid is fine
+		--by comparison; it touches no paged id.
+		if self.db[barName].showGrid then
+			button.showgrid = 0
+			ActionButton_ShowGrid(button)
+		else
+			button.showgrid = 0
+			if not HasAction(ActionButton_GetPagedID(button)) then
+				button:Hide()
+			end
+		end
 
 		if i == 1 then
 			if point == "BOTTOMLEFT" then

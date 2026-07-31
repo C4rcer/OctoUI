@@ -189,6 +189,17 @@ local function updateIcon(element, unit, index, offset, filter, isDebuff, visibl
 		button.filter = filter
 		button.isDebuff = isDebuff
 
+		--Stashed on the button here rather than left to a CustomFilter. ElvUI's
+		--UF:AuraFilter is the natural home for these and is the only thing that ever
+		--assigned them, but it is commented out at Modules/UnitFrames/Elements/Auras.lua
+		--(it reads undefined `name` and `caster` locals, so it would reject every aura
+		--it was handed). With nothing writing them, PostUpdateAura's timer block --
+		--`if button.expiration and button.duration` -- could never be true, so unit
+		--frame auras never got a countdown on the icon and the remaining time was only
+		--ever visible in the tooltip.
+		button.duration = duration
+		button.expiration = expiration
+
 		--[[ Override: Auras:CustomFilter(unit, button, ...)
 		Defines a custom filter that controls if the aura button should be shown.
 

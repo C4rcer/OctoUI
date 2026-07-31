@@ -49,12 +49,53 @@ function UF:Construct_Debuffs(frame)
 	return debuffs
 end
 
+--Aura text sits on top of spell icon art rather than a flat status bar, so an
+--unoutlined font sinks straight into whatever is behind it -- a timer you can only
+--half read is no use on a buff you are watching fall off. FontTemplate does give
+--unoutlined text a full black shadow, but at one pixel it is not enough against a
+--busy icon. Outline this text specifically when the unit frame font has none set; a
+--deliberate choice of outline is left exactly as the user made it.
+local function AuraFontOutline()
+	local outline = E.db.unitframe.fontOutline
+	return (not outline or outline == "NONE") and "OUTLINE" or outline
+end
+
+--{ text point, icon point, x, y }. ABOVE and BELOW hang the countdown off the icon
+--rather than over it, which is the other way to keep it readable -- it costs the gap
+--around the icon, so it is a choice rather than the default.
+local DURATION_ANCHORS = {
+	["CENTER"] = {"CENTER", "CENTER", 1, 1},
+	["ABOVE"] = {"BOTTOM", "TOP", 0, 1},
+	["BELOW"] = {"TOP", "BOTTOM", 0, -1},
+}
+
+local function PositionAuraDuration(text, button)
+	local anchor = DURATION_ANCHORS[E.db.unitframe.auraDurationPosition] or DURATION_ANCHORS.CENTER
+
+	text:ClearAllPoints()
+	E:Point(text, anchor[1], button, anchor[2], anchor[3], anchor[4])
+end
+
 function UF:Construct_AuraIcon(button)
 	local offset = UF.thinBorders and E.mult or E.Border
 
+	--A dark strip behind the countdown. The font is outlined already -- the unit frame
+	--default is MONOCHROMEOUTLINE -- but an outline only separates glyph from glyph;
+	--over bright icon art the whole string still washes out, which no amount of outline
+	--fixes. Layers matter here: the icon is ARTWORK and created first in oUF's
+	--createAuraIcon, so an ARTWORK texture made now draws above it, and the OVERLAY text
+	--below stays above both. Shown and hidden with the text by UpdateAuraTimer, since an
+	--empty font string has no rect worth drawing behind.
+	button.textBG = button:CreateTexture(nil, "ARTWORK")
+	button.textBG:SetTexture(0, 0, 0, 0.65)
+	button.textBG:Hide()
+
 	button.text = button:CreateFontString(nil, "OVERLAY")
-	E:Point(button.text, "CENTER", 1, 1)
+	PositionAuraDuration(button.text, button)
 	button.text:SetJustifyH("CENTER")
+
+	button.textBG:SetPoint("TOPLEFT", button.text, "TOPLEFT", -2, 1)
+	button.textBG:SetPoint("BOTTOMRIGHT", button.text, "BOTTOMRIGHT", 2, -1)
 
 	E:SetTemplate(button, "Default", nil, nil, UF.thinBorders, true)
 
@@ -320,13 +361,14 @@ function UF:UpdateAuraIconSettings(auras, noCycle)
 
 	local db = frame.db[type]
 	local unitframeFont = LSM:Fetch("font", E.db.unitframe.font)
-	local unitframeFontOutline = E.db.unitframe.fontOutline
+	local unitframeFontOutline = AuraFontOutline()
 	local index = 1
 	auras.db = db
 	if db then
 		if not noCycle then
 			while auras[index] do
 				local button = auras[index]
+				PositionAuraDuration(button.text, button)
 				E:FontTemplate(button.text, unitframeFont, db.fontSize, unitframeFontOutline)
 				E:FontTemplate(button.count, unitframeFont, db.countFontSize or db.fontSize, unitframeFontOutline)
 
@@ -338,6 +380,7 @@ function UF:UpdateAuraIconSettings(auras, noCycle)
 				index = index + 1
 			end
 		else
+			PositionAuraDuration(auras.text, auras)
 			E:FontTemplate(auras.text, unitframeFont, db.fontSize, unitframeFontOutline)
 			E:FontTemplate(auras.count, unitframeFont, db.countFontSize or db.fontSize, unitframeFontOutline)
 
@@ -380,7 +423,14 @@ function UF:PostUpdateAura(unit, button)
 			button.expirationTime = button.expiration
 			button.expirationSaved = button.expiration - getTime
 			button.nextupdate = -1
-			button:SetScript("OnUpdate", UF.UpdateAuraTimer)
+			--Wrapped, not passed raw: a 1.12 script handler receives no self and no
+			--elapsed, only the globals `this` and `arg1`. Handing over the method
+			--directly leaves both parameters nil, and the first line of the timer then
+			--indexes a nil self on every frame. It only surfaced once the timer
+			--actually started being attached at all.
+			button:SetScript("OnUpdate", function()
+				UF.UpdateAuraTimer(this, arg1 or 0)
+			end)
 		end
 		if (button.expirationTime ~= button.expiration) or (button.expirationSaved ~= (button.expiration - getTime))  then
 			button.expirationTime = button.expiration
@@ -396,6 +446,7 @@ function UF:PostUpdateAura(unit, button)
 		if button.text:GetFont() then
 			button.text:SetText("")
 		end
+		if button.textBG then button.textBG:Hide() end
 	end
 end
 
@@ -412,6 +463,7 @@ function UF:UpdateAuraTimer(elapsed)
 		if self.text:GetFont() then
 			self.text:SetText("")
 		end
+		if self.textBG then self.textBG:Hide() end
 
 		return
 	end
@@ -428,9 +480,11 @@ function UF:UpdateAuraTimer(elapsed)
 	if self.text:GetFont() then
 		self.text:SetText(text)
 	elseif self:GetParent():GetParent().db then
-		E:FontTemplate(self.text, LSM:Fetch("font", E.db.unitframe.font), self:GetParent():GetParent().db[self:GetParent().type].fontSize, E.db.unitframe.fontOutline)
+		E:FontTemplate(self.text, LSM:Fetch("font", E.db.unitframe.font), self:GetParent():GetParent().db[self:GetParent().type].fontSize, AuraFontOutline())
 		self.text:SetText(text)
 	end
+
+	if self.textBG then self.textBG:Show() end
 end
 
 function UF:AuraFilter(unit, button, texture, count, dispelType, duration, expiration)
