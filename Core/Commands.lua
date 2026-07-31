@@ -153,6 +153,79 @@ function E:EnableBlizzardAddOns()
 	end
 end
 
+--Nameplate debuff timers are reconstructed from three separate things -- the bundled
+--duration table, a tooltip scan for the spell name, and combat-log timestamps -- and
+--when no timer appears there is no way to tell which one failed by looking at the
+--nameplate. Dumps all three for the current target.
+function E:DebuffTimerReport()
+	local NP = E:GetModule("NamePlates")
+	local lib = NP and NP.LibDebuff
+
+	local durations = E.DebuffDurations and E.DebuffDurations["debuffs"]
+	local spells = 0
+	if durations then
+		for _ in pairs(durations) do spells = spells + 1 end
+	end
+
+	local tracked = 0
+	if lib and lib.objects then
+		for _ in pairs(lib.objects) do tracked = tracked + 1 end
+	end
+
+	E:Print(format("locale %s, duration table: %s (%d spells)", GetLocale(),
+		durations and "loaded" or "|cffff0000MISSING|r", spells))
+	E:Print(format("LibDebuff: %s, units with tracked debuffs: %d",
+		lib and "loaded" or "|cffff0000MISSING|r", tracked))
+
+	local haste = NP and NP.LibHaste
+	if haste then
+		E:Print(format("casting speed: %.1f%%, scales DoTs: %s", haste:GetCastingSpeed() * 100,
+			haste:ScalesDots() and "|cff00ff00yes|r" or "no (durations left unhasted)"))
+	else
+		E:Print("LibHaste: |cffff0000MISSING|r")
+	end
+
+	--the keys say whether the combat log is giving names or GUIDs, which is the
+	--difference between a lookup that matches and one that silently does not
+	if lib and lib.objects then
+		for key in pairs(lib.objects) do
+			E:Print(format("  tracked key: '%s'", tostring(key)))
+		end
+	end
+
+	if not UnitExists("target") then
+		E:Print("no target - target something you have a debuff on and run this again")
+		return
+	end
+
+	local name, level = UnitName("target"), UnitLevel("target")
+	--SuperWoW returns the GUID as a second value from UnitExists
+	local _, guid = UnitExists("target")
+	E:Print(format("target: %s (level %s) guid %s", tostring(name), tostring(level), tostring(guid)))
+
+	local found
+	for i = 1, 16 do
+		local texture = UnitDebuff("target", i)
+		if not texture then break end
+		found = true
+
+		local effect = NP:ScanAuraName("target", i, true)
+		local known = (durations and effect and durations[effect]) and "in table" or "|cffff0000not in table|r"
+		--`local a, b = cond and f()` truncates f() to one value, so timeleft was
+		--always nil here regardless of what the store held. Call it plainly.
+		local duration, timeleft
+		if lib then
+			duration, timeleft = lib:GetTimeLeft(name, level, effect or "", guid)
+		end
+
+		E:Print(format("  %d. %s | %s | %s", i,
+			effect and ("'"..effect.."'") or "|cffff0000name unresolved|r", known,
+			timeleft and format("left %.1f of %.0f", timeleft, duration or 0) or "|cffff0000no timer|r"))
+	end
+
+	if not found then E:Print("  target has no debuffs") end
+end
+
 function E:LoadCommands()
 	self:RegisterChatCommand("in", "DelayScriptCall")
 
@@ -177,6 +250,7 @@ function E:LoadCommands()
 	self:RegisterChatCommand("disable", "DisableAddon")
 	self:RegisterChatCommand("farmmode", "FarmMode")
 	self:RegisterChatCommand("enableblizzard", "EnableBlizzardAddOns")
+	self:RegisterChatCommand("octoui-dots", "DebuffTimerReport")
 
 	if E:GetModule("ActionBars") and E.private.actionbar.enable then
 		self:RegisterChatCommand("kb", E:GetModule("ActionBars").ActivateBindMode)

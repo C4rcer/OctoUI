@@ -1,5 +1,7 @@
 <Ui xmlns="http://www.blizzard.com/wow/ui/">
 	<Script file="NamePlates.lua"/>
+	<Script file="LibHaste.lua"/>
+	<Script file="LibDebuff.lua"/>
 	<Script file="StyleFilter.lua"/>
 	<Include file="Elements\Load_Elements.xml"/>
 </Ui>

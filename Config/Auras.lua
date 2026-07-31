@@ -6,7 +6,9 @@ local A = E:GetModule("Auras");
 local format = string.format
 local getn = table.getn
 --WoW API / Variables
-local FONT_SIZE, GENERAL, NAME, NONE = FONT_SIZE, GENERAL, NAME, NONE
+--NAME arrives here as a table when AtlasLoot is installed; see E:SafeString
+local FONT_SIZE, GENERAL, NONE = FONT_SIZE, GENERAL, NONE
+local NAME = E:SafeString(NAME, L["Name"])
 
 local function GetAuraOptions(headerName)
 	local auraOptions = {

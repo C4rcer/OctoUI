@@ -45,6 +45,12 @@ Core\ Modules\ ...    the engine
 `!DebugTools` was moved out of the distributed repo into the dev folder; it is
 optional and every call site is guarded (`reason == "MISSING"`).
 
+Its TOC carried `## Dependencies: !Compatibility`, an addon that stopped existing
+the moment the folders were merged, so `LoadAddOn("!DebugTools")` in
+`Compatibility\errorHandler.lua` failed with `DEP_MISSING` and every Lua error fell
+back to the bare Blizzard `ScriptErrors` popup with no stack trace. The dependency
+is dropped; DebugTools ships its own `Compatibility.lua` and never needed it.
+
 ### Consequences of the merge
 
 - **The options GUI is no longer load-on-demand.** It now loads at startup,
@@ -138,6 +144,15 @@ Twelve `S:Handle*` helpers and seven `E:` toolkit helpers now start with
 `if not x then return end`, matching the idiom the backport authors were already
 applying case by case.
 
+**A new file needs a client restart, not `/reload`.** The 1.12 client indexes
+`Interface\AddOns` at startup. `/reload` re-executes the files it already knows, so
+edits to an existing file apply immediately — but a file created while the game is
+running is not in that index, and the `<Script>` line referencing it is skipped in
+silence. No error is raised, because from the client's side there is nothing to load.
+The symptom is a brand-new module that behaves exactly as if its file were empty
+while every edit to an existing file works, which reads like a code bug and is not
+one. Add a file, restart the game.
+
 Do not guess which globals are missing. Use the in-game probe:
 `/octoui-missing` then `/reload`, which force-loads the twelve load-on-demand
 Blizzard addons, checks 393 referenced globals and writes
@@ -180,6 +195,41 @@ show path now hides template children it did not ask for.
   strip; and the install wizard positioned `ElvUF_PetMover` (the pet
   *unitframe*) while never placing `ElvBar_Pet` (the pet *action bar*) or
   `ShiftAB` (the stance bar), so both kept corner defaults.
+- **A clobbered Blizzard global took the whole options table down.** AtlasLoot ships
+  an `AceLocale-2.2` revision whose local list at line 25 is missing `NAME`, so its
+  `NAME = self.NAME` writes `_G.NAME = {}` — and AtlasLoot loads before OctoUI. Every
+  config file reading the bare global got a table, and AceConfig's validator rejects
+  the entire tree with "expected a string or funcref, got 'table:'", so `/ec` opened
+  to nothing. Bare CAPS globals now go through `E:SafeString(NAME, L["Name"])`, which
+  falls back to our own locale string when another addon has left one holding
+  something that is not a string. Third variant of the recurring bug shape above, and
+  the one `/octoui-missing`'s `ClobberedGlobals` output exists to catch.
+- **The EditBox backdrop, part two.** Hosting the backdrop on the grandparent when
+  `CreateFrame` refuses the EditBox as a parent only moved the failure: this client
+  will not take that object as a `SetPoint` **anchor** either, so `E:SetOutside`
+  died in C with "Couldn't find region named '(null)'" and killed the rest of the
+  skin function. `TryPoint` now `pcall`s the anchor and retries with the anchor's
+  *name*, which 1.12 does resolve, and `E:Point` uses it too — `Bags.lua` anchors
+  the bag search backdrop to the EditBox directly, so the raw `SetPoint` there hit
+  the identical wall.
+
+  Fixing that surfaced the bug behind it, because execution now got further. **On
+  this client a frame that never received a backdrop answers `frame.backdrop` with
+  an inherited function**, not nil. `Skins.lua` knew this and type-checked at one
+  call site; everywhere else `if f.backdrop then` passes and the next index dies
+  ("attempt to index local 'obj' (a function value)"). So: `E:CreateBackdrop` never
+  bails silently any more — it parks an unanchorable backdrop on the host and hides
+  it, so the field is always a real frame — and when it genuinely cannot build one
+  it writes `f.backdrop = false`, which shadows the inherited function and is
+  correctly falsy. The toolkit helpers gained an `IsWidget` guard in place of
+  `if not x then return end`, since a truthy non-widget was the whole problem.
+
+  These helpers now swallow `SetPoint` failures instead of letting one abort a skin
+  function, so they report the real `pcall` error to chat, once per anchor. Without
+  that a genuine bad-argument bug would simply vanish.
+
+  The `assert(anchor)` `SetOutside`/`SetInside` opened with is gone for the same
+  reason the other toolkit helpers lost theirs.
 - **Nameplate auras never appeared.** The upstream element fed an aura cache from
   `COMBAT_LOG_EVENT_UNFILTERED`, which does not exist before 2.4, and the handler
   that would have filled it had its own argument unpack commented out; nothing was
@@ -192,6 +242,48 @@ show path now hides template children it did not ask for.
   0.2s repeating timer polls visible plates. `Auras_SizeChanged` was registered as
   an `OnSizeChanged` script, which gets no `self` on 1.12, so icon sizing now
   happens in `UpdateAuraIcons` instead.
+- **Nameplate DoT timers.** `UnitBuff`/`UnitDebuff` return texture and stack count
+  only — no duration, and SuperWoW 2.2 does not extend them — so debuff timers are
+  reconstructed the way every vanilla UI does it, by `Modules\NamePlates\LibDebuff.lua`:
+  the combat log says when a debuff landed, `Settings\DebuffDurations\<locale>.lua`
+  says how long that spell lasts. Durations that are not fixed at cast time (combo
+  points, Booming Voice, Improved SW:P, Permafrost, Improved Gouge) are adjusted in
+  `GetDuration`. A cast is held as *pending* and only becomes a timer once the "is
+  afflicted by" message confirms it landed, so a resisted DoT never starts a
+  countdown.
+
+  The duration data is extracted from ShaguPlates by Eric Mauser (Shagu) under the
+  MIT licence — 933 spells for enUS, seven locales, with the notice at the head of
+  each generated file. Only the running client's locale builds its table; the other
+  six parse and return. Buffs still get no timer: nothing here reports one.
+
+  Durations are stored per unit *name and level*, because the 1.12 combat log only
+  ever gives names. Two mobs sharing a name and level therefore share a countdown —
+  the plate itself is still matched by GUID, so the icons are right even when the
+  number on them is not. That is the one part GUIDs cannot fix.
+
+  **OctoWoW scales DoTs with casting speed and vanilla does not.** Haste in 1.12
+  only shortens cast time; ticks are fixed. This server adds talents (the warlock's
+  `Rapid Deterioration` is the confirmed one) reading "casting speed increase effects
+  increase the tick speed of your damage over time and channeled spells with 100%
+  efficiency, reducing their duration", so `duration = base / (1 + castingSpeed)`.
+  `Modules\NamePlates\LibHaste.lua` reconstructs casting speed the only way available
+  — there is no haste API at all on this client — by scanning the tooltips of
+  equipped gear, active buffs and taken talents for the client's own casting-speed
+  wordings. It also decides *whether* to scale at all by looking for a talent whose
+  tooltip mentions tick speed, rather than keeping a per-class spell list, so any
+  class with an equivalent talent is handled without one. Applied to our own casts
+  only: another caster's haste is unknowable.
+
+  **BetterCharacterStats computes the same number** for its character sheet and is
+  the addon to disable if you would rather only one thing scanned your gear. It is
+  not a dependency and none of its code is used — it ships with no licence at all,
+  so nothing of it could be reused regardless. The patterns matched are the game's
+  own tooltip strings.
+
+  Names are needed to key the store, so debuff names are always resolved now. They
+  still come from the per-slot texture cache, so a tooltip scan only happens when the
+  icon in a slot actually changes rather than on every plate five times a second.
 - **Game menu buttons** were skinned from a hardcoded list of Blizzard names, so
   OctoWoW's own additions (Donation Rewards) kept the gold Blizzard look. The
   skin now sweeps `GameMenuFrame`'s actual children, guarded on `.template` so
@@ -213,8 +305,9 @@ LFG in 3.3, `IsInInstance()` never returns `arena` here, and the polyfilled
 `GetInstanceInfo` hardcodes difficulty to 1); dual-spec tutorial text;
 `AceGUIContainer-BlizOptionsGroup.lua`, referenced by no loader; nameplate aura
 `Personal Auras` and `Maximum Duration` filters, since `UnitBuff`/`UnitDebuff`
-report neither the caster nor the duration of another unit's auras here (which is
-also why nameplate aura icons carry no timer text).
+report neither the caster nor the duration of another unit's auras here. (Debuff
+durations came back later via `LibDebuff` and a bundled duration table, but they are
+reconstructed rather than reported, so those two filters stay gone.)
 
 An obfuscated easter egg in TWThreat, which assembled a player name with
 `string.char` and flashed "STOP DPS <name>" at anyone with that name above 95%

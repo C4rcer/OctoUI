@@ -5,6 +5,10 @@ local ACD = LibStub("AceConfigDialog-3.0");
 --Cache global variables
 --Lua functions
 local getn = table.getn
+--WoW API / Variables
+--NAME arrives here as a table when AtlasLoot is installed; see E:SafeString
+local FILTER, FILTERS, LEVEL, NONE = FILTER, FILTERS, LEVEL, NONE
+local NAME = E:SafeString(NAME, L["Name"])
 
 local selectedFilter
 local filters

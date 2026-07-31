@@ -3,4 +3,5 @@
 	<Script file="Global.lua"/>
 	<Script file="Private.lua"/>
 	<Include file="Filters\Load_Filters.xml"/>
+	<Include file="DebuffDurations\Load_DebuffDurations.xml"/>
 </Ui>

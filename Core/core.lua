@@ -146,6 +146,19 @@ function E:Print(msg)
 	(_G[self.db.general.messageRedirect] or DEFAULT_CHAT_FRAME):AddMessage(strjoin("", self:ColorizedName("OctoUI", true), msg)) -- I put DEFAULT_CHAT_FRAME as a fail safe.
 end
 
+--Blizzard's global strings are not safe to read straight into an options table.
+--Another addon can leave one holding something that is not a string at all:
+--AtlasLoot ships an AceLocale-2.2 revision whose local list is missing NAME, so its
+--`NAME = self.NAME` writes _G.NAME = {}, and AtlasLoot loads before OctoUI. AceConfig
+--validates every name/desc/value, so one clobbered global takes the entire options
+--table down with "expected a string or funcref, got 'table:'".
+--Use this for any bare CAPS global that reaches the config, with our own locale
+--string as the fallback.
+function E:SafeString(value, fallback)
+	if type(value) == "string" then return value end
+	return fallback
+end
+
 --Workaround for people wanting to use white and it reverting to their class color.
 E.PriestColors = {
 	r = 0.99,

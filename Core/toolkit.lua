@@ -49,23 +49,74 @@ local function GetTemplate(t, isUnitFrameElement)
 	end
 end
 
+--`if not obj then return end` is not a strong enough guard on this client. A frame
+--that never received a backdrop still answers `frame.backdrop` with an inherited
+--function, which is truthy, so the nil check passes and the index on the next line
+--dies instead -- and callers read f.backdrop straight after E:CreateBackdrop without
+--checking. Skins.lua already type-checks at one call site; doing it here covers the
+--rest, and catches the `false` CreateBackdrop now writes when it cannot build one.
+local function IsWidget(obj)
+	return type(obj) == "table" and type(obj.GetObjectType) == "function"
+end
+
+--This client refuses some objects as a SetPoint anchor -- the same EditBox that
+--CreateFrame will not take as a parent -- and fails down in C with "Couldn't find
+--region named '(null)'", which aborts the rest of the calling skin function. It
+--does resolve a frame *name* string happily though (see the note in E:Point), so
+--retry that way before giving up. Returns whether the point was set.
+local function TryPoint(obj, point, anchor, relativePoint, x, y)
+	local ok, err = pcall(obj.SetPoint, obj, point, anchor, relativePoint, x, y)
+	if ok then return true end
+
+	--only the frame-object form has a name to retry with; the three-argument form
+	--of E:Point passes an offset here, and indexing a number is its own error
+	local name = type(anchor) == "table" and anchor.GetName and anchor:GetName()
+	if name and pcall(obj.SetPoint, obj, point, name, relativePoint, x, y) then
+		return true
+	end
+
+	return false, err
+end
+
+--Reported once per anchor, carrying the real error. These helpers now swallow
+--SetPoint failures rather than letting one abort the rest of a skin function, so the
+--message has to say what actually went wrong -- otherwise a genuine bad-argument bug
+--would just vanish, which is the opposite of what the guard is for.
+local function ReportBadAnchor(helper, anchor, err)
+	if not E.badAnchors then E.badAnchors = {} end
+
+	local isObject = type(anchor) == "table"
+	local name = (isObject and anchor.GetName and anchor:GetName()) or "<unnamed>"
+	local key = helper.."/"..name
+	if E.badAnchors[key] then return end
+	E.badAnchors[key] = true
+
+	--guarded: these helpers run during early init, before E:Print necessarily exists
+	if E.Print then
+		E:Print(format("|cffff8800%s failed|r on anchor %s (%s): %s",
+			helper, name,
+			(isObject and anchor.GetObjectType and anchor:GetObjectType()) or type(anchor),
+			tostring(err)))
+	end
+end
+
 --These assert on the dimension but never checked the frame, so a missing
 --Blizzard frame errored here rather than being skipped like the other helpers.
 function E:Size(frame, width, height)
-	if not frame then return end
+	if not IsWidget(frame) then return end
 	assert(width)
 	frame:SetWidth(E:Scale(width))
 	frame:SetHeight(E:Scale(height or width))
 end
 
 function E:Width(frame, width)
-	if not frame then return end
+	if not IsWidget(frame) then return end
 	assert(width)
 	frame:SetWidth(E:Scale(width))
 end
 
 function E:Height(frame, height)
-	if not frame then return end
+	if not IsWidget(frame) then return end
 	assert(height)
 	frame:SetHeight(E:Scale(height))
 end
@@ -73,7 +124,7 @@ end
 function E:Point(obj, arg1, arg2, arg3, arg4, arg5)
 	--Same treatment as the other helpers: a Blizzard frame this client does not
 	--have arrives here as nil, and there is nothing to position.
-	if not obj then return end
+	if not IsWidget(obj) then return end
 
 	if arg2 == nil then arg2 = obj:GetParent() end
 
@@ -115,41 +166,63 @@ function E:Point(obj, arg1, arg2, arg3, arg4, arg5)
 		end
 	end
 
-	obj:SetPoint(arg1, arg2, arg3, arg4, arg5)
+	--Bags anchors the search box backdrop to the EditBox itself, which is exactly the
+	--object this client will not take as an anchor, so this needs the same retry the
+	--box helpers use rather than a raw SetPoint.
+	local ok, err = TryPoint(obj, arg1, arg2, arg3, arg4, arg5)
+	if not ok then
+		ReportBadAnchor("Point", arg2, err)
+	end
+end
+
+--Was assert(anchor), which turned a missing Blizzard frame into a bare
+--"assertion failed!" instead of skipping the way every other helper here does.
+local function SetBox(helper, obj, anchor, anchor2, tlx, tly, brx, bry)
+	anchor = anchor or obj:GetParent()
+
+	if not anchor then
+		ReportBadAnchor(helper, anchor, "no anchor and no parent")
+		return false
+	end
+
+	if obj:GetPoint() then
+		obj:ClearAllPoints()
+	end
+
+	local ok, err = TryPoint(obj, "TOPLEFT", anchor, "TOPLEFT", tlx, tly)
+	if not ok then
+		ReportBadAnchor(helper, anchor, err)
+		return false
+	end
+
+	anchor2 = anchor2 or anchor
+	ok, err = TryPoint(obj, "BOTTOMRIGHT", anchor2, "BOTTOMRIGHT", brx, bry)
+	if not ok then
+		ReportBadAnchor(helper, anchor2, err)
+		return false
+	end
+
+	return true
 end
 
 function E:SetOutside(obj, anchor, xOffset, yOffset, anchor2)
-	if not obj then return end
+	if not IsWidget(obj) then return false end
 	xOffset = xOffset or E.Border
 	yOffset = yOffset or E.Border
-	anchor = anchor or obj:GetParent()
 
-	assert(anchor)
-	if obj:GetPoint() then
-		obj:ClearAllPoints()
-	end
-
-	obj:SetPoint("TOPLEFT", anchor, "TOPLEFT", -xOffset, yOffset)
-	obj:SetPoint("BOTTOMRIGHT", anchor2 or anchor, "BOTTOMRIGHT", xOffset, -yOffset)
+	return SetBox("SetOutside", obj, anchor, anchor2, -xOffset, yOffset, xOffset, -yOffset)
 end
 
 function E:SetInside(obj, anchor, xOffset, yOffset, anchor2)
-	if not obj then return end
+	if not IsWidget(obj) then return false end
 	xOffset = xOffset or E.Border
 	yOffset = yOffset or E.Border
-	anchor = anchor or obj:GetParent()
 
-	assert(anchor)
-	if obj:GetPoint() then
-		obj:ClearAllPoints()
-	end
-
-	obj:SetPoint("TOPLEFT", anchor, "TOPLEFT", xOffset, -yOffset)
-	obj:SetPoint("BOTTOMRIGHT", anchor2 or anchor, "BOTTOMRIGHT", -xOffset, yOffset)
+	return SetBox("SetInside", obj, anchor, anchor2, xOffset, -yOffset, -xOffset, yOffset)
 end
 
 function E:SetTemplate(f, t, glossTex, ignoreUpdates, forcePixelMode, isUnitFrameElement)
-	if not f then return end
+	if not IsWidget(f) then return end
 	GetTemplate(t, isUnitFrameElement)
 
 	if t then
@@ -234,7 +307,7 @@ function E:SetTemplate(f, t, glossTex, ignoreUpdates, forcePixelMode, isUnitFram
 end
 
 function E:CreateBackdrop(f, t, tex, ignoreUpdates, forcePixelMode, isUnitFrameElement)
-	if not f then return end
+	if not IsWidget(f) then return end
 	if not t then t = "Default" end
 
 	local parent = f.IsObjectType and f:IsObjectType("Texture") and f:GetParent() or f
@@ -263,6 +336,10 @@ function E:CreateBackdrop(f, t, tex, ignoreUpdates, forcePixelMode, isUnitFrameE
 				E:Print(format("|cffff8800CreateBackdrop skipped|r %s (%s) - cannot host a child frame and has no usable parent.",
 					name, (parent.GetObjectType and parent:GetObjectType()) or "?"))
 			end
+			--false, not nil: an unset field falls through to the inherited `backdrop`
+			--function, which is truthy and passes every `if f.backdrop then` in the
+			--codebase. false shadows it and is correctly falsy.
+			f.backdrop = false
 			return
 		end
 	end
@@ -270,17 +347,31 @@ function E:CreateBackdrop(f, t, tex, ignoreUpdates, forcePixelMode, isUnitFrameE
 	--Only the fallback needs an explicit anchor, because there b's parent is one
 	--level above the object. The normal path keeps the original call exactly, so
 	--nothing changes for the hundreds of frames that were already fine.
+	local anchored
 	if hostedOnGrandparent then
 		if f.forcePixelMode or forcePixelMode then
-			E:SetOutside(b, parent, E.mult, E.mult)
+			anchored = E:SetOutside(b, parent, E.mult, E.mult)
 		else
-			E:SetOutside(b, parent)
+			anchored = E:SetOutside(b, parent)
 		end
 	elseif f.forcePixelMode or forcePixelMode then
-		E:SetOutside(b, nil, E.mult, E.mult)
+		anchored = E:SetOutside(b, nil, E.mult, E.mult)
 	else
-		E:SetOutside(b)
+		anchored = E:SetOutside(b)
 	end
+
+	--The grandparent path anchors to the very object CreateFrame just refused, and
+	--this client rejects it as a SetPoint anchor too, so the backdrop can end up with
+	--nowhere to sit. Do not bail: callers index f.backdrop immediately and without
+	--checking (Bags.lua does it on the very next line), and leaving it unset means
+	--they get the inherited `backdrop` function instead of a frame. Park it on the
+	--host and hide it, so the field is always a real frame and nothing paints a black
+	--box over the host's origin.
+	if not anchored then
+		b:SetAllPoints(b:GetParent())
+		b:Hide()
+	end
+
 	E:SetTemplate(b, t, tex, ignoreUpdates, forcePixelMode, isUnitFrameElement)
 
 	local frameLevel = parent.GetFrameLevel and parent:GetFrameLevel()
@@ -295,6 +386,7 @@ function E:CreateBackdrop(f, t, tex, ignoreUpdates, forcePixelMode, isUnitFrameE
 end
 
 function E:CreateShadow(f)
+	if not IsWidget(f) then return end
 	if f.shadow then return end
 
 	borderr, borderg, borderb = 0, 0, 0

@@ -2,7 +2,7 @@ local E, L, V, P, G = unpack(ElvUI)
 local mod = E:GetModule("NamePlates")
 local LSM = LibStub("LibSharedMedia-3.0")
 
-local pairs, select, unpack = pairs, select, unpack
+local pairs, select, type, unpack = pairs, select, type, unpack
 local gsub = string.gsub
 local tinsert, tremove, wipe = table.insert, table.remove, table.wipe
 
@@ -34,7 +34,7 @@ local AURA_NAME_PATTERN = "%s*%(%*%)$" -- some clients suffix duplicated plate n
 local auraCache = {}
 
 local scanner, scannerLine
-local function GetAuraName(unit, index, isDebuff)
+local function PrepareScanner()
 	if not scanner then
 		scanner = CreateFrame("GameTooltip", "ElvUI_NamePlateAuraScanner", nil, "GameTooltipTemplate")
 		scannerLine = _G["ElvUI_NamePlateAuraScannerTextLeft1"]
@@ -43,13 +43,33 @@ local function GetAuraName(unit, index, isDebuff)
 	scanner:SetOwner(E.UIParent, "ANCHOR_NONE")
 	scanner:ClearLines()
 
+	return scanner
+end
+
+--Public: LibDebuff needs the same lookup to key its duration store by spell name.
+function mod:ScanAuraName(unit, index, isDebuff)
+	local tip = PrepareScanner()
+
 	if isDebuff then
-		scanner:SetUnitDebuff(unit, index)
+		tip:SetUnitDebuff(unit, index)
 	else
-		scanner:SetUnitBuff(unit, index)
+		tip:SetUnitBuff(unit, index)
 	end
 
 	return scannerLine and scannerLine:GetText()
+end
+
+--Public: the UseAction hook has only a slot, and the tooltip is the one way to get
+--back to a spell name on this client.
+function mod:ScanActionName(slot)
+	local tip = PrepareScanner()
+	tip:SetAction(slot)
+
+	return scannerLine and scannerLine:GetText()
+end
+
+local function GetAuraName(unit, index, isDebuff)
+	return mod:ScanAuraName(unit, index, isDebuff)
 end
 
 --Tooltip scans are expensive, so only redo one when the icon at that slot changed
@@ -120,7 +140,15 @@ function mod:GetPlateUnit(frame)
 	end
 end
 
-function mod:SetAura(aura, texture, count, name)
+local TimeColors = {
+	[0] = "|cffeeeeee",
+	[1] = "|cffeeeeee",
+	[2] = "|cffeeeeee",
+	[3] = "|cffFFEE00",
+	[4] = "|cfffe0000"
+}
+
+function mod:SetAura(aura, texture, count, name, timeleft)
 	aura.icon:SetTexture(texture)
 	aura.name = name
 
@@ -128,6 +156,18 @@ function mod:SetAura(aura, texture, count, name)
 		aura.count:SetText(count)
 	else
 		aura.count:SetText("")
+	end
+
+	--timeleft is only ever known for debuffs, and only for spells LibDebuff has a
+	--duration for; anything else simply shows no countdown rather than a wrong one
+	if timeleft and timeleft > 0 then
+		aura.expirationTime = GetTime() + timeleft
+		local timervalue, formatid = E:GetTimeInfo(timeleft, 4)
+		local timeFormat = E.TimeFormats[formatid][2]
+		aura.timeLeft:SetText(TimeColors[formatid]..format(timeFormat, timervalue).."|r")
+	else
+		aura.expirationTime = nil
+		aura.timeLeft:SetText("")
 	end
 
 	aura:Show()
@@ -138,6 +178,7 @@ function mod:HideAuraIcons(auras)
 
 	for i = 1, getn(auras.icons) do
 		auras.icons[i].name = nil
+		auras.icons[i].expirationTime = nil
 		auras.icons[i]:Hide()
 	end
 end
@@ -152,7 +193,13 @@ function mod:UpdateAuraSide(auras, unit, isDebuff)
 	if maxIcons == 0 then return false end
 
 	local trackFilter = GetAuraFilter(db)
-	local needName = trackFilter or self.StyleFilterCheckAuras
+	--debuffs always need a name now: it is the key LibDebuff stores durations under.
+	--The name still comes from the per-slot cache, so a tooltip scan only happens when
+	--the icon in that slot actually changes.
+	local needName = isDebuff or trackFilter or self.StyleFilterCheckAuras
+	local lib = isDebuff and self.LibDebuff
+	local unitname = lib and UnitName(unit)
+	local unitlevel = lib and UnitLevel(unit)
 	local frameNum = 1
 
 	for index = 1, MAX_UNIT_AURAS do
@@ -174,7 +221,14 @@ function mod:UpdateAuraSide(auras, unit, isDebuff)
 		end
 
 		if PassesFilter(trackFilter, name) then
-			self:SetAura(auras.icons[frameNum], texture, count, name)
+			local timeleft
+			if lib and name then
+				--`unit` is the SuperWoW GUID whenever we have one, which is also what
+				--the combat log stores under when GUID mode is on
+				_, timeleft = lib:GetTimeLeft(unitname, unitlevel, name, unit)
+			end
+
+			self:SetAura(auras.icons[frameNum], texture, count, name, timeleft)
 			frameNum = frameNum + 1
 		end
 	end
@@ -225,13 +279,27 @@ function mod:CreateAuraIcon(parent)
 	local aura = CreateFrame("Frame", nil, parent)
 	self:StyleFrame(aura, true)
 
-	aura.icon = aura:CreateTexture(nil, "OVERLAY")
+	--ARTWORK, not OVERLAY: the count and duration fontstrings below sit on OVERLAY,
+	--and ordering within a single layer is not guaranteed, so an icon sharing it can
+	--paint straight over the text. Upstream had all three on OVERLAY, but the element
+	--never rendered there, so there is no behaviour to preserve.
+	aura.icon = aura:CreateTexture(nil, "ARTWORK")
 	aura.icon:SetAllPoints()
 	aura.icon:SetTexCoord(unpack(E.TexCoords))
 
 	aura.count = aura:CreateFontString(nil, "OVERLAY")
 	aura.count:SetPoint("BOTTOMRIGHT", 0, 0)
-	aura.count:SetFont(LSM:Fetch("font", self.db.font), self.db.fontSize, self.db.fontOutline)
+	aura.count:SetFont(LSM:Fetch("font", self.db.stackFont or self.db.font), self.db.stackFontSize or self.db.fontSize, self.db.stackFontOutline or self.db.fontOutline)
+
+	aura.timeLeft = aura:CreateFontString(nil, "OVERLAY")
+	--1.12 rejects the one-argument SetPoint("CENTER") form, so pass the offsets. The
+	--type check is for the saved value: this errors inside CreateAuraIcon, which
+	--aborts UpdateAuraIcons and leaves the whole plate half-built.
+	local durationPosition = self.db.durationPosition
+	if type(durationPosition) ~= "string" then durationPosition = "CENTER" end
+	aura.timeLeft:SetPoint(durationPosition, 0, 0)
+	aura.timeLeft:SetJustifyH("CENTER")
+	aura.timeLeft:SetFont(LSM:Fetch("font", self.db.durationFont or self.db.font), self.db.durationFontSize or self.db.fontSize, self.db.durationFontOutline or self.db.fontOutline)
 
 	return aura
 end
