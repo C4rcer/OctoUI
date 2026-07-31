@@ -418,11 +418,18 @@ function UF:UpdateAuraTimer(elapsed)
 
 	local timervalue, formatid
 	timervalue, formatid, self.nextupdate = E:GetTimeInfo(self.expirationSaved, 4)
+
+	--E.TimeFormats[formatid][2] is a format spec ("%d", "%.1f"), so the number has to
+	--be formatted through it first. Without the inner format the spec itself reached
+	--the font string and the timer read "%d" -- SetText takes one string and quietly
+	--drops the trailing argument. Core/Cooldowns.lua has always done this correctly.
+	local text = format("%s%s|r", E.TimeColors[formatid], format(E.TimeFormats[formatid][2], timervalue))
+
 	if self.text:GetFont() then
-		self.text:SetText(format("%s%s|r", E.TimeColors[formatid], E.TimeFormats[formatid][2]), timervalue)
+		self.text:SetText(text)
 	elseif self:GetParent():GetParent().db then
 		E:FontTemplate(self.text, LSM:Fetch("font", E.db.unitframe.font), self:GetParent():GetParent().db[self:GetParent().type].fontSize, E.db.unitframe.fontOutline)
-		self.text:SetText(format("%s%s|r", E.TimeColors[formatid], E.TimeFormats[formatid][2]), timervalue)
+		self.text:SetText(text)
 	end
 end
 

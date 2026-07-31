@@ -73,6 +73,7 @@ local GetPlayerBuffTexture = GetPlayerBuffTexture
 local GetPlayerBuffApplications = GetPlayerBuffApplications
 local GetPlayerBuffDispelType = GetPlayerBuffDispelType
 local GetPlayerBuffTimeLeft = GetPlayerBuffTimeLeft
+local GetTime = GetTime
 
 local VISIBLE = 1
 local HIDDEN = 0
@@ -147,7 +148,15 @@ local function updateIcon(element, unit, index, offset, filter, isDebuff, visibl
 		texture = GetPlayerBuffTexture(idx)
 		count = GetPlayerBuffApplications(idx)
 		dispelType = GetPlayerBuffDispelType(idx)
+
+		--GetPlayerBuffTimeLeft is the time *remaining*; 1.12 has no API for an aura's
+		--full duration, and the consumers here only ever test duration against zero,
+		--so remaining is fine for it. The timer is a different matter: UpdateAuraTimer
+		--counts down from an absolute expiry, and this branch never set one -- which is
+		--why player buffs on the unit frames showed no timer at all while target auras,
+		--which come from UnitAura below with a real expiration, did.
 		duration = GetPlayerBuffTimeLeft(idx)
+		expiration = (duration and duration > 0) and (GetTime() + duration) or 0
 	else
 		texture, count, dispelType, duration, expiration = UnitAura(unit, index, filter)
 	end

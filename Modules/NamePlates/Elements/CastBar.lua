@@ -244,8 +244,18 @@ function mod:ConstructElement_CastBar(parent)
 	frame.Icon.texture:SetTexCoord(unpack(E.TexCoords))
 	self:StyleFrame(frame.Icon)
 
+	--Given a font here and not only in ConfigureElement_CastBar, because that step is
+	--skipped for any unit type whose health bar is disabled -- and friendly players
+	--and friendly NPCs ship disabled. StartCast still runs for them, so the first
+	--friendly cast in range raises "Font not set" on SetText: a paladin summoning a
+	--mount in a city is enough to do it. A font string that can be given text should
+	--never be without a font, the same way the aura icons do it.
+	local font = LSM:Fetch("font", self.db.font)
+
 	frame.Name = frame:CreateFontString(nil, "OVERLAY")
+	frame.Name:SetFont(font, self.db.fontSize, self.db.fontOutline)
 	frame.Time = frame:CreateFontString(nil, "OVERLAY")
+	frame.Time:SetFont(font, self.db.fontSize, self.db.fontOutline)
 	frame.Spark = frame:CreateTexture(nil, "OVERLAY")
 	frame.Spark:SetTexture([[Interface\CastingBar\UI-CastingBar-Spark]])
 	frame.Spark:SetBlendMode("ADD")
@@ -315,6 +325,13 @@ function mod:StartCast(frame, spellID, castTime, channel)
 
 	local db = self.db.units[frame.UnitType]
 	if not (db and db.castbar.enable) then return end
+
+	--This bar is anchored to the power bar, which is anchored to the health bar, and
+	--none of the three are configured for a unit type whose health bar is off. Showing
+	--one regardless means showing a bar that was never given an anchor or a height.
+	--If friendly cast bars are ever wanted on their own, the configure step in
+	--NamePlates.lua has to stop being gated on healthbar.enable first.
+	if not db.healthbar.enable then return end
 
 	local castBar = frame.CastBar
 	if not castBar then return end

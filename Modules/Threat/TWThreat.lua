@@ -2403,6 +2403,35 @@ function TM:Initialize()
         frame:ClearAllPoints()
         frame:SetPoint("CENTER", E.UIParent, "CENTER", 0, 200)
         E:CreateMover(frame, "ThreatMeterMover", L["Threat Meter"], nil, nil, nil, "ALL,GENERAL")
+
+        --The window has a title bar and a padlock, so it looks draggable, but the port
+        --dropped upstream's drag (movable="false", no StartMoving anywhere) and both
+        --were left decorative -- which reads as the window refusing to remember where
+        --you put it. Rather than reinstate a second position system that would fight
+        --the mover, the drag moves the mover itself: same frame /moveui moves, same
+        --E.db.movers entry, one source of truth. The padlock now means something.
+        frame:RegisterForDrag("LeftButton")
+
+        frame:SetScript("OnDragStart", function()
+            if TWT_CONFIG and TWT_CONFIG.lock then return end
+
+            local mover = _G["ThreatMeterMover"]
+            if mover then mover:StartMoving() end
+        end)
+
+        frame:SetScript("OnDragStop", function()
+            local mover = _G["ThreatMeterMover"]
+            if not mover then return end
+
+            mover:StopMovingOrSizing()
+
+            --the tail of the mover's own drag handler in Core/Movers.lua: re-anchor to
+            --whichever screen edge it now sits nearest, then persist that
+            local x, y, point = E:CalculateMoverPoints(mover)
+            mover:ClearAllPoints()
+            E:Point(mover, point, E.UIParent, point, x, y)
+            E:SaveMoverPosition("ThreatMeterMover")
+        end)
     end
 end
 
