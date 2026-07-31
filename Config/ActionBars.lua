@@ -673,8 +673,11 @@ local function BuildABConfig()
 					order = 6,
 					type = "toggle",
 					name = L["Show Empty Buttons"],
-					--AB:UpdateButtonSettingsForBar has never existed; PositionAndSizeBar is what
-					--applies the grid, and it takes the bar name rather than the number.
+					--AB:UpdateButtonSettingsForBar never existed and this threw on every
+					--click. It no longer errors, but the setting still does nothing:
+					--honouring showGrid inside PositionAndSizeBar broke bar 1 into a row of
+					--black squares twice and was reverted. See the note at the grid call in
+					--Modules/ActionBars/ActionBars.lua before trying again.
 					set = function(info, value) E.db.actionbar[barNum][ info[getn(info)] ] = value AB:PositionAndSizeBar("bar"..barNum) end,
 					disabled = function() return not E.db.actionbar[barNum].enabled end
 				},

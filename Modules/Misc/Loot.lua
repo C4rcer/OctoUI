@@ -207,6 +207,23 @@ end
 function M:LOOT_OPENED()
 	self:AutoLootAll()
 
+	--The empty-slot placeholder further down is meant for a corpse you opened and took
+	--nothing from. After auto loot there is nothing left by design, so that placeholder
+	--is just a window left on screen to close by hand. Hiding the frame runs its OnHide,
+	--which closes the loot session; if it was never shown, close it directly.
+	--
+	--Anything the server has not released yet still counts here, so a bind-on-pickup
+	--waiting on its confirmation keeps the frame up, which is what should happen.
+	if E.db.general.autoLoot and (GetNumLootItems() or 0) == 0 then
+		if lootFrame:IsShown() then
+			lootFrame:Hide()
+		else
+			CloseLoot()
+		end
+
+		return
+	end
+
 	lootFrame:Show()
 
 	if not lootFrame:IsShown() then

@@ -78,6 +78,31 @@ local GetTime = GetTime
 local VISIBLE = 1
 local HIDDEN = 0
 
+--1.12 has no aura duration for any unit but the player: UnitBuff/UnitDebuff simply do
+--not return one, so this addon's UnitAura polyfill hands back texture, count and
+--dispel type and nothing else. LibDebuff reconstructs durations for debuffs *the
+--player applied* out of the combat log plus the bundled duration tables, haste
+--adjusted -- the same source the nameplate DoT timers run on. Borrowing it here is the
+--only way a target frame can show a debuff timer at all.
+--
+--It cannot recover anything for buffs on another unit, or for a debuff somebody else
+--applied. That information is not on the client, and a plausible-looking number in its
+--place would be worse than none.
+--
+--Resolved on demand rather than cached: this file loads long before the NamePlates
+--module exists.
+local function TrackedDebuff(unit, index)
+	local engine = _G.ElvUI and _G.ElvUI[1]
+	local module = engine and engine.GetModule and engine:GetModule("NamePlates", true)
+	local lib = module and module.LibDebuff
+	if not (lib and lib.UnitDebuff) then return end
+
+	local _, _, _, _, _, duration, timeleft = lib:UnitDebuff(unit, index)
+	if duration and timeleft and timeleft > 0 then
+		return duration, GetTime() + timeleft
+	end
+end
+
 local function UpdateTooltip(self)
 	if self:GetParent().__owner.unit == "player" then
 		local index = GetPlayerBuff(self:GetID() - 1, self.filter)
@@ -152,13 +177,19 @@ local function updateIcon(element, unit, index, offset, filter, isDebuff, visibl
 		--GetPlayerBuffTimeLeft is the time *remaining*; 1.12 has no API for an aura's
 		--full duration, and the consumers here only ever test duration against zero,
 		--so remaining is fine for it. The timer is a different matter: UpdateAuraTimer
-		--counts down from an absolute expiry, and this branch never set one -- which is
-		--why player buffs on the unit frames showed no timer at all while target auras,
-		--which come from UnitAura below with a real expiration, did.
+		--counts down from an absolute expiry, and this branch never set one, so player
+		--auras got no countdown at all. This is the only unit the client will give a
+		--time for -- everything else depends on the LibDebuff fallback below.
 		duration = GetPlayerBuffTimeLeft(idx)
 		expiration = (duration and duration > 0) and (GetTime() + duration) or 0
 	else
 		texture, count, dispelType, duration, expiration = UnitAura(unit, index, filter)
+
+		--Only debuffs, and only when the polyfill gave us nothing, so this costs a
+		--tooltip scan just where there is something to gain
+		if texture and isDebuff and not duration then
+			duration, expiration = TrackedDebuff(unit, index)
+		end
 	end
 
 	if element.forceShow then

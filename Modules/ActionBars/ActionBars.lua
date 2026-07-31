@@ -111,29 +111,25 @@ function AB:PositionAndSizeBar(barName)
 
 		_G[button:GetName().."Cooldown"]:SetModelScale(size / 48)
 
-		--showGrid was read by nothing at all -- the grid was turned on for every button
-		--regardless, so the option did nothing even before its setter errored. 1.12
-		--counts grid requests rather than holding a boolean, and this runs again on
-		--every config change, so the counter is reset here instead of climbing without
-		--bound.
+		--Left unconditional deliberately. `showGrid` is read by nothing, so the option
+		--in /oc does not work -- but two attempts at honouring it here both broke bar 1,
+		--leaving it as a row of black squares until a reload, and a dead option is much
+		--cheaper than an unusable action bar.
 		--
-		--Hiding is done by hand rather than through ActionButton_HideGrid, which is not
-		--safe to call from here: 1.12's version takes no argument, resolves its button
-		--from the global `this`, and asks HasAction(ActionButton_GetPagedID(this)).
-		--Outside a script handler `this` is nil, and this addon replaces
-		--ActionButton_GetPagedID (further down this file) with one that indexes its
-		--argument -- so it raises, this whole function aborts part way through, and the
-		--bar is left unstyled and black until a reload. ActionButton_ShowGrid is fine
-		--by comparison; it touches no paged id.
-		if self.db[barName].showGrid then
-			button.showgrid = 0
-			ActionButton_ShowGrid(button)
-		else
-			button.showgrid = 0
-			if not HasAction(ActionButton_GetPagedID(button)) then
-				button:Hide()
-			end
-		end
+		--What went wrong, so the next attempt starts further along: the empty-button
+		--grid in 1.12 is a *counter* on each button (`showgrid`), not a boolean, and
+		--both ActionButton_ShowGrid and ActionButton_HideGrid take no argument -- they
+		--resolve their button from the global `this`. Passing a button, as the line
+		--below does, is therefore ignored; it happens to work only because every call
+		--site so far has run with a sensible `this`. HideGrid additionally asks
+		--HasAction(ActionButton_GetPagedID(this)), and this file *replaces*
+		--ActionButton_GetPagedID with a version that indexes its argument, so a nil
+		--`this` raises and takes PositionAndSizeBar down mid-loop.
+		--
+		--A working version probably has to drive `this` properly, or set the button's
+		--NormalTexture vertex colour and shown state by hand rather than going through
+		--the FrameXML helpers at all. Verify against a live bar before shipping it.
+		ActionButton_ShowGrid(button)
 
 		if i == 1 then
 			if point == "BOTTOMLEFT" then

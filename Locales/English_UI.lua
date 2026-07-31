@@ -382,3 +382,8 @@ L["Intellect"] = true;
 L["Spirit"] = true;
 --%s is an attribute name, one of the three above.
 L["STATS_INCOMPLETE"] = "Gear, buffs and talents only. The base every character gets from %s is not calculated yet, so this is not your real total.";
+
+--Experience datatext
+L["Remaining"] = true;
+L["Rested"] = true;
+L["Kills to Level"] = true;
