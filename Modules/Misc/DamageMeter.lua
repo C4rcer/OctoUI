@@ -12,6 +12,7 @@ local UnitName = UnitName
 local UnitExists = UnitExists
 local CreateFrame = CreateFrame
 local IsShiftKeyDown = IsShiftKeyDown
+local GetCVar = GetCVar
 local _G = _G
 
 --[[
@@ -32,10 +33,17 @@ local _G = _G
 	structured events carrying GUIDs and raw amounts, so this reads numbers instead of
 	sentences.
 
-	The cost is a hard dependency on nampower, which is why Available() exists and why
-	nothing here assumes the events registered. From 4.5.0 onwards registering the
-	event is enough to turn it on -- the NP_Enable*Events CVars are deprecated
-	compatibility toggles and do not need setting.
+	nampower is strongly preferred but no longer required: without it the meter reads the
+	combat log instead, which is worse in every way and is why it is the fallback rather
+	than the design. From 4.5.0 onwards registering the event is enough to turn nampower's
+	events on -- the NP_Enable*Events CVars are deprecated compatibility toggles and do
+	not need setting.
+
+	Which source is in use is decided by nampower's CVars, NOT by whether its events
+	registered. RegisterEvent accepts any string on this client without complaint -- an
+	event that cannot exist registers happily -- so "did RegisterEvent succeed" answers
+	nothing at all. That mistake is what made the fallback unreachable in the first
+	version of this file. See InitializeDamageMeter.
 
 	Mind the argument order, it is not consistent between events:
 		SPELL_DAMAGE_EVENT_SELF/OTHER (targetGuid, casterGuid, spellId, amount, ...)
@@ -72,6 +80,10 @@ local combatTime = 0
 --long raid night would otherwise accumulate hundreds of them for no one to ever read.
 local history = {}
 local HISTORY_MAX = 10
+
+--Damage the group dealt to each unit during the fight in progress, which is the only
+--thing that can name a segment after what was fought. Reset with `current`.
+local currentTargets = {}
 
 --Fights this short are a stray proc or a critter, not something anyone wants a row in
 --the picker for.
@@ -220,12 +232,19 @@ local function Actor(store, guid)
 	return actor
 end
 
-local function Record(guid, spell, amount, isHeal)
+local function Record(guid, spell, amount, isHeal, target)
 	amount = tonumber(amount)
 	if not (guid and amount and amount > 0) then return end
 
 	--Anything outside the group is somebody else's fight
 	if not tracked[guid] then return end
+
+	--Who the group was hitting, so a banked fight can be named after what was fought.
+	--Only damage: the target of a heal is a group member, and labelling the pull after
+	--whoever was being healed would be worse than not labelling it at all.
+	if target and not isHeal then
+		currentTargets[target] = (currentTargets[target] or 0) + amount
+	end
 
 	--Credit a pet's work to whoever summoned it. The spell key keeps the pet marker so
 	--the contribution is still separable once there is a breakdown view to show it.
@@ -287,6 +306,11 @@ end
 --the pcall around RegisterEvent -- so a name that turns out to be wrong costs that one
 --line of coverage instead of erroring at login. /octoui-dps reports what actually
 --registered, which is the only honest way to find out.
+--
+--All 31 names below were since confirmed present with OctoProbe (`/oprobe strings` and
+--`/oprobe events`), so the guards are now belt and braces rather than the load-bearing
+--part. The probe also caught the one real error here: see the note on the two
+--PERIODICAURADAMAGE constants, whose names read as the opposite of what they mean.
 
 --Candidates. Damage and healing done by the player, their pet, and the group.
 local LOG_EVENT_NAMES = {
@@ -319,33 +343,40 @@ local playerName
 --rely on rather than that argument.
 local LOG_HANDLERS = {
 	--your melee
-	{"COMBATHITCRITSCHOOLSELFOTHER", function(target, amount) Record(playerName, "melee", amount) end},
-	{"COMBATHITSCHOOLSELFOTHER", function(target, amount) Record(playerName, "melee", amount) end},
-	{"COMBATHITCRITSELFOTHER", function(target, amount) Record(playerName, "melee", amount) end},
-	{"COMBATHITSELFOTHER", function(target, amount) Record(playerName, "melee", amount) end},
+	{"COMBATHITCRITSCHOOLSELFOTHER", function(target, amount) Record(playerName, "melee", amount, nil, target) end},
+	{"COMBATHITSCHOOLSELFOTHER", function(target, amount) Record(playerName, "melee", amount, nil, target) end},
+	{"COMBATHITCRITSELFOTHER", function(target, amount) Record(playerName, "melee", amount, nil, target) end},
+	{"COMBATHITSELFOTHER", function(target, amount) Record(playerName, "melee", amount, nil, target) end},
 
 	--somebody else's melee; the roster filter in Record drops anyone outside the group
-	{"COMBATHITCRITSCHOOLOTHEROTHER", function(source, target, amount) Record(source, "melee", amount) end},
-	{"COMBATHITSCHOOLOTHEROTHER", function(source, target, amount) Record(source, "melee", amount) end},
-	{"COMBATHITCRITOTHEROTHER", function(source, target, amount) Record(source, "melee", amount) end},
-	{"COMBATHITOTHEROTHER", function(source, target, amount) Record(source, "melee", amount) end},
+	{"COMBATHITCRITSCHOOLOTHEROTHER", function(source, target, amount) Record(source, "melee", amount, nil, target) end},
+	{"COMBATHITSCHOOLOTHEROTHER", function(source, target, amount) Record(source, "melee", amount, nil, target) end},
+	{"COMBATHITCRITOTHEROTHER", function(source, target, amount) Record(source, "melee", amount, nil, target) end},
+	{"COMBATHITOTHEROTHER", function(source, target, amount) Record(source, "melee", amount, nil, target) end},
 
 	--your spells
-	{"SPELLLOGCRITSCHOOLSELFOTHER", function(spell, target, amount) Record(playerName, spell, amount) end},
-	{"SPELLLOGSCHOOLSELFOTHER", function(spell, target, amount) Record(playerName, spell, amount) end},
-	{"SPELLLOGCRITSELFOTHER", function(spell, target, amount) Record(playerName, spell, amount) end},
-	{"SPELLLOGSELFOTHER", function(spell, target, amount) Record(playerName, spell, amount) end},
+	{"SPELLLOGCRITSCHOOLSELFOTHER", function(spell, target, amount) Record(playerName, spell, amount, nil, target) end},
+	{"SPELLLOGSCHOOLSELFOTHER", function(spell, target, amount) Record(playerName, spell, amount, nil, target) end},
+	{"SPELLLOGCRITSELFOTHER", function(spell, target, amount) Record(playerName, spell, amount, nil, target) end},
+	{"SPELLLOGSELFOTHER", function(spell, target, amount) Record(playerName, spell, amount, nil, target) end},
 
 	--somebody else's spells
-	{"SPELLLOGCRITSCHOOLOTHEROTHER", function(source, spell, target, amount) Record(source, spell, amount) end},
-	{"SPELLLOGSCHOOLOTHEROTHER", function(source, spell, target, amount) Record(source, spell, amount) end},
-	{"SPELLLOGCRITOTHEROTHER", function(source, spell, target, amount) Record(source, spell, amount) end},
-	{"SPELLLOGOTHEROTHER", function(source, spell, target, amount) Record(source, spell, amount) end},
+	{"SPELLLOGCRITSCHOOLOTHEROTHER", function(source, spell, target, amount) Record(source, spell, amount, nil, target) end},
+	{"SPELLLOGSCHOOLOTHEROTHER", function(source, spell, target, amount) Record(source, spell, amount, nil, target) end},
+	{"SPELLLOGCRITOTHEROTHER", function(source, spell, target, amount) Record(source, spell, amount, nil, target) end},
+	{"SPELLLOGOTHEROTHER", function(source, spell, target, amount) Record(source, spell, amount, nil, target) end},
 
 	--damage over time, which the log phrases as the target suffering rather than
 	--anyone hitting, and so shares no wording with the above
-	{"PERIODICAURADAMAGEOTHERSELF", function(target, amount, school, spell) Record(playerName, spell, amount) end},
-	{"PERIODICAURADAMAGEOTHEROTHER", function(target, amount, school, source, spell) Record(source, spell, amount) end},
+	--SELFOTHER is "<target> suffers N damage from your <spell>" -- damage you dealt.
+	--OTHERSELF is "You suffer N damage from <caster>'s <spell>", which is damage dealt
+	--*to* you and has no business in a meter of damage done. They read as though the
+	--halves were the other way round, and the first version of this file had them
+	--swapped: a warlock's entire DoT contribution went missing while every enemy tick
+	--landing on them was credited to them as damage. Confirmed against the client's own
+	--strings with /oprobe strings; do not swap them back on the strength of the names.
+	{"PERIODICAURADAMAGESELFOTHER", function(target, amount, school, spell) Record(playerName, spell, amount, nil, target) end},
+	{"PERIODICAURADAMAGEOTHEROTHER", function(target, amount, school, source, spell) Record(source, spell, amount, nil, target) end},
 
 	--healing
 	{"HEALEDCRITSELFSELF", function(spell, amount) Record(playerName, spell, amount, true) end},
@@ -397,11 +428,21 @@ local function SetupCombatLogFallback(frame)
 	return getn(logPatterns), events
 end
 
---Names the fight by whoever took the most damage from the group, which is the closest
---thing to "what we were fighting" available without tracking targets separately. Falls
---back to the top damage dealer's own name so a segment is never nameless.
+--Names the fight after whatever took the most damage from the group. The first version
+--of this read the *sources* table instead, which contains only group members, so every
+--banked fight was labelled with the top damage dealer's own name -- "Carcer (18s)" tells
+--you nothing about which pull it was. Falls back to the top damage dealer only when
+--nothing was hit at all, which in practice means a pure healing segment.
 local function SegmentLabel(store)
 	local best, bestDamage
+	for guid, damage in pairs(currentTargets) do
+		if damage > (bestDamage or 0) then
+			best, bestDamage = guid, damage
+		end
+	end
+
+	if best then return ResolveName(best) end
+
 	for _, actor in pairs(store) do
 		if actor.damage > (bestDamage or 0) then
 			best, bestDamage = actor.name, actor.damage
@@ -447,7 +488,7 @@ local function OnEvent()
 
 	if event == "PLAYER_REGEN_DISABLED" then
 		--A new fight wipes the current segment but never the overall one
-		current = {}
+		current, currentTargets = {}, {}
 		combatStart, combatEnd = GetTime(), nil
 		return
 	elseif event == "PLAYER_REGEN_ENABLED" then
@@ -481,13 +522,13 @@ local function OnEvent()
 
 	--Damage and healing name the target first, the source second
 	if event == "SPELL_DAMAGE_EVENT_SELF" or event == "SPELL_DAMAGE_EVENT_OTHER" then
-		Record(arg2, arg3, arg4)
+		Record(arg2, arg3, arg4, nil, arg1)
 	elseif event == "SPELL_HEAL_BY_SELF" or event == "SPELL_HEAL_BY_OTHER" then
 		Record(arg2, arg3, arg4, true)
 
 	--Swings and damage shields name the source first
 	elseif event == "AUTO_ATTACK_SELF" or event == "AUTO_ATTACK_OTHER" then
-		Record(arg1, "melee", arg3)
+		Record(arg1, "melee", arg3, nil, arg2)
 	elseif event == "AURA_CAST_ON_SELF" or event == "AURA_CAST_ON_OTHER" then
 		--(spellId, caster, target, effect, effectname)
 		if arg2 and arg3 and tracked[arg2] then
@@ -506,8 +547,56 @@ local function OnEvent()
 			source = shieldSource[arg1]
 		end
 
-		Record(source, "shield", arg3)
+		Record(source, "shield", arg3, nil, arg2)
 	end
+end
+
+--[[ spell names ]]--
+--
+--nampower's events carry a numeric spell ID, so the breakdown was rendering rows like
+--"11711  468  20%" -- arithmetic about something the reader cannot identify. The combat
+--log fallback carries real names already, so only the nampower path needs this.
+--
+--SuperWoW's SpellInfo is what turns an ID into a name. Guarded, because it is absent
+--without SuperWoW, and cached, because the window redraws four times a second and this
+--would otherwise be a lookup per spell per frame.
+local spellNames = {}
+
+local function SpellName(id)
+	if spellNames[id] ~= nil then return spellNames[id] end
+
+	local name
+	if SpellInfo then
+		local ok, resolved = pcall(SpellInfo, id)
+		if ok and type(resolved) == "string" and resolved ~= "" then
+			name = resolved
+		end
+	end
+
+	--false rather than nil: a lookup that failed once must not be retried every frame
+	spellNames[id] = name or false
+
+	return spellNames[id]
+end
+
+--A key is "melee", "shield", a numeric spell id, or any of those behind the "pet:"
+--marker Record adds. Falls back to the raw key, so an id SpellInfo cannot resolve still
+--shows something rather than an empty row.
+local function DisplaySpell(key)
+	local prefix, bare = "", key
+
+	local _, _, rest = find(key, "^pet:(.*)$")
+	if rest then
+		prefix = L["Pet"]..": "
+		bare = rest
+	end
+
+	if bare == "melee" then return prefix..L["Melee"] end
+	if bare == "shield" then return prefix..L["Damage Shield"] end
+
+	local id = tonumber(bare)
+
+	return prefix..((id and SpellName(id)) or bare)
 end
 
 --A segment name is "current", "overall", or "fight:N" for the Nth entry in history --
@@ -551,20 +640,33 @@ function M:MeterSpells(segment, guid, mode)
 
 	local healing = (mode == "healing")
 	local total = healing and actor.healing or actor.damage
-	local list = {}
+	local list, byName = {}, {}
 
+	--Merged on the resolved name rather than the stored key. Ranks of one spell are
+	--separate ids and would otherwise be separate rows, three lines all reading "Shadow
+	--Bolt" and none of them the real total. The ids stay distinct in the record; this is
+	--presentation only.
 	for key, entry in pairs(actor.spells) do
 		local value = healing and entry.healing or entry.damage
 		if value > 0 then
-			tinsert(list, {
-				name = key,
-				damage = entry.damage,
-				healing = entry.healing,
-				hits = entry.hits,
-				value = value,
-				share = (total > 0) and (value / total) or 0,
-			})
+			local name = DisplaySpell(key)
+			local row = byName[name]
+
+			if not row then
+				row = {name = name, damage = 0, healing = 0, hits = 0, value = 0}
+				byName[name] = row
+				tinsert(list, row)
+			end
+
+			row.damage = row.damage + entry.damage
+			row.healing = row.healing + entry.healing
+			row.hits = row.hits + entry.hits
+			row.value = row.value + value
 		end
+	end
+
+	for i = 1, getn(list) do
+		list[i].share = (total > 0) and (list[i].value / total) or 0
 	end
 
 	sort(list, function(a, b) return a.value > b.value end)
@@ -651,24 +753,32 @@ function M:InitializeDamageMeter()
 	watcher = CreateFrame("Frame", "OctoUI_DamageMeter", E.UIParent)
 	watcher:SetScript("OnEvent", OnEvent)
 
-	--Registering an event this client has never heard of raises, and without nampower
-	--none of these exist. One pcall decides whether the meter can run at all, rather
-	--than eight separate failures.
-	local groups = {DAMAGE_EVENTS, SWING_EVENTS, SHIELD_EVENTS, HEAL_EVENTS}
-	for i = 1, getn(groups) do
-		local group = groups[i]
-		for j = 1, getn(group) do
-			local ok = pcall(watcher.RegisterEvent, watcher, group[j])
-			if not ok then
-				available = nil
-				watcher:UnregisterAllEvents()
-				break
+	--This used to decide whether nampower was present by pcall'ing RegisterEvent on its
+	--events and treating a failure as "not here". That test does not work: RegisterEvent
+	--on this client accepts *any* string without complaint, proven by registering an
+	--event that cannot exist (OctoProbe's canary). So the pcall never failed, `available`
+	--was true on every machine, and the combat-log fallback below was unreachable code --
+	--a feature that could not run for the people it was written for.
+	--
+	--The CVars are the honest test. nampower registers them as the DLL loads, long before
+	--any addon runs, and GetCVar answers nil for them when the DLL is not in the session
+	--at all; /octoui-queue exists to report exactly that. The Lua API is a weaker signal
+	--on its own, because these DLLs register their Lua functions *after* addons load, so
+	--a check this early can see nil for a DLL that is very much present -- it is only
+	--consulted as a second opinion, where a positive is still conclusive.
+	available = (GetCVar and GetCVar("NP_SpellQueueWindowMs") and true)
+		or (type(_G.QueueSpellByName) == "function")
+		or nil
+
+	if available then
+		--Still pcall'd, purely so a future client that *does* validate cannot error here
+		local groups = {DAMAGE_EVENTS, SWING_EVENTS, SHIELD_EVENTS, HEAL_EVENTS}
+		for i = 1, getn(groups) do
+			local group = groups[i]
+			for j = 1, getn(group) do
+				pcall(watcher.RegisterEvent, watcher, group[j])
 			end
-
-			available = true
 		end
-
-		if not available then break end
 	end
 
 	if available then

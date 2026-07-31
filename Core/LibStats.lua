@@ -152,10 +152,26 @@ local DOT_SCALING = {"tick speed", "reducing their duration"}
 --base every character has before a single item is worn.
 --
 --Every entry names the global it needs and is only called once that global has been
---confirmed to exist. This client is a moving target -- some of these functions arrived
---in later expansions and may simply not be here, and OctoWoW has its own additions --
---so an absent one has to mean "this stat cannot be shown" rather than an error at
---login. Refresh records the misses in Stats.unavailable and the panel prints "--".
+--confirmed to exist. This client is a moving target, so an absent one has to mean "this
+--stat cannot be shown" rather than an error at login; Refresh records the misses in
+--Stats.unavailable and the panel prints "--".
+--
+--Measured with OctoProbe (octoui-dev/OctoProbe, `/oprobe stats`) rather than guessed at.
+--PRESENT: UnitAttackPower, UnitRangedAttackPower, UnitDefense, UnitArmor, UnitStat,
+--UnitResistance, GetDodgeChance, GetParryChance, GetBlockChance.
+--ABSENT: GetCritChance, GetSpellCritChance, GetRangedCritChance, GetShieldBlock,
+--GetBlockValue, GetHitModifier, GetManaRegen, GetSpellBonusDamage, GetSpellBonusHealing,
+--GetSpellPenetration, GetCombatRating, GetAttackPowerForStat.
+--
+--Two things follow from that list and are worth stating outright, because both are the
+--reason this file is shaped the way it is. There is no API for spell power or healing
+--power at all, so the tooltip scan is not a shortcut but the only route. And every crit
+--getter is missing, which is why spell crit is computed from Intellect below.
+--
+--Return shapes, also measured: UnitStat gives base, effective, positive, negative and
+--the *second* is the one to use -- Int read 143, 143, 60, 0, so the effective figure
+--already contains the +60 and adding the buff again would double it. UnitResistance
+--likewise answers base, total, positive, negative, and shadow read 0, 1, 1, 0.
 --
 --UnitXP_SP3 was checked first, as the handoff asked: it exposes nothing of the sort.
 --Its UnitXP() dispatcher only answers "target", "notify", "version", "FPScap" and a

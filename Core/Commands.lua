@@ -13,6 +13,8 @@ local ReloadUI = ReloadUI
 local GetAddOnInfo = GetAddOnInfo
 local IsAddOnLoaded = IsAddOnLoaded
 local GetScreenWidth, GetScreenHeight = GetScreenWidth, GetScreenHeight
+local GetTime = GetTime
+local GetNumRaidMembers, GetNumPartyMembers = GetNumRaidMembers, GetNumPartyMembers
 
 function E:EnableAddon(addon)
 	local _, _, _, _, _, reason, _ = GetAddOnInfo(addon)
@@ -327,8 +329,10 @@ function E:MeterReport(msg)
 			--that can be pasted into a chat window.
 			local spells = M:MeterSpells(segment, row.guid, "damage")
 			for s = 1, getn(spells) do
-				E:Print(format("      |cff999999%s  %d  %.0f%%  %d hits|r",
-					spells[s].name, spells[s].damage, spells[s].share * 100, spells[s].hits))
+				local hits = spells[s].hits
+				E:Print(format("      |cff999999%s  %d  %.0f%%  %d %s|r",
+					spells[s].name, spells[s].damage, spells[s].share * 100,
+					hits, (hits == 1) and "hit" or "hits"))
 			end
 		end
 	end
@@ -397,6 +401,31 @@ function E:ThreatReport()
 	else
 		E:Print("|cffff0000OctoTWT_CONFIG is nil|r - saved variables never loaded.")
 	end
+
+	--An empty window has two completely different causes that look identical from the
+	--outside: nobody ever asked the server, or the server was asked and said nothing.
+	--Threat on this client is entirely server-side, so without these two counters there
+	--is no way to tell them apart and no way to know which half to go and fix.
+	local TM = E:GetModule("ThreatMeter", true)
+	if TM and TM.ThreatTraffic then
+		local sent, replies, last = TM:ThreatTraffic()
+		local verdict = ""
+		if sent == 0 then
+			verdict = " |cffff0000-- never asked; nothing will ever appear|r"
+		elseif replies == 0 then
+			verdict = " |cffff0000-- asked, but the server has not answered|r"
+		elseif last then
+			verdict = format(" |cff00ff00-- last reply %.0fs ago|r", GetTime() - last)
+		end
+
+		E:Print(format("traffic: %d sent, %d received%s", sent, replies, verdict))
+	end
+
+	local solo = (GetNumRaidMembers() == 0 and GetNumPartyMembers() == 0)
+	E:Print(format("group: %s, solo threat requests %s",
+		solo and "solo" or "grouped",
+		(OctoTWT_CONFIG and OctoTWT_CONFIG.soloThreat ~= false)
+			and "|cff00ff00on|r" or "|cffff9900off|r"))
 end
 
 --Puts the window back in the middle of the screen at a sane size, for when the saved

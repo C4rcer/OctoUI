@@ -71,6 +71,12 @@ TWT.windowWidth = 300
 TWT.minBars = 5
 TWT.maxBars = 11
 
+--Mirrors minValue/maxValue on OctoTWTMainSettingsFrameHeightSlider in the XML. Named
+--here so the clamp in TWT.init and the one in the slider handler cannot drift apart from
+--each other or from the widget they are protecting.
+TWT.minBarHeight = 20
+TWT.maxBarHeight = 30
+
 TWT.roles = {}
 TWT.spec = {}
 
@@ -285,6 +291,12 @@ TWT:SetScript("OnEvent", function()
             totalPackets = totalPackets + 1
             totalData = totalData + __strlen(arg2)
 
+            --counted separately from totalPackets, which resets every fight; these two
+            --are what /octoui-threat needs to tell an unanswered request from an
+            --unasked one
+            TWT.repliesSeen = (TWT.repliesSeen or 0) + 1
+            TWT.lastReply = GetTime()
+
             local threatData = arg2
             if __find(threatData, '#') and __find(threatData, TWT.tankModeApi) then
                 local packetEx = OctoTWTExplode(threatData, '#')
@@ -475,8 +487,24 @@ function TWT.init()
     OctoTWT_CONFIG.showInCombat = OctoTWT_CONFIG.showInCombat or false
     OctoTWT_CONFIG.hideOOC = OctoTWT_CONFIG.hideOOC or false
     OctoTWT_CONFIG.font = OctoTWT_CONFIG.font or 'Roboto'
-    OctoTWT_CONFIG.barHeight = OctoTWT_CONFIG.barHeight or 20
+    --Clamped rather than merely defaulted. The slider that owns this is minValue 20,
+    --maxValue 30, valueStep 2, so anything outside that range did not come from the
+    --slider -- and a live character was found carrying barHeight 2, which is exactly the
+    --valueStep. At two pixels a row every bar is invisible whether or not threat data
+    --ever arrives, which reads as "the meter does not work" rather than as a bad number.
+    --`or 20` alone could never catch it, because 2 is not nil.
+    OctoTWT_CONFIG.barHeight = tonumber(OctoTWT_CONFIG.barHeight) or 20
+    if OctoTWT_CONFIG.barHeight < TWT.minBarHeight or OctoTWT_CONFIG.barHeight > TWT.maxBarHeight then
+        OctoTWT_CONFIG.barHeight = 20
+    end
     OctoTWT_CONFIG.visibleBars = OctoTWT_CONFIG.visibleBars or TWT.minBars
+
+    --Ask the server for threat while solo too. Defaults on: it is the case a pet class
+    --most wants an answer for, and it costs one request per update tick from one client.
+    --Set false to restore upstream's grouped-only behaviour. See TWT.ThreatWanted.
+    if OctoTWT_CONFIG.soloThreat == nil then
+        OctoTWT_CONFIG.soloThreat = true
+    end
     OctoTWT_CONFIG.fullScreenGlow = OctoTWT_CONFIG.fullScreenGlow or false
     OctoTWT_CONFIG.aggroSound = OctoTWT_CONFIG.aggroSound or false
     OctoTWT_CONFIG.aggroThreshold = OctoTWT_CONFIG.aggroThreshold or 85
@@ -909,7 +937,10 @@ function TWT.combatStart()
     TWT.hideThreatFrames(true)
     TWT.shouldRelay = TWT.checkRelay()
 
-    if GetNumRaidMembers() == 0 and GetNumPartyMembers() == 0 then
+    --Was an unconditional "solo means stop here", which returned before threatQuery was
+    --ever shown -- so solo play never ran the loop that asks the server for threat, and
+    --the window sat empty and blameless. See TWT.ThreatWanted.
+    if not TWT.ThreatWanted() then
         return false
     end
 
@@ -1126,13 +1157,17 @@ function TWT.targetChanged()
         return false
     end
 
-    -- non interesting target
-    if UnitClassification('target') ~= 'worldboss' and UnitClassification('target') ~= 'elite' then
+    -- non interesting target. Grouped only: solo play is nearly all ordinary mobs, and
+    -- the filter exists to stop a raid asking about every trash pull, not to stop one
+    -- player asking about the one thing they are fighting.
+    if not TWT.Solo()
+            and UnitClassification('target') ~= 'worldboss'
+            and UnitClassification('target') ~= 'elite' then
         return false
     end
 
-    -- no raid or party
-    if GetNumRaidMembers() == 0 and GetNumPartyMembers() == 0 then
+    -- solo is allowed now, unless the option turns it off
+    if not TWT.ThreatWanted() then
         return false
     end
 
@@ -1169,12 +1204,61 @@ function TWT.targetChanged()
     return true
 end
 
-function TWT.send(msg)
-    SendAddonMessage(TWT.prefix, msg, TWT.channel)
+--[[ solo threat ]]--
+--
+--Upstream never asked the server for threat unless you were grouped, so playing solo
+--showed an empty window for ever -- which is what "the threat meter does not track
+--anything" turned out to mean. It is a real gap and not a quirk: for a warlock or a
+--hunter the whole question is whether the pet is holding aggro, and solo is precisely
+--when there is no one else to ask.
+--
+--Two things stood in the way. The request needs somewhere to go, and SendAddonMessage to
+--PARTY with no party never leaves the client, so the server never sees it; whispering
+--yourself is the one distribution that always sends. And the elite/worldboss filter has
+--to relax, because solo play is nearly all ordinary mobs.
+--
+--That filter stays for grouped play, where it is doing real work: forty raid members
+--asking the server about every trash pull is load nobody needs. Solo is one client
+--asking about one mob it is already fighting.
+function TWT.Solo()
+    return GetNumRaidMembers() == 0 and GetNumPartyMembers() == 0
 end
 
+local function SoloThreatEnabled()
+    return OctoTWT_CONFIG and OctoTWT_CONFIG.soloThreat ~= false
+end
+
+--True when this situation should be asking the server for threat at all.
+function TWT.ThreatWanted()
+    if not TWT.Solo() then return true end
+
+    return SoloThreatEnabled()
+end
+
+--Distribution, and for a whisper who to. In one place because four call sites used to
+--work this out separately and only one of them was ever right when solo.
+local function ThreatChannel()
+    if GetNumRaidMembers() > 0 then return 'RAID' end
+    if GetNumPartyMembers() > 0 then return 'PARTY' end
+
+    return 'WHISPER', TWT.name
+end
+
+function TWT.send(msg)
+    local channel, target = ThreatChannel()
+    SendAddonMessage(TWT.prefix, msg, channel, target)
+end
+
+--Counted so /octoui-threat can tell "we never asked" from "we asked and the server said
+--nothing" -- which are completely different faults and look identical from the outside.
+TWT.requestsSent = 0
+TWT.repliesSeen = 0
+TWT.lastReply = nil
+
 function TWT.UnitDetailedThreatSituation(limit)
-    SendAddonMessage(TWT.UDTS .. (OctoTWT_CONFIG.tankMode and '_TM' or ''), "limit=" .. limit, TWT.channel)
+    local channel, target = ThreatChannel()
+    TWT.requestsSent = TWT.requestsSent + 1
+    SendAddonMessage(TWT.UDTS .. (OctoTWT_CONFIG.tankMode and '_TM' or ''), "limit=" .. limit, channel, target)
 end
 
 function TWT.updateUI(from)
@@ -1471,7 +1555,7 @@ TWT.threatQuery:SetScript("OnUpdate", function()
     local st = (this.startTime + plus) * 1000
     if gt >= st then
         this.startTime = GetTime()
-        if GetNumRaidMembers() == 0 and GetNumPartyMembers() == 0 then
+        if not TWT.ThreatWanted() then
             return false
         end
         if UnitAffectingCombat('player') and UnitAffectingCombat('target') then
@@ -1751,7 +1835,20 @@ function OctoTWTMainMainWindow_Resized()
 end
 
 function OctoTWTFrameHeightSlider_OnValueChanged()
-    OctoTWT_CONFIG.barHeight = _G['OctoTWTMainSettingsFrameHeightSlider']:GetValue()
+    --The slider drives this during init, through the SetValue in TWT.init, and a widget
+    --that has not finished being laid out can answer with something outside its own
+    --declared range. Clamped on the way in so a value like that cannot reach the config
+    --and shrink every bar to nothing; see the note beside the default in TWT.init.
+    local value = tonumber(_G['OctoTWTMainSettingsFrameHeightSlider']:GetValue())
+        or OctoTWT_CONFIG.barHeight or 20
+
+    if value < TWT.minBarHeight then
+        value = TWT.minBarHeight
+    elseif value > TWT.maxBarHeight then
+        value = TWT.maxBarHeight
+    end
+
+    OctoTWT_CONFIG.barHeight = value
 
     _G['OctoTWTMain']:SetHeight(OctoTWT_CONFIG.barHeight * OctoTWT_CONFIG.visibleBars + (OctoTWT_CONFIG.labelRow and 40 or 20))
 
@@ -2388,6 +2485,14 @@ end
 --here it waits for the ElvUI engine so the enable toggle can live in /ec
 local TM = E:NewModule("ThreatMeter")
 E.ThreatMeter = TM
+
+--Requests sent, threat packets received, and when the last one arrived. Exposed because
+--the counters live on TWT, which is a local to this file, and /octoui-threat is the one
+--thing that can tell "we never asked" apart from "we asked and were ignored" -- the two
+--causes of an empty window that look identical on screen.
+function TM:ThreatTraffic()
+    return TWT.requestsSent or 0, TWT.repliesSeen or 0, TWT.lastReply
+end
 
 --The frame-name collision this guard was written for is gone. Every global this port
 --owns now carries an Octo prefix -- OctoTWTMain, OctoTWTFullScreenGlow, OctoTMEF1-5,

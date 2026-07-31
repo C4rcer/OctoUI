@@ -410,6 +410,11 @@ L["STATS_CRIT_MEASURED"] = "Measured: %.2f%% over %d casts. The figure above is 
 --%.1f is Intellect per 1%% crit.
 L["STATS_CRIT_IMPLIED"] = "That rate implies %.1f Intellect per 1%% crit. If it stays far from the calculated figure over a few hundred casts, this server uses a different formula.";
 
+--Damage meter spell breakdown
+L["Pet"] = true;
+L["Melee"] = true;
+L["Damage Shield"] = true;
+
 --Experience datatext
 L["Remaining"] = true;
 L["Rested"] = true;
