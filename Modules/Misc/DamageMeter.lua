@@ -5,11 +5,12 @@ local M = E:GetModule("Misc");
 --Lua functions
 local pairs, tonumber, type = pairs, tonumber, type
 local format, sort, find = string.format, table.sort, string.find
-local tinsert, getn = table.insert, table.getn
+local tinsert, tremove, getn = table.insert, table.remove, table.getn
 --WoW API / Variables
 local GetTime = GetTime
 local UnitName = UnitName
 local UnitExists = UnitExists
+local GetNumRaidMembers, GetNumPartyMembers = GetNumRaidMembers, GetNumPartyMembers
 local CreateFrame = CreateFrame
 local IsShiftKeyDown = IsShiftKeyDown
 local GetCVar = GetCVar
@@ -184,14 +185,26 @@ local function RefreshTracked()
 	add("player")
 	add("pet", "player")
 
-	for i = 1, 4 do
-		add("party"..i)
-		add("partypet"..i, "party"..i)
-	end
-
-	for i = 1, 40 do
-		add("raid"..i)
-		add("raidpet"..i, "raid"..i)
+	--Only the slots that can actually hold somebody. Written as a flat 1..4 and 1..40 it
+	--asked about ninety units regardless, eighty of them raid slots that do not exist
+	--when solo -- and every one of those is a UnitName plus a UnitExists, which under
+	--SuperWoW means resolving a unit token against the object list.
+	--
+	--This runs on UNIT_PET, which fires as a pet disengages from a target that just died.
+	--So the moment an object was being destroyed was also the moment this fired several
+	--hundred lookups at it, together with the killing blow's own events. That is the
+	--current best explanation for the client deadlocking on a mob dying mid-cast.
+	local raid = GetNumRaidMembers()
+	if raid > 0 then
+		for i = 1, raid do
+			add("raid"..i)
+			add("raidpet"..i, "raid"..i)
+		end
+	else
+		for i = 1, GetNumPartyMembers() do
+			add("party"..i)
+			add("partypet"..i, "party"..i)
+		end
 	end
 end
 
@@ -199,11 +212,33 @@ end
 --back. Pets and anything out of range may not resolve, in which case the GUID stands
 --in for a name rather than the entry being dropped -- a nameless row is still a real
 --source, and it will usually resolve on a later look.
+--
+--Cached, and unresolved GUIDs are retried on a timer rather than on every event. UnitName
+--with a GUID is SuperWoW walking its object list; Actor below re-asked on every single
+--damage event for as long as a name had not resolved, which for a mob that never resolves
+--is a lookup per event for the whole fight. Doing that while an object is being destroyed
+--is the leading theory for the client freezing outright with a mob dying mid-cast, so the
+--traffic is worth removing whether or not it turns out to be the cause.
+local nameCache, nameRetry = {}, {}
+local NAME_RETRY_AFTER = 5
+
 local function ResolveName(guid)
 	if not guid then return end
 
+	local cached = nameCache[guid]
+	if cached then return cached end
+
+	local now = GetTime()
+	if nameRetry[guid] and (now - nameRetry[guid]) < NAME_RETRY_AFTER then
+		return guid
+	end
+	nameRetry[guid] = now
+
 	local name = UnitName(guid)
-	if name and name ~= "" and name ~= "Unknown Entity" then return name end
+	if name and name ~= "" and name ~= "Unknown Entity" then
+		nameCache[guid] = name
+		return name
+	end
 
 	return guid
 end
@@ -473,8 +508,14 @@ local function BankSegment(duration)
 		ended = GetTime(),
 	})
 
+	--tremove, never `history[getn(history)] = nil`. In Lua 5.0 table.insert maintains a
+	--hidden `n` field and table.getn returns it when present, but assigning nil to a slot
+	--does not decrement it -- so that idiom re-reads the same length for ever and never
+	--terminates. It froze the client at 100% of one core on the eleventh banked fight of
+	--a session, which is why it always struck well into an evening and always as combat
+	--ended: BankSegment runs on PLAYER_REGEN_ENABLED. table.remove decrements `n`.
 	while getn(history) > HISTORY_MAX do
-		history[getn(history)] = nil
+		tremove(history)
 	end
 end
 
@@ -560,9 +601,23 @@ end
 --SuperWoW's SpellInfo is what turns an ID into a name. Guarded, because it is absent
 --without SuperWoW, and cached, because the window redraws four times a second and this
 --would otherwise be a lookup per spell per frame.
+--
+--OFF while a run of crashes is being bisected, and this is the leading suspect. The
+--argument that it was safe -- "CastBar.lua has called SpellInfo for ages" -- does not
+--hold: CastBar passes ids from UNIT_CASTEVENT, which are *cast* ids, while this passes
+--ids from SPELL_DAMAGE_EVENT_*, which include damage-over-time ticks, pet abilities and
+--damage shields. That is a different id space, and handing a C function an id it was
+--never written to expect is an out-of-bounds read away from taking the process down with
+--no Lua error and no dump -- exactly the signature being chased. pcall does not help;
+--it catches Lua errors, not access violations.
+--
+--Set true to put names back once the client has been shown to be stable without them.
+local RESOLVE_SPELL_NAMES = true
+
 local spellNames = {}
 
 local function SpellName(id)
+	if not RESOLVE_SPELL_NAMES then return false end
 	if spellNames[id] ~= nil then return spellNames[id] end
 
 	local name

@@ -5,6 +5,7 @@
 	<Script file="ChatBubbles.lua"/>
 	<Script file="Loot.lua"/>
 	<Script file="DamageMeter.lua"/>
+	<Script file="ThreatModel.lua"/>
 	<Script file="LootRoll.lua"/>
 	<Script file="RaidMarker.lua"/>
 	<Script file="AutoStance.lua"/>

@@ -67,17 +67,31 @@ local function SanitizePattern(pattern)
 	return ret
 end
 
+--A miss is cached as `false`, which is the whole point of the rewrite. Previously a
+--pattern whose gfind yielded nothing left the cache entry nil, and `if not
+--captureCache[pattern]` then re-ran both gsubs and the gfind on every subsequent call --
+--for ever, since the result never changes. That is not a small waste: cmatch is on the
+--combat-log path this library uses to track debuff durations, so it runs on the order of
+--every damage message in a fight, and the work it was repeating is string rewriting plus
+--an iterator over a generated pattern.
+--
+--Found while looking for something capable of freezing the client, which is exactly the
+--kind of load that does it. Now runs once per pattern, ever.
 local captureCache = {}
 local function GetCaptures(pattern)
-	if not captureCache[pattern] then
+	local cached = captureCache[pattern]
+
+	if cached == nil then
+		cached = false
 		for a, b, c, d, e in gfind(gsub(pattern, "%((.+)%)", "%1"), gsub(pattern, "%d%$", "%%(.-)$")) do
-			captureCache[pattern] = {a, b, c, d, e}
+			cached = {a, b, c, d, e}
 		end
+		captureCache[pattern] = cached
 	end
 
-	if not captureCache[pattern] then return end
-	local r = captureCache[pattern]
-	return r[1], r[2], r[3], r[4], r[5]
+	if not cached then return end
+
+	return cached[1], cached[2], cached[3], cached[4], cached[5]
 end
 
 local function cmatch(str, pattern)

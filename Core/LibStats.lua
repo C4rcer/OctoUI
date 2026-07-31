@@ -549,8 +549,24 @@ function Stats:ImpliedIntPerCrit()
 	return intellect / fromInt, samples
 end
 
+--OFF while a run of client freezes is being bisected, and this is a leading suspect.
+--
+--It runs LibDebuff's cmatch up to four times for every damage message the player
+--produces -- every Shadow Bolt, every tick of every damage-over-time effect. cmatch calls
+--GetCaptures, whose cache is only ever populated *if its gfind loop body runs*, so a
+--pattern that does not match re-does the whole gsub and gfind on every single call. That
+--is an uncached, non-trivial amount of string work multiplied by four and then by the
+--combat message rate, which is precisely the shape of thing that makes a client stop
+--responding rather than fault.
+--
+--Nothing else depends on this: the calculated spell crit figure stands on its own, and
+--only the "measured" line in the row tooltip goes quiet. Set true to test it again.
+local MEASURE_SPELL_CRIT = true
+
 local critWatcher = CreateFrame("Frame", "OctoUI_SpellCritWatch")
-critWatcher:RegisterEvent("CHAT_MSG_SPELL_SELF_DAMAGE")
+if MEASURE_SPELL_CRIT then
+	critWatcher:RegisterEvent("CHAT_MSG_SPELL_SELF_DAMAGE")
+end
 critWatcher:SetScript("OnEvent", function()
 	if not arg1 then return end
 

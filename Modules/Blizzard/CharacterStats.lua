@@ -23,6 +23,7 @@ local format = string.format
 
 local CreateFrame = CreateFrame
 local GameTooltip = GameTooltip
+local GetTime = GetTime
 
 --{ label, stat key, formatter, attribute the uncomputed base comes from }.
 --
@@ -99,6 +100,8 @@ local ROWS = {
 }
 
 local panel
+--when the scan last ran, for the throttle in UpdateCharacterStats
+local lastScan
 
 --Which side of CharacterFrame the panel hangs off. { own point, frame point, x, y }.
 local ANCHORS = {
@@ -209,9 +212,19 @@ function B:UpdateCharacterStats()
 	--stale from its own frame, and this module is told about the same events through
 	--AceEvent on a different one -- nothing decides which of the two frames the client
 	--calls first. Lose that race and the panel draws the values from before the item came
-	--off, then sits on them until the next event. Only reached with the panel actually on
-	--screen, so a hidden character sheet still costs nothing.
-	E.Stats:Invalidate()
+	--off, then sits on them until the next event.
+	--
+	--Throttled, because one of the events driving it is PLAYER_AURAS_CHANGED and a rescan
+	--is not cheap: nineteen item tooltips, every buff, and every talent. In combat that
+	--event fires constantly -- every tick of every aura -- and with the character sheet
+	--left open that was an unbounded amount of tooltip work per second, which is a good
+	--way to make a client stop responding. Twice a second is far faster than anyone can
+	--read and cannot pile up.
+	local now = GetTime()
+	if not lastScan or (now - lastScan) > 0.5 then
+		lastScan = now
+		E.Stats:Invalidate()
+	end
 
 	local font = LSM:Fetch("font", E.db.general.font)
 	local size = E.db.general.fontSize

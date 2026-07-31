@@ -338,6 +338,87 @@ function E:MeterReport(msg)
 	end
 end
 
+--Locally modelled threat on the current target, for when the server will not answer --
+--which on this server is any time you are not in a group. Prints the confidence
+--alongside, because a fight carried by Torment's unverified flat value deserves less
+--trust than one that was all plain damage, and the number alone cannot say which.
+function E:ThreatModelReport(msg)
+	local M = E:GetModule("Misc", true)
+	if not (M and M.ThreatOn) then
+		E:Print("|cffff0000Threat model is not loaded.|r A newly added file needs a full exit of WoW.exe, not a reload.")
+		return
+	end
+
+	if not M:ThreatModelAvailable() then
+		E:Print("|cffff0000nampower is not in this session|r - the model reads its structured combat events, so it has nothing to work from.")
+		return
+	end
+
+	if msg and lower(msg) == "calibrate" then
+		local on = M:ToggleThreatCalibration()
+		E:Print(format("Threat calibration %s.", on
+			and "|cff00ff00on|r - fight normally; every time aggro changes hands between you and your pet it will report what that implies for the pet's flat threat per cast"
+			or "|cffff9900off|r"))
+		return
+	end
+
+	if msg and lower(msg) == "samples" then
+		local samples = M:ThreatCalibrationSamples()
+		if getn(samples) == 0 then
+			E:Print("no calibration samples yet - run |cffffcc00/octoui-threatmodel calibrate|r and fight something your pet can hold.")
+			return
+		end
+
+		--Printed rather than averaged. The melee and ranged columns cannot both be right,
+		--and which one applies depends on where you were standing at that instant; the
+		--true value is whichever column agrees with itself across fights, and that is
+		--something to look at rather than something to compute a mean of.
+		E:Print(format("%d calibration sample(s) -- flat threat per cast:", getn(samples)))
+		for i = 1, getn(samples) do
+			local s = samples[i]
+			E:Print(format("  %d. %s after %d cast(s):  melee %.0f  |cff999999|r  ranged %.0f",
+				i, s.direction, s.casts, s.melee, s.ranged))
+		end
+		return
+	end
+
+	local rows, top = M:ThreatOn()
+	if getn(rows) == 0 then
+		E:Print("no threat recorded on the current target yet")
+		return
+	end
+
+	local confidence = M:ThreatConfidence()
+	E:Print(format("threat on %s -- %d source(s), %.0f%% from checked numbers",
+		UnitName("target") or "?", getn(rows), confidence * 100))
+
+	if confidence < 1 then
+		E:Print("|cffff9900Some of this leans on ability threat values that have not been verified on this server.|r See ABILITY_THREAT in Modules/Misc/ThreatModel.lua.")
+	end
+
+	for i = 1, getn(rows) do
+		local row = rows[i]
+		E:Print(format("%d. %s  %.0f  |cff999999%.0f%%|r", i, row.name, row.threat, row.share * 100))
+
+		--What that number was built from, read at the same instant as the number itself.
+		--Comparing this against the damage meter cannot work -- the two are read seconds
+		--apart with a fight still running, so a discrepancy is equally explained by the
+		--model being wrong or by you having killed more things in between. Shown inline,
+		--a single reading checks itself: for a warlock, with no stance and no modelled
+		--talents, the ratio should sit at 1.0 and anything else is a real finding.
+		--The ratio measures how damage and healing were converted into threat, so the
+		--flat component comes out of the numerator first. Left in, it reads as an error
+		--on precisely the actors that carry flat threat -- a Voidwalker showed 1.94 when
+		--its damage conversion was in fact exactly 1.00, and the whole 0.94 was Torment
+		--working as designed. Flat is printed beside it because it is the guessed part
+		--and deserves to be looked at, not because it belongs in the ratio.
+		local base = row.damage + (row.healing * 0.5)
+		E:Print(format("      |cff999999from %.0f dmg + %.0f heal + %.0f flat -- ratio %.2f|r",
+			row.damage, row.healing, row.flat,
+			(base > 0) and ((row.threat - row.flat) / base) or 0))
+	end
+end
+
 --Delegates: the interesting state is all locals of Modules/Bags/Sort.lua.
 function E:BagSortReport()
 	local B = E:GetModule("Bags", true)
@@ -408,9 +489,13 @@ function E:ThreatReport()
 	--is no way to tell them apart and no way to know which half to go and fix.
 	local TM = E:GetModule("ThreatMeter", true)
 	if TM and TM.ThreatTraffic then
-		local sent, replies, last = TM:ThreatTraffic()
+		local sent, replies, last, failures = TM:ThreatTraffic()
 		local verdict = ""
-		if sent == 0 then
+		if failures > 0 then
+			--the client refusing the send is a third cause, and it looks exactly like
+			--the other two from the outside
+			verdict = format(" |cffff0000-- %d send(s) rejected by the client|r", failures)
+		elseif sent == 0 then
 			verdict = " |cffff0000-- never asked; nothing will ever appear|r"
 		elseif replies == 0 then
 			verdict = " |cffff0000-- asked, but the server has not answered|r"
@@ -422,10 +507,16 @@ function E:ThreatReport()
 	end
 
 	local solo = (GetNumRaidMembers() == 0 and GetNumPartyMembers() == 0)
-	E:Print(format("group: %s, solo threat requests %s",
-		solo and "solo" or "grouped",
-		(OctoTWT_CONFIG and OctoTWT_CONFIG.soloThreat ~= false)
-			and "|cff00ff00on|r" or "|cffff9900off|r"))
+	local soloState
+	if not (OctoTWT_CONFIG and OctoTWT_CONFIG.soloThreat ~= false) then
+		soloState = "|cffff9900off|r"
+	elseif TM and TM.SoloGaveUp and TM:SoloGaveUp() then
+		soloState = "|cffff9900stopped -- this server does not answer them|r"
+	else
+		soloState = "|cff00ff00on|r"
+	end
+
+	E:Print(format("group: %s, solo threat requests %s", solo and "solo" or "grouped", soloState))
 end
 
 --Puts the window back in the middle of the screen at a sane size, for when the saved
@@ -562,6 +653,7 @@ function E:LoadCommands()
 	self:RegisterChatCommand("octoui-bags", "BagSortReport")
 	self:RegisterChatCommand("octoui-queue", "QueueReport")
 	self:RegisterChatCommand("octoui-dps", "MeterReport")
+	self:RegisterChatCommand("octoui-threatmodel", "ThreatModelReport")
 	self:RegisterChatCommand("octoui-threatreset", "ThreatReset")
 
 	if E:GetModule("ActionBars") and E.private.actionbar.enable then

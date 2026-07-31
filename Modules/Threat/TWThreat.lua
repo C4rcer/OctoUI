@@ -297,6 +297,11 @@ TWT:SetScript("OnEvent", function()
             TWT.repliesSeen = (TWT.repliesSeen or 0) + 1
             TWT.lastReply = GetTime()
 
+            --One answer is proof the server does talk to us, so the solo back-off is
+            --cancelled for good rather than being allowed to trip on a quiet patch
+            TWT.soloGaveUp = nil
+            TWT.soloRequests = 0
+
             local threatData = arg2
             if __find(threatData, '#') and __find(threatData, TWT.tankModeApi) then
                 local packetEx = OctoTWTExplode(threatData, '#')
@@ -1228,25 +1233,67 @@ local function SoloThreatEnabled()
     return OctoTWT_CONFIG and OctoTWT_CONFIG.soloThreat ~= false
 end
 
+--Measured on this server: solo, 33 requests went out and nothing came back. The threat
+--API answers a group and ignores anybody else, which is a server-side decision no amount
+--of client work reaches.
+--
+--Rather than hardcode that as a rule -- servers change, and this is a Vanilla+ server
+--that already has -- the asking stops itself. Try a reasonable number of times, and if
+--nothing has *ever* been answered, give up for the session and say so once. A reload
+--tries again, and a single reply at any point cancels it permanently, so a server that
+--starts answering is picked up for free while this one is left alone.
+local SOLO_GIVE_UP_AFTER = 20
+
 --True when this situation should be asking the server for threat at all.
 function TWT.ThreatWanted()
     if not TWT.Solo() then return true end
+    if not SoloThreatEnabled() then return false end
 
-    return SoloThreatEnabled()
+    return not TWT.soloGaveUp
 end
 
---Distribution, and for a whisper who to. In one place because four call sites used to
---work this out separately and only one of them was ever right when solo.
+--Called after each solo request goes out.
+local function NoteSoloRequest()
+    if not TWT.Solo() or TWT.soloGaveUp then return end
+
+    TWT.soloRequests = (TWT.soloRequests or 0) + 1
+    if TWT.soloRequests < SOLO_GIVE_UP_AFTER or (TWT.repliesSeen or 0) > 0 then return end
+
+    TWT.soloGaveUp = true
+    OctoTWTPrint('This server does not answer threat requests outside a group, so solo threat has stopped asking. It works normally in a party or raid. |cff999999/octoui-threat for the counters.|r')
+end
+
+--Distribution to ask on. In one place because four call sites used to work this out
+--separately and only one of them was ever right when solo.
+--
+--Solo uses PARTY. Whispering yourself was the obvious idea and is simply not available:
+--this client's SendAddonMessage has no WHISPER distribution at all -- it answers
+--"Unknown addon chat type" and raises -- because the four-argument whisper form only
+--arrived in 2.0. PARTY with no party is at least accepted, and the request still leaves
+--the client as a chat packet the server can intercept by prefix; whether the server
+--*answers* one from a partyless player is the open question the traffic counters in
+--/octoui-threat exist to settle.
 local function ThreatChannel()
     if GetNumRaidMembers() > 0 then return 'RAID' end
-    if GetNumPartyMembers() > 0 then return 'PARTY' end
 
-    return 'WHISPER', TWT.name
+    return 'PARTY'
+end
+
+--pcall'd, and that is not belt and braces. This raising is precisely what stopped solo
+--threat working: TWT.send threw on the bad chat type from inside combatStart, which
+--abandoned the rest of that function -- including the threatQuery:Show() that starts the
+--loop doing the actual asking. A failed send has to cost the send and nothing else.
+local function Send(prefix, msg, channel)
+    local ok = pcall(SendAddonMessage, prefix, msg, channel)
+    if not ok then
+        TWT.sendFailures = (TWT.sendFailures or 0) + 1
+    end
+
+    return ok
 end
 
 function TWT.send(msg)
-    local channel, target = ThreatChannel()
-    SendAddonMessage(TWT.prefix, msg, channel, target)
+    return Send(TWT.prefix, msg, ThreatChannel())
 end
 
 --Counted so /octoui-threat can tell "we never asked" from "we asked and the server said
@@ -1256,9 +1303,10 @@ TWT.repliesSeen = 0
 TWT.lastReply = nil
 
 function TWT.UnitDetailedThreatSituation(limit)
-    local channel, target = ThreatChannel()
-    TWT.requestsSent = TWT.requestsSent + 1
-    SendAddonMessage(TWT.UDTS .. (OctoTWT_CONFIG.tankMode and '_TM' or ''), "limit=" .. limit, channel, target)
+    if Send(TWT.UDTS .. (OctoTWT_CONFIG.tankMode and '_TM' or ''), "limit=" .. limit, ThreatChannel()) then
+        TWT.requestsSent = TWT.requestsSent + 1
+        NoteSoloRequest()
+    end
 end
 
 function TWT.updateUI(from)
@@ -2491,7 +2539,12 @@ E.ThreatMeter = TM
 --thing that can tell "we never asked" apart from "we asked and were ignored" -- the two
 --causes of an empty window that look identical on screen.
 function TM:ThreatTraffic()
-    return TWT.requestsSent or 0, TWT.repliesSeen or 0, TWT.lastReply
+    return TWT.requestsSent or 0, TWT.repliesSeen or 0, TWT.lastReply, TWT.sendFailures or 0
+end
+
+--Whether the solo back-off has tripped this session; see SOLO_GIVE_UP_AFTER.
+function TM:SoloGaveUp()
+    return TWT.soloGaveUp and true or false
 end
 
 --The frame-name collision this guard was written for is gone. Every global this port

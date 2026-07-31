@@ -183,6 +183,7 @@ function M:Initialize()
 
 	--Needs nampower's structured combat events; bails quietly without them
 	self:InitializeDamageMeter()
+	self:InitializeThreatModel()
 
 	--Ported from ShaguTweaks, see each file for attribution
 	self:LoadAutoStance()
