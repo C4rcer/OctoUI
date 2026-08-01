@@ -817,6 +817,56 @@ function E:AuraReport()
 		(f and f.BuffsMover) or "none", (f and f.DebuffsMover) or "none"))
 end
 
+--Auto dismount fails in two ways and both are invisible from the outside: the error the
+--client actually sent was not one this recognises, or it was recognised but no buff looked
+--like a mount. Report both rather than guessing which.
+function E:DismountReport()
+	local M = E:GetModule("Misc", true)
+	if not (M and M.DismountErrors) then
+		E:Print("|cffff0000Auto dismount did not load.|r")
+		return
+	end
+
+	local live = 0
+	for _ in pairs(M.DismountErrors) do live = live + 1 end
+
+	E:Print(format("Auto dismount: enabled=%s, %d error string(s) recognised",
+		tostring(E.db.general.autoDismount), live))
+
+	local missing = M.DismountMissingGlobals
+	if getn(missing) > 0 then
+		E:Print(format("  %d global(s) this client does not define (harmless, listed for the record):", getn(missing)))
+		for i = 1, getn(missing) do
+			E:Print("    "..missing[i])
+		end
+	end
+
+	--While mounted this is the whole answer to "why did it not cancel anything".
+	local mounts, shifts = M:DismountScanBuffs()
+	if getn(mounts) > 0 or getn(shifts) > 0 then
+		E:Print(format("  right now: %d buff(s) look like a mount, %d like a shapeshift", getn(mounts), getn(shifts)))
+	else
+		E:Print("  right now: |cffffff00nothing looks like a mount or shapeshift|r (fine if you are on foot)")
+	end
+
+	if M.DismountNoBuffFound then
+		E:Print("  |cffff0000An error matched but no mount buff was found.|r The mount's tooltip")
+		E:Print("  wording is probably not in MOUNT_STRINGS in AutoDismount.lua.")
+	end
+
+	local unmatched = M.DismountUnmatched
+	if getn(unmatched) > 0 then
+		E:Print("  errors seen that were NOT recognised, newest first:")
+		for i = 1, getn(unmatched) do
+			E:Print(format("    |cff00ddddreached %d:|r %s", i, unmatched[i]))
+		end
+		E:Print("  If the one that should have dismounted you is in that list, its text is")
+		E:Print("  the fix -- add the matching global to ERROR_GLOBALS in AutoDismount.lua.")
+	else
+		E:Print("  no unrecognised errors seen yet")
+	end
+end
+
 function E:LoadCommands()
 	self:RegisterChatCommand("in", "DelayScriptCall")
 
@@ -844,6 +894,7 @@ function E:LoadCommands()
 	self:RegisterChatCommand("octoui-threatmodel", "ThreatModelReport")
 	self:RegisterChatCommand("octoui-filter", "FilterCommand")
 	self:RegisterChatCommand("octoui-auras", "AuraReport")
+	self:RegisterChatCommand("octoui-dismount", "DismountReport")
 	self:RegisterChatCommand("octoui-threatreset", "ThreatReset")
 
 	if E:GetModule("ActionBars") and E.private.actionbar.enable then
