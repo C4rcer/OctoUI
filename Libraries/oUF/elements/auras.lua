@@ -235,6 +235,13 @@ local function updateIcon(element, unit, index, offset, filter, isDebuff, visibl
 		button.expiration = expiration
 		button.dtype = dispelType
 
+		--The player is the one unit the client will quote a live remaining time for, and
+		--GetPlayerBuffTimeLeft wants the GetPlayerBuff id, not this loop's display index.
+		--Stashed so the timer can re-read it instead of counting down a snapshot: a buff
+		--refreshed without the aura set changing fires no event, so nothing would ever
+		--correct that snapshot. Nil for every other unit, which has no such API.
+		button.playerBuffIndex = (unit == "player") and GetPlayerBuff(index - 1, filter) or nil
+
 		--[[ Override: Auras:CustomFilter(unit, button, ...)
 		Defines a custom filter that controls if the aura button should be shown.
 

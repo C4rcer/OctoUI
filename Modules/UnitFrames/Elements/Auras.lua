@@ -14,6 +14,7 @@ local ceil = math.ceil
 local GetTime = GetTime
 local CreateFrame = CreateFrame
 local GetPlayerBuff = GetPlayerBuff
+local GetPlayerBuffTimeLeft = GetPlayerBuffTimeLeft
 local IsShiftKeyDown = IsShiftKeyDown
 local IsAltKeyDown = IsAltKeyDown
 local IsControlKeyDown = IsControlKeyDown
@@ -452,7 +453,21 @@ function UF:PostUpdateAura(unit, button)
 end
 
 function UF:UpdateAuraTimer(elapsed)
-	self.expirationSaved = self.expirationSaved - elapsed
+	--Re-read rather than count down, for the player. A buff refreshed without the aura set
+	--changing fires no event, so PostUpdateAura never runs and the snapshot taken when the
+	--buff first appeared is never corrected -- recasting Demon Armor with 20 minutes left
+	--went on reading 20 minutes. The standalone panel in Modules/Auras/Auras.lua has always
+	--re-read the live value, which is exactly why it was right and this was not.
+	--
+	--Only the player: no other unit has an API that will quote a remaining time here, and
+	--for those the countdown against LibDebuff's reconstructed expiry is all there is.
+	if self.playerBuffIndex then
+		local timeLeft = GetPlayerBuffTimeLeft(self.playerBuffIndex)
+		self.expirationSaved = (timeLeft and timeLeft > 0) and timeLeft or 0
+	else
+		self.expirationSaved = self.expirationSaved - elapsed
+	end
+
 	if self.nextupdate > 0 then
 		self.nextupdate = self.nextupdate - elapsed
 		return
