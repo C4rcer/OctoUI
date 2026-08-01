@@ -8,10 +8,10 @@ GUILD_STATUS = "Status da guilda"
 PLAYER_STATUS = "Status do Jogador"
 
 --*_ADDON locales
-L["INCOMPATIBLE_ADDON"] = "The addon %s is not compatible with ElvUI's %s module. Please select either the addon or the ElvUI module to disable."
+L["INCOMPATIBLE_ADDON"] = "The addon %s is not compatible with OctoUI's %s module. Please select either the addon or the OctoUI module to disable."
 
 --*_MSG locales
-L["LOGIN_MSG"] = "Bem vindo à versão %s%s|r da %sElvUI|r, escreva /ec para acessar o menu de configuração em jogo. Se precisar de suporte técnico visite-nos no site https://github.com/ElvUI-Vanilla/ElvUI"
+L["LOGIN_MSG"] = "Bem vindo à versão %s%s|r da %sOctoUI|r, escreva /ec para acessar o menu de configuração em jogo. Se precisar de suporte técnico visite-nos no site https://github.com/C4rcer/OctoUI/issues"
 
 --ActionBars
 L["Binding"] = "Ligações"
@@ -136,7 +136,7 @@ L["CVars Set"] = "CVars configuradas"
 L["CVars"] = "CVars"
 L["Dark"] = "Escuro"
 L["Disable"] = "Desativar"
-L["ElvUI Installation"] = "Instalação do ElvUI"
+L["ElvUI Installation"] = "Instalação do OctoUI"
 L["Finished"] = "Terminado"
 L["Grid Size:"] = "Tamanho da Grade"
 L["Healer"] = "Curandeiro"
@@ -160,7 +160,7 @@ L["Please click the button below to setup your CVars."] = "Por favor, clique no 
 L["Please press the continue button to go onto the next step."] = "Por favor, pressione o botão Continuar para passar à próxima etapa."
 L["Resolution Style Set"] = "Estilo de Resolução defenido"
 L["Resolution"] = "Resolução"
-L["Select the type of aura system you want to use with ElvUI's unitframes. Set to Aura Bar & Icons to use both aura bars and icons, set to icons only to only see icons."] = true
+L["Select the type of aura system you want to use with ElvUI's unitframes. Set to Aura Bar & Icons to use both aura bars and icons, set to icons only to only see icons."] = "Select the type of aura system you want to use with OctoUI's unitframes. Set to Aura Bar & Icons to use both aura bars and icons, set to icons only to only see icons."
 L["Setup Chat"] = "Configurar Bate-papo"
 L["Setup CVars"] = "Configurar CVars"
 L["Skip Process"] = "Pular Processo"
@@ -170,7 +170,7 @@ L["The chat windows function the same as Blizzard standard chat windows, you can
 L["The in-game configuration menu can be accessed by typing the /ec command or by clicking the 'C' button on the minimap. Press the button below if you wish to skip the installation process."] = "O modo configuração em jogo pode ser acessado escrevendo o comando /ec ou clicando no botão 'C' no minimapa. Pressione o botão abaixo se desejar pular o processo de instalação"
 L["Theme Set"] = "Tema configurado"
 L["Theme Setup"] = "Configuração do Tema"
-L["This install process will help you learn some of the features in ElvUI has to offer and also prepare your user interface for usage."] = "Este processo de instalação vai mostrar-lhe algumas das opções que a ElvUI tem para oferecer e também vai preparar a sua interface para ser usada."
+L["This install process will help you learn some of the features in ElvUI has to offer and also prepare your user interface for usage."] = "Este processo de instalação vai mostrar-lhe algumas das opções que a OctoUI tem para oferecer e também vai preparar a sua interface para ser usada."
 L["This is completely optional."] = "Isto é completamente opcional."
 L["This part of the installation process sets up your chat windows names, positions and colors."] = "Esta parte da instalação é para definir os nomes, posições e cores das suas janelas de bate-papo."
 L["This part of the installation process sets up your World of Warcraft default options it is recommended you should do this step for everything to behave properly."] = "Esta parte da instalação serve para definir as suas opcões padrão do WoW, é recomendado fazer isto para que tudo funcione corretamente."
@@ -178,9 +178,9 @@ L["This resolution doesn't require that you change settings for the UI to fit on
 L["This resolution requires that you change some settings to get everything to fit on your screen."] = "Esta resolução requer que altere algumas definições para que tudo caiba no seu ecrã (monitor)."
 L["This will change the layout of your unitframes and actionbars."] = true
 L["Trade"] = "Comércio"
-L["Welcome to ElvUI version %s!"] = "Bem-vindo à versão %s da ElvUI!"
-L["You are now finished with the installation process. If you are in need of technical support please visit us at https://github.com/ElvUI-Vanilla/ElvUI"] = "O processo de instalação está agora terminado. Se precisar de suporte técnico por favor visite-nos no site https://github.com/ElvUI-Vanilla/ElvUI"
-L["You can always change fonts and colors of any element of ElvUI from the in-game configuration."] = "As cores e fontes da ElvUI podem ser mudadas em qualquer momento no modo de configuração demtro do jogo."
+L["Welcome to ElvUI version %s!"] = "Bem-vindo à versão %s da OctoUI!"
+L["You are now finished with the installation process. If you are in need of technical support please visit us at https://github.com/ElvUI-Vanilla/ElvUI"] = "O processo de instalação está agora terminado. Se precisar de suporte técnico por favor visite-nos no site https://github.com/C4rcer/OctoUI/issues"
+L["You can always change fonts and colors of any element of ElvUI from the in-game configuration."] = "As cores e fontes da OctoUI podem ser mudadas em qualquer momento no modo de configuração demtro do jogo."
 L["You can now choose what layout you wish to use based on your combat role."] = "Pode agora escolher o layout que pretende usar baseado no seu papel."
 L["You may need to further alter these settings depending how low you resolution is."] = "Poderá ter de alterar estas definições dependendo de quão baixa for a sua resolução."
 L["Your current resolution is %s, this is considered a %s resolution."] = "A sua resolução actual é %s, esta é considerada uma resolução %s."
@@ -257,7 +257,7 @@ L["Weapons"] = true
 L["DESC_MOVERCONFIG"] = "Movers unlocked. Move them now and click Lock when you are done./nOptions:/nShift + RightClick - Hides mover temporarily./nCtrl + RightClick - Resets mover position to default."
 
 --Plugin Installer
-L["ElvUI Plugin Installation"] = true
+L["ElvUI Plugin Installation"] = "OctoUI Plugin Installation"
 L["In Progress"] = true
 L["List of installations in queue:"] = true
 L["Pending"] = true
@@ -292,7 +292,7 @@ L["Track"] = "Listar"
 L["A setting you have changed will change an option for this character only. This setting that you have changed will be uneffected by changing user profiles. Changing this setting requires that you reload your User Interface."] = "A definição que você alterou afetará apenas este personagem. Esta definição que você alterou não será afetada por mudanças de perfil. Alterar esta difinição requer que você recarregue a sua interface."
 L["Accepting this will reset your Filter Priority lists for all auras on NamePlates. Are you sure?"] = true
 L["Accepting this will reset your Filter Priority lists for all auras on UnitFrames. Are you sure?"] = true
-L["Are you sure you want to apply this font to all ElvUI elements?"] = true
+L["Are you sure you want to apply this font to all ElvUI elements?"] = "Are you sure you want to apply this font to all OctoUI elements?"
 L["Are you sure you want to disband the group?"] = "Tem a certeza de que quer dissolver o grupo?"
 L["Are you sure you want to reset all the settings on this profile?"] = "Tem certeza que quer redefinir todas as configurações desse perfil?"
 L["Are you sure you want to reset every mover back to it's default position?"] = "Tem a certeza de que deseja restaurar todos os movedores de volta para a sua posição padrão?"
@@ -301,15 +301,15 @@ L["Can't buy anymore slots!"] = "Não é possível comprar mais espaços!"
 L["Delete gray items?"] = true
 L["Disable Warning"] = "Desativar Aviso"
 L["Discard"] = "Descartar"
-L["Do you enjoy the new ElvUI?"] = true
+L["Do you enjoy the new ElvUI?"] = "Do you enjoy the new OctoUI?"
 L["Do you swear not to post in technical support about something not working without first disabling the addon/module combination first?"] = "Você jura não postar no suporte técnico sobre alguma coisa não funcionando sem antes desabilitar a combinação addon/módulo?"
-L["ElvUI is five or more revisions out of date. You can download the newest version from https://github.com/ElvUI-Vanilla/ElvUI/"] = true
-L["ElvUI is out of date. You can download the newest version from https://github.com/ElvUI-Vanilla/ElvUI/"] = true
-L["ElvUI needs to perform database optimizations please be patient."] = true
+L["ElvUI is five or more revisions out of date. You can download the newest version from https://github.com/ElvUI-Vanilla/ElvUI/"] = "OctoUI is five or more revisions out of date. You can download the newest version from https://github.com/C4rcer/OctoUI"
+L["ElvUI is out of date. You can download the newest version from https://github.com/ElvUI-Vanilla/ElvUI/"] = "OctoUI is out of date. You can download the newest version from https://github.com/C4rcer/OctoUI"
+L["ElvUI needs to perform database optimizations please be patient."] = "OctoUI needs to perform database optimizations please be patient."
 L["Hover your mouse over any actionbutton or spellbook button to bind it. Press the escape key or right click to clear the current actionbutton's keybinding."] = "Paire com o seu rato (mouse) sobre qualquer botão de ação ou botão do grimório para fazer uma Ligação. Pressione a tecla Escape ou clique com o botão direito para limpar o atalho atual."
 L["I Swear"] = "Eu Juro"
 L["No, Revert Changes!"] = true
-L["Oh lord, you have got ElvUI and Tukui both enabled at the same time. Select an addon to disable."] = "Oh senhor, você está com os addons ElvUI e Tuki ativos ao mesmo tempo. Selecione um para desativar."
+L["Oh lord, you have got ElvUI and Tukui both enabled at the same time. Select an addon to disable."] = "Oh senhor, você está com os addons OctoUI e Tuki ativos ao mesmo tempo. Selecione um para desativar."
 L["One or more of the changes you have made require a ReloadUI."] = "Uma ou mais das alterações que fez requerem que recarregue a IU."
 L["One or more of the changes you have made will effect all characters using this addon. You will have to reload the user interface to see the changes you have made."] = "Uma ou mais das alterações que fez afetará todos os personagens que usam este addon. Você terá que recarregar a interface para ver as alterações que fez."
 L["Save"] = "Salvar"
@@ -318,7 +318,7 @@ L["Type /hellokitty to revert to old settings."] = true
 L["Using the healer layout it is highly recommended you download the addon Clique if you wish to have the click-to-heal function."] = "Ao usar o leioute de curandeiro é altamente recomendado que você baixe o addon Clique se quiser ter a função de clicar-para-curar."
 L["Yes, Keep Changes!"] = true
 L["You have changed the Thin Border Theme option. You will have to complete the installation process to remove any graphical bugs."] = true
-L["You have changed your UIScale, however you still have the AutoScale option enabled in ElvUI. Press accept if you would like to disable the Auto Scale option."] = "Você mudou a Escala da sua IU, no entanto ainda tem a opção de dimensionamento automático ativa na ElvUI. Pressione Aceitar se gostaria de desativar a opção de dimensionamento automático."
+L["You have changed your UIScale, however you still have the AutoScale option enabled in ElvUI. Press accept if you would like to disable the Auto Scale option."] = "Você mudou a Escala da sua IU, no entanto ainda tem a opção de dimensionamento automático ativa na OctoUI. Pressione Aceitar se gostaria de desativar a opção de dimensionamento automático."
 L["You have imported settings which may require a UI reload to take effect. Reload now?"] = true
 L["You must purchase a bank slot first!"] = "Você deve comprar um espaço no banco primeiro!"
 
@@ -329,11 +329,11 @@ L["Talent Specialization:"] = true
 L["Targeted By:"] = "Sendo Alvo de:"
 
 --Tutorials
-L["A raid marker feature is available by pressing Escape -> Keybinds scroll to the bottom under ElvUI and setting a keybind for the raid marker."] = "A opção Marcas de Raide está disponivel pressionando Escape -> Teclas de Atalho, rolando tudo para o fundo debaixo de ElvUI e definindo uma tecla de atalho para o Raid Marker."
-L["ElvUI has a dual spec feature which allows you to load different profiles based on your current spec on the fly. You can enable this from the profiles tab."] = "A ElvUI contém o modo de duas especializações, que permite que carregue perfis diferentes baseado na sua especialização atual rapidamente. Você pode ativar esta opção na guia Perfis."
-L["For technical support visit us at https://github.com/ElvUI-Vanilla/ElvUI"] = "Para suporte técnico visite-nos no site https://github.com/ElvUI-Vanilla/ElvUI"
+L["A raid marker feature is available by pressing Escape -> Keybinds scroll to the bottom under ElvUI and setting a keybind for the raid marker."] = "A opção Marcas de Raide está disponivel pressionando Escape -> Teclas de Atalho, rolando tudo para o fundo debaixo de OctoUI e definindo uma tecla de atalho para o Raid Marker."
+L["ElvUI has a dual spec feature which allows you to load different profiles based on your current spec on the fly. You can enable this from the profiles tab."] = "A OctoUI contém o modo de duas especializações, que permite que carregue perfis diferentes baseado na sua especialização atual rapidamente. Você pode ativar esta opção na guia Perfis."
+L["For technical support visit us at https://github.com/ElvUI-Vanilla/ElvUI"] = "Para suporte técnico visite-nos no site https://github.com/C4rcer/OctoUI/issues"
 L["If you accidently remove a chat frame you can always go the in-game configuration menu, press install, go to the chat portion and reset them."] = "Se acidentalmente remover um quadro de conversação você pode sempre ir ao menu de configuração em jogo, pressionar instalar, ir até a etapa de bate-papo e os restaurar."
-L["If you are experiencing issues with ElvUI try disabling all your addons except ElvUI, remember ElvUI is a full UI replacement addon, you cannot run two addons that do the same thing."] = "Se estiver a ter problemas com a ElvUI tente desativar todos os addons exceto a ElvUI, lembre-se que a ElvUI é um addon de substituição de interface completo, e não se consegue executar dois addons que fazem a mesma coisa."
+L["If you are experiencing issues with ElvUI try disabling all your addons except ElvUI, remember ElvUI is a full UI replacement addon, you cannot run two addons that do the same thing."] = "Se estiver a ter problemas com a OctoUI tente desativar todos os addons exceto a OctoUI, lembre-se que a OctoUI é um addon de substituição de interface completo, e não se consegue executar dois addons que fazem a mesma coisa."
 L["The focus unit can be set by typing /focus when you are targeting the unit you want to focus. It is recommended you make a macro to do this."] = "A unidade de Foco pode ser definida escrevendo /focus quando voce tem no alvo a unidade que quer tal. É recomendado que faça uma macro para este efeito."
 L["To move abilities on the actionbars by default hold shift + drag. You can change the modifier key from the actionbar options menu."] = "Para mover habilidades nas barras de ação (modo padrão) mantenha pressionado Shift enquanto arrasta. Você pode mudar a tecla no menu de opções das barras de ações."
 L["To setup which channels appear in which chat frame, right click the chat tab and go to settings."] = "Para configurar que canais aparecem em cada quadro de conversação, clique com o botão direito no guia do bate-papo e vá a configurações."
