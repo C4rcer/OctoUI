@@ -792,11 +792,17 @@ function UF:UpdateAllHeaders(event)
 	if ORD then
 		ORD:ResetDebuffData()
 
-		--[[if instanceType == "party" or instanceType == "raid" then
-			ORD:RegisterDebuffs(E.global.unitframe.aurafilters.RaidDebuffs.spells)
-		else
-			ORD:RegisterDebuffs(E.global.unitframe.aurafilters.CCDebuffs.spells)
-		end--]]
+		--Commented out for as long as Settings/Filters/UnitFrame.lua was empty: with no
+		--list to register, debuff_data stayed empty and the element could only ever pick a
+		--dispellable debuff. The filter names are read from the RaidDebuff Indicator
+		--options rather than hardcoded, which is what those two dropdowns already write to.
+		local indicator = E.global.unitframe.raidDebuffIndicator
+		local filterName = (instanceType == "party" or instanceType == "raid") and indicator.instanceFilter or indicator.otherFilter
+		local filter = filterName and E.global.unitframe.aurafilters[filterName]
+
+		if filter and filter.spells then
+			ORD:RegisterDebuffs(filter.spells)
+		end
 	end
 
 	if E.private.unitframe.disabledBlizzardFrames.party then

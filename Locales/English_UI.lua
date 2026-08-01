@@ -440,6 +440,12 @@ L["Error resetting UnitFrame."] = true;
 L["OctoUI is out of date. You can download the newest version from https://github.com/C4rcer/OctoUI"] = true;
 
 --Modules/Bags/Bags.lua
+L["%s is no longer protected."] = true;
+L["%s is now protected from selling and deleting."] = true;
+L["%s is protected. Alt + Right-Click it in your bags to unlock it."] = true;
+L["Alt + Right-Click a bag item to protect it from being sold or deleted."] = true;
+L["Protected: cannot be sold or deleted."] = true;
+L["That item is protected. Alt + Right-Click it in your bags to unlock it."] = true;
 L["Vendor / Delete Grays"] = true;
 L["Vendored gray items for: %s"] = true;
 L["Vendoring Grays"] = true;

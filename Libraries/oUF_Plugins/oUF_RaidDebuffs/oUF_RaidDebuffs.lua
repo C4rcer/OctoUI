@@ -37,12 +37,11 @@ local function add(spell, priority, stackThreshold)
 	end
 end
 
---Nothing calls this today. UF:UpdateAllHeaders has the call commented out because it
---reads E.global.unitframe.aurafilters.RaidDebuffs, and Settings/Filters/UnitFrame.lua is
---empty -- so there is no filter list on this fork and debuff_data stays empty. Until one
---exists, only the dispel-type path in Update can select anything, and Update skips the
---tooltip name scan entirely on the strength of that. Registering a list turns both back
---on with no further change.
+--Called by UF:UpdateAllHeaders with whichever list the RaidDebuff Indicator options name
+--for the current instance type. That call was commented out for as long as
+--Settings/Filters/UnitFrame.lua was empty: with debuff_data empty, only the dispel-type
+--path in Update can select anything, and Update skips the tooltip name scan entirely on
+--the strength of that. Both come back on the moment a list has entries in it.
 function addon:RegisterDebuffs(t)
 	if not t then return end
 
@@ -180,6 +179,25 @@ local function DebuffName(unit, index)
 	return (lib:UnitDebuff(unit, index))
 end
 
+--With a list registered the scan above runs for every debuff on the unit on every
+--UNIT_AURA, which is exactly the per-event tooltip scan to avoid. Cache it per frame and
+--only rescan a slot when the icon sitting in it changes -- the same trick, for the same
+--reason, as GetCachedAuraName in Modules/NamePlates/Elements/Auras.lua. Two debuffs that
+--share an icon and land on the same index would collide; that element accepts the same
+--limit, and the alternative is a scan per debuff per event.
+local function CachedDebuffName(element, unit, index, texture)
+	if not element.nameCache then
+		element.nameCache, element.nameTexture = {}, {}
+	end
+
+	if element.nameTexture[index] ~= texture then
+		element.nameTexture[index] = texture
+		element.nameCache[index] = DebuffName(unit, index)
+	end
+
+	return element.nameCache[index]
+end
+
 local function formatTime(s)
 	if(s > 60) then
 		--was string.mod, which does not exist in any Lua version and raised the moment a
@@ -301,7 +319,7 @@ local function Update(self, event, unit)
 		if not icon then break end
 
 		count = count or 0
-		name = needNames and DebuffName(unit, i) or nil
+		name = needNames and CachedDebuffName(element, unit, i, icon) or nil
 
 		if(addon.ShowDispellableDebuff and (element.showDispellableDebuff ~= false) and debuffType) then
 			if(addon.FilterDispellableDebuff) then

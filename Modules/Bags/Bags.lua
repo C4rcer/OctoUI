@@ -6,7 +6,7 @@ local LIP = LibStub("ItemPrice-1.1");
 --Cache global variables
 --Lua functions
 local _G = _G
-local type, ipairs, pairs, unpack, select, assert, pcall = type, ipairs, pairs, unpack, select, assert, pcall
+local type, ipairs, pairs, unpack, select, assert, pcall, tonumber = type, ipairs, pairs, unpack, select, assert, pcall, tonumber
 local tinsert, tremove, twipe, tmaxn = table.insert, table.remove, table.wipe, table.maxn
 local floor, abs, mod = math.floor, math.abs, math.fmod
 local format, len, match, sub, gsub = string.format, string.len, string.match, string.sub, string.gsub
@@ -17,6 +17,7 @@ local BankFrameItemButton_UpdateLock = BankFrameItemButton_UpdateLock
 local CloseBag, CloseBackpack, CloseBankFrame = CloseBag, CloseBackpack, CloseBankFrame
 local CooldownFrame_SetTimer = CooldownFrame_SetTimer
 local CreateFrame = CreateFrame
+local CursorHasItem = CursorHasItem
 local DeleteCursorItem = DeleteCursorItem
 local GetContainerItemCooldown = GetContainerItemCooldown
 local GetContainerItemInfo = GetContainerItemInfo
@@ -29,7 +30,7 @@ local GetNumBankSlots = GetNumBankSlots
 local GetKeyRingSize = GetKeyRingSize
 local GetScreenWidth, GetScreenHeight = GetScreenWidth, GetScreenHeight
 local IsBagOpen, IsOptionFrameOpen = IsBagOpen, IsOptionFrameOpen
-local IsShiftKeyDown, IsControlKeyDown = IsShiftKeyDown, IsControlKeyDown
+local IsShiftKeyDown, IsControlKeyDown, IsAltKeyDown = IsShiftKeyDown, IsControlKeyDown, IsAltKeyDown
 local PickupContainerItem = PickupContainerItem
 local PlaySound = PlaySound
 local PutItemInBag = PutItemInBag
@@ -93,12 +94,14 @@ function B:Tooltip_Show()
 	GameTooltip:ClearLines()
 	GameTooltip:AddLine(this.ttText)
 
+	--`this`, not `self`: script handlers are called with no arguments on this client, so
+	--`self` is nil here and reading a field off it raises.
 	if this.ttText2 then
-		if self.ttText2desc then
+		if this.ttText2desc then
 			GameTooltip:AddLine(" ")
-			GameTooltip:AddDoubleLine(self.ttText2, self.ttText2desc, 1, 1, 1)
+			GameTooltip:AddDoubleLine(this.ttText2, this.ttText2desc, 1, 1, 1)
 		else
-			GameTooltip:AddLine(self.ttText2)
+			GameTooltip:AddLine(this.ttText2)
 		end
 	end
 
@@ -268,6 +271,125 @@ function B:UpdateAllBagSlots()
 	end
 end
 
+--Item locks. Stored per character and keyed by item id rather than by bag position:
+--items move every time the bags are sorted or a stack is split, and a lock tied to a
+--slot would have to be carried along by every one of those swaps. The trade-off is that
+--locking one copy locks every copy of that item, which is what is wanted for the case
+--this exists for -- a grey that is actually needed getting vendored by accident.
+function B:GetLockedItems()
+	if not ElvCharacterDB.LockedItems then
+		ElvCharacterDB.LockedItems = {}
+	end
+
+	return ElvCharacterDB.LockedItems
+end
+
+function B:GetSlotItemID(bagID, slotID)
+	local clink = GetContainerItemLink(bagID, slotID)
+
+	return clink and tonumber(match(clink, "item:(%d+)")) or nil
+end
+
+function B:IsItemLocked(itemID)
+	return (itemID and B:GetLockedItems()[itemID]) and true or false
+end
+
+function B:IsSlotLocked(bagID, slotID)
+	return B:IsItemLocked(B:GetSlotItemID(bagID, slotID))
+end
+
+function B:ToggleItemLock(bagID, slotID)
+	local itemID = B:GetSlotItemID(bagID, slotID)
+	if not itemID then return end
+
+	local locked = B:GetLockedItems()
+	local itemLink = GetContainerItemLink(bagID, slotID)
+
+	if locked[itemID] then
+		locked[itemID] = nil
+		E:Print(format(L["%s is no longer protected."], itemLink))
+	else
+		locked[itemID] = true
+		E:Print(format(L["%s is now protected from selling and deleting."], itemLink))
+	end
+
+	B:UpdateAllBagSlots()
+end
+
+--Nothing here can rely on catching a sale in this module's own click handler: other
+--addons vendor through the same API, and the delete path is reached from the cursor
+--rather than from a bag button at all. Guarding the globals that actually move the item
+--covers every caller.
+--
+--Note this module's own Vendor / Delete Grays does NOT pass through these -- it calls the
+--file-local copies cached at the top -- so it filters locked items out of its list itself.
+function B:InstallLockGuards()
+	--Alt + Right-Click toggles the lock from here rather than from a click handler on the
+	--slot. A right-click on a bag slot resolves the *global* UseContainerItem -- which is
+	--what Modules/Misc/BagItemClick.lua already relies on -- so this is one interception
+	--for the toggle and the sell block both, it needs nothing of the button template, and
+	--it works on Blizzard's own bags when this module is switched off.
+	local origUseContainerItem = UseContainerItem
+	_G.UseContainerItem = function(bag, slot, onSelf)
+		if IsAltKeyDown() then
+			B:ToggleItemLock(bag, slot)
+			return
+		end
+
+		if MerchantFrame and MerchantFrame:IsShown() and B:IsSlotLocked(bag, slot) then
+			E:Print(format(L["%s is protected. Alt + Right-Click it in your bags to unlock it."], GetContainerItemLink(bag, slot)))
+			return
+		end
+
+		return origUseContainerItem(bag, slot, onSelf)
+	end
+
+	--DeleteCursorItem cannot be asked what it is about to destroy -- there is no API to
+	--read the cursor on this client -- so the pickup that put the item there is what
+	--records it. PickupContainerItem both takes and places, so the slot is read before the
+	--call and the answer only kept if something ended up on the cursor afterwards.
+	local origPickupContainerItem = PickupContainerItem
+	_G.PickupContainerItem = function(bag, slot)
+		local locked = B:IsSlotLocked(bag, slot)
+		origPickupContainerItem(bag, slot)
+		B.cursorItemLocked = (locked and CursorHasItem()) and true or false
+	end
+
+	--Anything else that changes what the cursor holds clears the flag rather than
+	--guessing, so a stale true cannot block an unrelated delete later.
+	local origPickupInventoryItem = PickupInventoryItem
+	_G.PickupInventoryItem = function(slot)
+		B.cursorItemLocked = false
+		return origPickupInventoryItem(slot)
+	end
+
+	local origClearCursor = ClearCursor
+	_G.ClearCursor = function()
+		B.cursorItemLocked = false
+		return origClearCursor()
+	end
+
+	local origDeleteCursorItem = DeleteCursorItem
+	_G.DeleteCursorItem = function()
+		if B.cursorItemLocked then
+			E:Print(L["That item is protected. Alt + Right-Click it in your bags to unlock it."])
+			return
+		end
+
+		return origDeleteCursorItem()
+	end
+end
+
+--Script handlers get no arguments on this client, only the globals `this` and `arg1`.
+function B.Slot_OnEnter()
+	if not GameTooltip:IsOwned(this) then return end
+
+	if B:IsSlotLocked(this:GetParent():GetID(), this:GetID()) then
+		GameTooltip:AddLine(L["Protected: cannot be sold or deleted."], 0.2, 1, 0.2)
+		GameTooltip:Show()
+	end
+end
+
 function B:UpdateSlot(bagID, slotID)
 	if (self.Bags[bagID] and self.Bags[bagID].numSlots ~= GetContainerNumSlots(bagID)) or not self.Bags[bagID] or not self.Bags[bagID][slotID] then return end
 
@@ -283,6 +405,10 @@ function B:UpdateSlot(bagID, slotID)
 	slot.QuestIcon:Hide()
 	slot.JunkIcon:Hide()
 	slot.itemLevel:SetText("")
+
+	if slot.LockIcon then
+		slot.LockIcon:Hide()
+	end
 
 	if B.ProfessionColors[bagType] then
 		slot:SetBackdropBorderColor(unpack(B.ProfessionColors[bagType]))
@@ -334,6 +460,12 @@ function B:UpdateSlot(bagID, slotID)
 	else
 		slot:SetBackdropBorderColor(unpack(E.media.bordercolor))
 		slot.ignoreBorderColors = true
+	end
+
+	--Outside the branch above: a profession bag takes its first arm and never reaches the
+	--item-link one, and a locked item in a herb or enchanting bag still has to show it.
+	if slot.LockIcon and clink and B:IsItemLocked(tonumber(match(clink, "item:(%d+)"))) then
+		slot.LockIcon:Show()
 	end
 
 	if texture then
@@ -585,6 +717,16 @@ function B:Layout(isBank)
 						f.Bags[bagID][slotID].JunkIcon = JunkIcon
 					end
 
+					if not f.Bags[bagID][slotID].LockIcon then
+						local LockIcon = f.Bags[bagID][slotID]:CreateTexture(nil, "OVERLAY")
+						LockIcon:SetTexture("Interface\\AddOns\\OctoUI\\media\\textures\\bagLockIcon")
+						E:Point(LockIcon, "BOTTOMLEFT", 1, 1)
+						LockIcon:Hide()
+						f.Bags[bagID][slotID].LockIcon = LockIcon
+					end
+
+					HookScript(f.Bags[bagID][slotID], "OnEnter", B.Slot_OnEnter)
+
 					f.Bags[bagID][slotID].iconTexture = _G[f.Bags[bagID][slotID]:GetName().."IconTexture"]
 					E:SetInside(f.Bags[bagID][slotID].iconTexture, f.Bags[bagID][slotID])
 					f.Bags[bagID][slotID].iconTexture:SetTexCoord(unpack(E.TexCoords))
@@ -608,6 +750,10 @@ function B:Layout(isBank)
 
 				if f.Bags[bagID][slotID].JunkIcon then
 					E:Size(f.Bags[bagID][slotID].JunkIcon, buttonSize/2)
+				end
+
+				if f.Bags[bagID][slotID].LockIcon then
+					E:Size(f.Bags[bagID][slotID].LockIcon, buttonSize/2)
 				end
 
 				f:UpdateSlot(bagID, slotID)
@@ -854,7 +1000,7 @@ function B:GetGraysValue()
 	for bag = 0, NUM_BAG_FRAMES do
 		for slot = 1, GetContainerNumSlots(bag) do
 			itemLink = GetContainerItemLink(bag, slot)
-			if itemLink then
+			if itemLink and not B:IsItemLocked(tonumber(match(itemLink, "item:(%d+)"))) then
 				_, _, rarity, _, _, itype = GetItemInfo(match(itemLink, "item:(%d+)"))
 				itemPrice = LIP:GetSellValue(itemLink)
 
@@ -883,7 +1029,7 @@ function B:VendorGrays(delete)
 	for bag = 0, NUM_BAG_FRAMES, 1 do
 		for slot = 1, GetContainerNumSlots(bag), 1 do
 			itemLink = GetContainerItemLink(bag, slot)
-			if itemLink then
+			if itemLink and not B:IsItemLocked(tonumber(match(itemLink, "item:(%d+)"))) then
 				_, _, rarity, _, _, itype = GetItemInfo(match(itemLink, "item:(%d+)"))
 				itemPrice = LIP:GetSellValue(itemLink) or 0
 
@@ -1201,6 +1347,9 @@ function B:ContructContainerFrame(name, isBank)
 		E:SetInside(f.vendorGraysButton:GetPushedTexture())
 		E:StyleButton(f.vendorGraysButton, nil, true)
 		f.vendorGraysButton.ttText = L["Vendor / Delete Grays"]
+		--The only place the item lock advertises itself, since a locked item is the only
+		--thing that shows the padlock and an unlocked one says nothing on its tooltip.
+		f.vendorGraysButton.ttText2 = L["Alt + Right-Click a bag item to protect it from being sold or deleted."]
 		f.vendorGraysButton:SetScript("OnEnter", self.Tooltip_Show)
 		f.vendorGraysButton:SetScript("OnLeave", self.Tooltip_Hide)
 		f.vendorGraysButton:SetScript("OnClick", B.VendorGrayCheck)
@@ -1604,6 +1753,10 @@ function B:Initialize()
 
 	--Creating vendor grays frame
 	B:CreateSellFrame()
+
+	--Installed before the disabled-module return below, so that locks set while the bag
+	--UI was on still protect their items after it is turned off.
+	B:InstallLockGuards()
 
 	self:RegisterEvent("MERCHANT_CLOSED")
 
