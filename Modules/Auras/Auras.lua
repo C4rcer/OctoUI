@@ -5,7 +5,7 @@ local LSM = LibStub("LibSharedMedia-3.0");
 --Cache global variables
 --Lua functions
 local _G = _G
-local unpack, select, pairs, ipairs = unpack, select, pairs, ipairs
+local unpack, select, pairs, ipairs, next = unpack, select, pairs, ipairs, next
 local floor, min, max, huge = math.floor, math.min, math.max, math.huge
 local format = string.format
 local getn, wipe, tinsert, tsort, tremove = table.getn, table.wipe, table.insert, table.sort, table.remove
@@ -276,7 +276,13 @@ function A:ConfigureAuras(header, auraTable, weaponPosition)
 		buttons[i+numWeapon] = button
 	end
 
-	local display = getn(buttons)
+	--NOT getn(buttons). `buttons` is filled by direct index assignment, and table.wipe
+	--above calls setn(t, 0) -- so in Lua 5.0 getn hands back the stored n of 0 rather than
+	--counting, display came out 0, and the loop below never ran once. Every button was
+	--created and none was ever positioned or shown, which is why these panels have never
+	--appeared. Same hidden-n trap as the `t[getn(t)] = nil` infinite loop at the top of
+	--HANDOFF.md: only table.insert and table.remove maintain n.
+	local display = numWeapon + getn(auraTable)
 	if wrapAfter and maxWraps then
 		display = min(display, wrapAfter * maxWraps)
 	end
@@ -284,31 +290,40 @@ function A:ConfigureAuras(header, auraTable, weaponPosition)
 	local left, right, top, bottom = huge, -huge, -huge, huge
 	for index = 1, display do
 		button = buttons[index]
-		local tick, cycle = floor(mod((index - 1), wrapAfter)), floor((index - 1) / wrapAfter)
-		button:ClearAllPoints()
-		button:SetPoint(point, header, cycle * wrapXOffset + tick * xOffset, cycle * wrapYOffset + tick * yOffset)
+		--An off-hand enchant with no main-hand one leaves a hole: the weapon loop stores
+		--by weapon slot, so buttons[2] is set while buttons[1] is not, and the aura
+		--buttons start at numWeapon + 1 regardless. Skip rather than index a nil frame.
+		if button then
+			local tick, cycle = floor(mod((index - 1), wrapAfter)), floor((index - 1) / wrapAfter)
+			button:ClearAllPoints()
+			button:SetPoint(point, header, cycle * wrapXOffset + tick * xOffset, cycle * wrapYOffset + tick * yOffset)
 
-		button:SetWidth(size)
-		button:SetHeight(size)
+			button:SetWidth(size)
+			button:SetHeight(size)
 
-		if button.time then
-			local font = LSM:Fetch("font", self.db.font)
-			button.time:ClearAllPoints()
-			button.time:SetPoint("TOP", button, "BOTTOM", 1 + self.db.timeXOffset, 0 + self.db.timeYOffset)
-			E:FontTemplate(button.time, font, self.db.fontSize, self.db.fontOutline)
+			if button.time then
+				local font = LSM:Fetch("font", self.db.font)
+				button.time:ClearAllPoints()
+				button.time:SetPoint("TOP", button, "BOTTOM", 1 + self.db.timeXOffset, 0 + self.db.timeYOffset)
+				E:FontTemplate(button.time, font, self.db.fontSize, self.db.fontOutline)
 
-			button.count:ClearAllPoints()
-			button.count:SetPoint("BOTTOMRIGHT", -1 + self.db.countXOffset, 0 + self.db.countYOffset)
-			E:FontTemplate(button.count, font, self.db.fontSize, self.db.fontOutline)
+				button.count:ClearAllPoints()
+				button.count:SetPoint("BOTTOMRIGHT", -1 + self.db.countXOffset, 0 + self.db.countYOffset)
+				E:FontTemplate(button.count, font, self.db.fontSize, self.db.fontOutline)
+			end
+
+			button:Show()
+			left = min(left, button:GetLeft() or huge)
+			right = max(right, button:GetRight() or -huge)
+			top = max(top, button:GetTop() or -huge)
+			bottom = min(bottom, button:GetBottom() or huge)
 		end
-
-		button:Show()
-		left = min(left, button:GetLeft() or huge)
-		right = max(right, button:GetRight() or -huge)
-		top = max(top, button:GetTop() or -huge)
-		bottom = min(bottom, button:GetBottom() or huge)
 	end
-	local deadIndex = (getn(auraTable) + numWeapon) + 1
+
+	--Aura buttons are named AuraButton1..getn(auraTable); the temp enchant ones are named
+	--TempEnchant1/2 and are not in this sequence at all, so adding numWeapon here started
+	--the sweep too high and left a stale icon shown whenever a weapon enchant was active.
+	local deadIndex = getn(auraTable) + 1
 	button = _G[headerName.."AuraButton"..deadIndex]
 	while button do
 		if button:IsShown() then button:Hide() end
@@ -400,6 +415,50 @@ for _, key in ipairs{"index", "expires"} do
 end
 sorters.TIME = sorters.EXPIRES
 
+--Blacklist support. Unit frame auras filter through UF:AuraFilter; this module is entirely
+--separate and consulted no list at all, so a spell blacklisted off the unit frames carried
+--on showing here.
+--
+--No index-space trap in this one: UpdateHeader already holds the GetPlayerBuff index, and
+--SetPlayerBuff takes exactly that, so the name always belongs to the aura being asked
+--about. Cached by icon rather than by slot -- these are the player's own auras and the
+--texture-to-name mapping does not move. Two different spells sharing an icon would
+--collide, which is the same trade the nameplate element makes.
+local scanner, scannerLine
+local nameByIcon = {}
+
+local function AuraName(buffIndex, icon)
+	if nameByIcon[icon] then return nameByIcon[icon] end
+
+	if not scanner then
+		scanner = CreateFrame("GameTooltip", "ElvUI_PlayerAuraScanner", nil, "GameTooltipTemplate")
+		scannerLine = _G["ElvUI_PlayerAuraScannerTextLeft1"]
+	end
+
+	scanner:SetOwner(E.UIParent, "ANCHOR_NONE")
+	scanner:ClearLines()
+	scanner:SetPlayerBuff(buffIndex)
+
+	local name = scannerLine and scannerLine:GetText()
+	if name then nameByIcon[icon] = name end
+
+	return name
+end
+
+local function IsBlacklisted(buffIndex, icon)
+	local filters = E.global.unitframe.aurafilters
+	local spells = filters and filters.Blacklist and filters.Blacklist.spells
+
+	--An empty list means no opinion. Returning here is also what keeps the tooltip scan
+	--off this path entirely for anyone who has never blacklisted anything.
+	if not (spells and next(spells) ~= nil) then return false end
+
+	local entry = AuraName(buffIndex, icon)
+	entry = entry and spells[entry]
+
+	return (entry and entry.enable) and true or false
+end
+
 local sortingTable = {}
 function A:UpdateHeader(header)
 	local filter = header.filter
@@ -418,12 +477,16 @@ function A:UpdateHeader(header)
 		buffIndex = GetPlayerBuff(i, filter)
 		icon = GetPlayerBuffTexture(buffIndex)
 		if not icon then break end
-		aura = freshTable()
-		aura.count, aura.dispelType, aura.expires = GetPlayerBuffApplications(buffIndex), GetPlayerBuffDispelType(buffIndex), GetPlayerBuffTimeLeft(buffIndex)
-		aura.icon = icon
-		aura.index = buffIndex
-		aura.filter = filter
-		tinsert(sortingTable, aura)
+
+		if not IsBlacklisted(buffIndex, icon) then
+			aura = freshTable()
+			aura.count, aura.dispelType, aura.expires = GetPlayerBuffApplications(buffIndex), GetPlayerBuffDispelType(buffIndex), GetPlayerBuffTimeLeft(buffIndex)
+			aura.icon = icon
+			aura.index = buffIndex
+			aura.filter = filter
+			tinsert(sortingTable, aura)
+		end
+
 		i = i + 1
 	end
 
@@ -434,6 +497,19 @@ function A:UpdateHeader(header)
 	while sortingTable[1] do
 		releaseTable(tremove(sortingTable))
 	end
+end
+
+--Rebuild one header, or both when given none. The headers only exist while the module is
+--enabled, so callers outside it -- the options page, /octoui-filter -- have no business
+--knowing that and must not have to nil-check for themselves.
+function A:RefreshHeaders(header)
+	if header then
+		if header.filter then self:UpdateHeader(header) end
+		return
+	end
+
+	if self.BuffFrame then self:UpdateHeader(self.BuffFrame) end
+	if self.DebuffFrame then self:UpdateHeader(self.DebuffFrame) end
 end
 
 function A:CreateAuraHeader(filter)
@@ -468,8 +544,18 @@ function A:Initialize()
 
 	self.db = E.db.auras
 
+	--MMHolder belongs to the Maps module and does not exist at all when the minimap is
+	--disabled in the private profile -- Minimap.lua returns before creating it. Anchoring
+	--to a nil frame raises, and E:InitializeModules wraps every Initialize in a pcall that
+	--drops the error unless the ShowErrors CVar is on, so this module would disappear in
+	--complete silence. With disableBlizzard having already killed the stock BuffFrame,
+	--that leaves no player buff display at all, and nothing anywhere saying why.
 	self.BuffFrame = self:CreateAuraHeader("HELPFUL")
-	self.BuffFrame:SetPoint("TOPRIGHT", MMHolder, "TOPLEFT", -(6 + E.Border), -E.Border - E.Spacing)
+	if MMHolder then
+		self.BuffFrame:SetPoint("TOPRIGHT", MMHolder, "TOPLEFT", -(6 + E.Border), -E.Border - E.Spacing)
+	else
+		self.BuffFrame:SetPoint("TOPRIGHT", E.UIParent, "TOPRIGHT", -(6 + E.Border), -(6 + E.Border))
+	end
 	E:CreateMover(self.BuffFrame, "BuffsMover", L["Player Buffs"])
 
 	self.BuffFrame.GetUpdateWeaponEnchant = function(self)
@@ -494,7 +580,11 @@ function A:Initialize()
 	end)
 
 	self.DebuffFrame = self:CreateAuraHeader("HARMFUL")
-	self.DebuffFrame:SetPoint("BOTTOMRIGHT", MMHolder, "BOTTOMLEFT", -(6 + E.Border), E.Border + E.Spacing)
+	if MMHolder then
+		self.DebuffFrame:SetPoint("BOTTOMRIGHT", MMHolder, "BOTTOMLEFT", -(6 + E.Border), E.Border + E.Spacing)
+	else
+		self.DebuffFrame:SetPoint("TOPRIGHT", self.BuffFrame, "BOTTOMRIGHT", 0, -(20 + E.Border))
+	end
 	E:CreateMover(self.DebuffFrame, "DebuffsMover", L["Player Debuffs"])
 end
 

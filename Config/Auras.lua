@@ -107,7 +107,11 @@ E.Options.args.auras = {
 	name = L["Buffs and Debuffs"],
 	childGroups = "tab",
 	get = function(info) return E.db.auras[ info[getn(info)] ] end,
-	set = function(info, value) E.db.auras[ info[getn(info)] ] = value; A:UpdateHeader(ElvUIPlayerBuffs); A:UpdateHeader(ElvUIPlayerDebuffs) end,
+	--Both headers only exist while the module is enabled. With it off these were nil
+	--globals handed straight to UpdateHeader, which indexes header.filter on the first
+	--line -- so every option on this page raised for anyone who had the module switched
+	--off, which is exactly who is most likely to be on this page looking for Enable.
+	set = function(info, value) E.db.auras[ info[getn(info)] ] = value; A:RefreshHeaders() end,
 	args = {
 		intro = {
 			order = 1,
@@ -223,7 +227,7 @@ E.Options.args.auras = {
 			type = "group",
 			name = L["Buffs"],
 			get = function(info) return E.db.auras.buffs[ info[getn(info)] ] end,
-			set = function(info, value) E.db.auras.buffs[ info[getn(info)] ] = value; A:UpdateHeader(ElvUIPlayerBuffs) end,
+			set = function(info, value) E.db.auras.buffs[ info[getn(info)] ] = value; A:RefreshHeaders(A.BuffFrame) end,
 			args = GetAuraOptions(L["Buffs"])
 		},
 		debuffs = {
@@ -231,7 +235,7 @@ E.Options.args.auras = {
 			type = "group",
 			name = L["Debuffs"],
 			get = function(info) return E.db.auras.debuffs[ info[getn(info)] ] end,
-			set = function(info, value) E.db.auras.debuffs[ info[getn(info)] ] = value; A:UpdateHeader(ElvUIPlayerDebuffs) end,
+			set = function(info, value) E.db.auras.debuffs[ info[getn(info)] ] = value; A:RefreshHeaders(A.DebuffFrame) end,
 			args = GetAuraOptions(L["Debuffs"])
 		}
 	}

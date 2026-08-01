@@ -13,6 +13,7 @@ local ReloadUI = ReloadUI
 local GetAddOnInfo = GetAddOnInfo
 local IsAddOnLoaded = IsAddOnLoaded
 local GetScreenWidth, GetScreenHeight = GetScreenWidth, GetScreenHeight
+local GetPlayerBuff, GetPlayerBuffTexture = GetPlayerBuff, GetPlayerBuffTexture
 local GetTime = GetTime
 local GetNumRaidMembers, GetNumPartyMembers = GetNumRaidMembers, GetNumPartyMembers
 
@@ -731,6 +732,89 @@ function E:FilterCommand(msg)
 		if UF.UpdateAllHeaders then UF:UpdateAllHeaders() end
 		if UF.Update_AllFrames then UF:Update_AllFrames() end
 	end
+
+	--The standalone player buff and debuff panels are a separate module and rebuild only
+	--on PLAYER_AURAS_CHANGED, so without this a filter edit would not show until the next
+	--time an aura happened to change.
+	local A = E:GetModule("Auras", true)
+	if A and A.RefreshHeaders then A:RefreshHeaders() end
+end
+
+--Why the standalone buff and debuff panels are or are not on screen. Every guess about
+--this has been wrong so far: it is not the enable flag, not the MMHolder anchor and not
+--the growth-direction tables. Report the frames' actual state rather than reasoning about
+--what it ought to be.
+local function ReportAuraHeader(label, frame)
+	if not frame then
+		E:Print(format("  %s: FRAME DOES NOT EXIST", label))
+		return
+	end
+
+	local point, relativeTo, relativePoint, x, y = frame:GetPoint()
+	local relName = relativeTo and relativeTo.GetName and relativeTo:GetName() or tostring(relativeTo)
+
+	E:Print(format("  %s: shown=%s alpha=%.2f scale=%.2f size=%dx%d",
+		label, tostring(frame:IsShown()), frame:GetAlpha() or 0, frame:GetScale() or 0,
+		frame:GetWidth() or 0, frame:GetHeight() or 0))
+
+	if point then
+		E:Print(format("    anchored %s to %s %s at %d, %d", point, relName, tostring(relativePoint), x or 0, y or 0))
+	else
+		E:Print("    |cffff0000NO ANCHOR|r - a frame with no point never draws")
+	end
+
+	--GetLeft is nil for a frame that is hidden or not yet laid out, so a real rect here is
+	--also proof the frame has actually been positioned.
+	local left, bottom = frame:GetLeft(), frame:GetBottom()
+	if left and bottom then
+		E:Print(format("    rect left=%d bottom=%d (screen is %dx%d)",
+			left, bottom, GetScreenWidth(), GetScreenHeight()))
+	else
+		E:Print("    |cffff0000NO RECT|r - not laid out")
+	end
+
+	local shown, total = 0, 0
+	local i, button = 1
+	button = _G[frame:GetName().."AuraButton"..i]
+	while button do
+		total = total + 1
+		if button:IsShown() then shown = shown + 1 end
+		i = i + 1
+		button = _G[frame:GetName().."AuraButton"..i]
+	end
+	E:Print(format("    buttons: %d created, %d shown", total, shown))
+end
+
+function E:AuraReport()
+	E:Print("Standalone buff/debuff panels:")
+	E:Print(format("  private.auras.enable=%s disableBlizzard=%s  MMHolder=%s",
+		tostring(E.private.auras.enable), tostring(E.private.auras.disableBlizzard),
+		MMHolder and "exists" or "|cffff0000MISSING|r"))
+
+	local A = E:GetModule("Auras", true)
+	if not A then E:Print("  |cffff0000module not registered|r") return end
+	if not A.db then E:Print("  |cffff0000A.db is nil - Initialize returned early or raised|r") return end
+
+	--What the client says the player actually has, independent of any of our frames.
+	local counts = {}
+	local f
+	for _, filter in pairs({"HELPFUL", "HARMFUL"}) do
+		local n, idx = 0, 0
+		while true do
+			idx = GetPlayerBuff(n, filter)
+			if not GetPlayerBuffTexture(idx) then break end
+			n = n + 1
+		end
+		counts[filter] = n
+	end
+	E:Print(format("  client reports %d buff(s), %d debuff(s)", counts.HELPFUL, counts.HARMFUL))
+
+	ReportAuraHeader("BuffFrame", A.BuffFrame)
+	ReportAuraHeader("DebuffFrame", A.DebuffFrame)
+
+	f = E.db.movers
+	E:Print(format("  saved movers: BuffsMover=%s DebuffsMover=%s",
+		(f and f.BuffsMover) or "none", (f and f.DebuffsMover) or "none"))
 end
 
 function E:LoadCommands()
@@ -759,6 +843,7 @@ function E:LoadCommands()
 	self:RegisterChatCommand("octoui-dps", "MeterReport")
 	self:RegisterChatCommand("octoui-threatmodel", "ThreatModelReport")
 	self:RegisterChatCommand("octoui-filter", "FilterCommand")
+	self:RegisterChatCommand("octoui-auras", "AuraReport")
 	self:RegisterChatCommand("octoui-threatreset", "ThreatReset")
 
 	if E:GetModule("ActionBars") and E.private.actionbar.enable then

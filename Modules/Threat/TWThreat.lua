@@ -10,7 +10,7 @@ local _G, _ = _G or getfenv()
 	(the config keys and frame names use "UF" where upstream said "PFUI").
 ]]
 
-local E = unpack(ElvUI)
+local E, L = unpack(ElvUI)
 
 -- todo tankmode messages to send if guid is target, for tankmode highlight
 -- todo save OctoTWT_SPEC per sender so it caches from other people's inspects

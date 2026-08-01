@@ -6,6 +6,7 @@ local CP = E:GetModule("CopyProfile");
 --Cache global variables
 --Lua functions
 local getn = table.getn
+local pairs = pairs
 
 --Actionbars
 local function CreateActionbarsConfig()
@@ -418,7 +419,27 @@ E.Options.args.modulecontrol= {
 					name = L["Profile"],
 					desc = L["Select a profile to copy from/to."],
 					get = function(info) return E.global.profileCopy.selected end,
-					set = function(info, value) E.global.profileCopy.selected = value end
+					set = function(info, value) E.global.profileCopy.selected = value end,
+					--A select with no `values` fails AceConfigRegistry:ValidateOptionsTable,
+					--which runs every time the options window is opened -- so this raised on
+					--/oc and on /moveui with nothing here to copy from either way. Profiles
+					--live in ElvDB.profiles; Core/modulecopy.lua pairs whatever is selected
+					--here against the current profile, so listing the current one would only
+					--offer a copy to itself.
+					values = function()
+						local profiles = {}
+						local current = ElvDB.profileKeys and ElvDB.profileKeys[E.myname.." - "..E.myrealm]
+
+						if ElvDB.profiles then
+							for profileName in pairs(ElvDB.profiles) do
+								if profileName ~= current then
+									profiles[profileName] = profileName
+								end
+							end
+						end
+
+						return profiles
+					end
 				},
 				elvui = {
 					order = 10,

@@ -439,6 +439,9 @@ L["Error resetting UnitFrame."] = true;
 --Core/core.lua
 L["OctoUI is out of date. You can download the newest version from https://github.com/C4rcer/OctoUI"] = true;
 
+--Modules/Threat/TWThreat.lua
+L["Threat Meter"] = true;
+
 --Modules/Bags/Bags.lua
 L["%s is no longer protected."] = true;
 L["%s is now protected from selling and deleting."] = true;
