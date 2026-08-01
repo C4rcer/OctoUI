@@ -225,12 +225,15 @@ local function updateIcon(element, unit, index, offset, filter, isDebuff, visibl
 		button.index = index
 
 		--Stashed on the button here as well as in UF:AuraFilter. The filter is the natural
-		--home for them, but it only runs when one is installed, and PostUpdateAura's timer
-		--block -- `if button.expiration and button.duration` -- has to be reachable
-		--whether or not it is, or unit frame auras lose their countdown and the remaining
-		--time is only visible in the tooltip.
+		--home for them, but it only runs when one is installed -- and never in forceShow --
+		--while PostUpdateAura reads them unconditionally. Without the duration and
+		--expiration its timer block, `if button.expiration and button.duration`, is
+		--unreachable and auras lose their countdown; without dtype every debuff border
+		--draws in the "none" colour, which in the config preview is exactly the case the
+		--fabricated 'Magic' below is meant to be demonstrating.
 		button.duration = duration
 		button.expiration = expiration
+		button.dtype = dispelType
 
 		--[[ Override: Auras:CustomFilter(unit, button, ...)
 		Defines a custom filter that controls if the aura button should be shown.
