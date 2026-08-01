@@ -796,12 +796,21 @@ function UF:UpdateAllHeaders(event)
 		--list to register, debuff_data stayed empty and the element could only ever pick a
 		--dispellable debuff. The filter names are read from the RaidDebuff Indicator
 		--options rather than hardcoded, which is what those two dropdowns already write to.
+		--Guarded to the point of paranoia, because everything below this in the function is
+		--what actually updates the party and raid headers. A nil here would raise and take
+		--the frames with it, and "the aura filter lookup broke my party frames" is not a
+		--connection anyone would make from the outside.
 		local indicator = E.global.unitframe.raidDebuffIndicator
-		local filterName = (instanceType == "party" or instanceType == "raid") and indicator.instanceFilter or indicator.otherFilter
-		local filter = filterName and E.global.unitframe.aurafilters[filterName]
+		local filters = E.global.unitframe.aurafilters
 
-		if filter and filter.spells then
-			ORD:RegisterDebuffs(filter.spells)
+		if indicator and filters then
+			local filterName = (instanceType == "party" or instanceType == "raid")
+				and indicator.instanceFilter or indicator.otherFilter
+			local filter = filterName and filters[filterName]
+
+			if filter and filter.spells then
+				ORD:RegisterDebuffs(filter.spells)
+			end
 		end
 	end
 

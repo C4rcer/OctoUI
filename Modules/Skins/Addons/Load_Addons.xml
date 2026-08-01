@@ -1,6 +1,5 @@
 <Ui xmlns="http://www.blizzard.com/wow/ui/">
 	<Script file="Ace3.lua"/>
-	<Script file="AtlasCFM.lua"/>
 	<Script file="AtlasLoot.lua"/>
 	<Script file="OctoShop.lua"/>
 	<Script file="pfQuest.lua"/>
