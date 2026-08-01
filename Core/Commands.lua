@@ -3,7 +3,7 @@ local E, L, V, P, G = unpack(ElvUI); --Import: Engine, Locales, PrivateDB, Profi
 --Cache global variables
 --Lua functions
 local _G = _G
-local tonumber, type = tonumber, type
+local tonumber, type, pairs = tonumber, type, pairs
 local format, len, lower, match = string.format, string.len, string.lower, string.match
 --WoW API / Variables
 local UIFrameFadeOut, UIFrameFadeIn = UIFrameFadeOut, UIFrameFadeIn
@@ -629,6 +629,110 @@ function E:DebuffTimerReport()
 	if not found then E:Print("  target has no debuffs") end
 end
 
+--Aura filter lists. The options GUI has no page for these -- E:SetToFilterConfig is called
+--by the Filters buttons in Config/UnitFrames.lua and defined nowhere, it did not survive
+--the merge of the old config addon -- so without this there is no way to see what is in a
+--list, and no way at all to undo a Shift + Right-Click blacklist short of editing
+--SavedVariables while logged out.
+local function ResolveFilter(name)
+	local filters = E.global.unitframe.aurafilters
+	if not (filters and name) then return end
+
+	if filters[name] then return name end
+
+	--typing the name in full, in the right case, for something with no completion is a
+	--poor deal; match case-insensitively instead
+	local wanted = lower(name)
+	for key in pairs(filters) do
+		if lower(key) == wanted then return key end
+	end
+end
+
+local function FilterNames()
+	local out, n = "", 0
+	for key in pairs(E.global.unitframe.aurafilters) do
+		out = (n == 0) and key or (out..", "..key)
+		n = n + 1
+	end
+
+	return out
+end
+
+function E:FilterCommand(msg)
+	local filters = E.global.unitframe.aurafilters
+	if not filters then
+		E:Print("No aura filters are defined.")
+		return
+	end
+
+	local name, rest = match(msg or "", "^%s*(%S*)%s*(.-)%s*$")
+	if not name or name == "" then
+		--Slashes, not pipes: `|` is the chat escape character, so "add|remove|clear" loses
+		--the "r" to a |r colour reset and prints as "addemove|clear". Doubling to `||`
+		--works too, but reads worse in the source than it does on screen.
+		E:Print("Aura filters. Usage: /octoui-filter <filter> [add / remove / clear] [spell name]")
+		for key, filter in pairs(filters) do
+			local count = 0
+			for _ in pairs(filter.spells or {}) do count = count + 1 end
+			E:Print(format("  %s (%s) - %d spell(s)", key, filter.type or "?", count))
+		end
+		return
+	end
+
+	local key = ResolveFilter(name)
+	if not key then
+		E:Print(format("No filter called '%s'. Known: %s", name, FilterNames()))
+		return
+	end
+
+	local filter = filters[key]
+	filter.spells = filter.spells or {}
+
+	local action, spell = match(rest or "", "^(%S*)%s*(.-)$")
+	action = action and lower(action) or ""
+
+	if action == "" or action == "list" then
+		local count = 0
+		for spellName, entry in pairs(filter.spells) do
+			count = count + 1
+			E:Print(format("  %s%s", spellName, entry.enable and "" or " |cff888888(disabled)|r"))
+		end
+		E:Print(format("%s (%s): %d spell(s)", key, filter.type or "?", count))
+		return
+	end
+
+	if action == "clear" then
+		local count = 0
+		for _ in pairs(filter.spells) do count = count + 1 end
+		filter.spells = {}
+		E:Print(format("Cleared %d spell(s) from %s.", count, key))
+	elseif action == "add" then
+		if spell == "" then E:Print("Usage: /octoui-filter "..key.." add <spell name>") return end
+		--Spell names are matched exactly against what the client reports, so they are
+		--stored exactly as typed rather than normalised.
+		filter.spells[spell] = {["enable"] = true, ["priority"] = 0, ["stackThreshold"] = 0}
+		E:Print(format("Added '%s' to %s.", spell, key))
+	elseif action == "remove" or action == "delete" then
+		if spell == "" then E:Print("Usage: /octoui-filter "..key.." remove <spell name>") return end
+		if filter.spells[spell] == nil then
+			E:Print(format("'%s' is not in %s. /octoui-filter %s lists what is.", spell, key, key))
+			return
+		end
+		filter.spells[spell] = nil
+		E:Print(format("Removed '%s' from %s.", spell, key))
+	else
+		E:Print(format("Unknown action '%s'. Use add, remove, clear or list.", action))
+		return
+	end
+
+	local UF = E:GetModule("UnitFrames", true)
+	if UF then
+		--the raid debuff element only reads its list when the headers are rebuilt
+		if UF.UpdateAllHeaders then UF:UpdateAllHeaders() end
+		if UF.Update_AllFrames then UF:Update_AllFrames() end
+	end
+end
+
 function E:LoadCommands()
 	self:RegisterChatCommand("in", "DelayScriptCall")
 
@@ -654,6 +758,7 @@ function E:LoadCommands()
 	self:RegisterChatCommand("octoui-queue", "QueueReport")
 	self:RegisterChatCommand("octoui-dps", "MeterReport")
 	self:RegisterChatCommand("octoui-threatmodel", "ThreatModelReport")
+	self:RegisterChatCommand("octoui-filter", "FilterCommand")
 	self:RegisterChatCommand("octoui-threatreset", "ThreatReset")
 
 	if E:GetModule("ActionBars") and E.private.actionbar.enable then

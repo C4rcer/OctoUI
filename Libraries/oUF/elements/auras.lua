@@ -219,15 +219,16 @@ local function updateIcon(element, unit, index, offset, filter, isDebuff, visibl
 
 		button.filter = filter
 		button.isDebuff = isDebuff
+		--Needed by any CustomFilter that has to resolve a name: this client's UnitAura
+		--does not return one, so the only route is a tooltip scan, and that takes the
+		--aura's index.
+		button.index = index
 
-		--Stashed on the button here rather than left to a CustomFilter. ElvUI's
-		--UF:AuraFilter is the natural home for these and is the only thing that ever
-		--assigned them, but it is commented out at Modules/UnitFrames/Elements/Auras.lua
-		--(it reads undefined `name` and `caster` locals, so it would reject every aura
-		--it was handed). With nothing writing them, PostUpdateAura's timer block --
-		--`if button.expiration and button.duration` -- could never be true, so unit
-		--frame auras never got a countdown on the icon and the remaining time was only
-		--ever visible in the tooltip.
+		--Stashed on the button here as well as in UF:AuraFilter. The filter is the natural
+		--home for them, but it only runs when one is installed, and PostUpdateAura's timer
+		--block -- `if button.expiration and button.duration` -- has to be reachable
+		--whether or not it is, or unit frame auras lose their countdown and the remaining
+		--time is only visible in the tooltip.
 		button.duration = duration
 		button.expiration = expiration
 

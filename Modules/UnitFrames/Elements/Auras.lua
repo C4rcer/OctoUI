@@ -4,20 +4,21 @@ local LSM = LibStub("LibSharedMedia-3.0");
 
 --Cache global variables
 --Lua functions
+local _G = _G
 local unpack = unpack
+local next, type = next, type
 local find, format, lower = string.find, string.format, string.lower
-local strsplit = strsplit
 local tsort, getn = table.sort, table.getn
 local ceil = math.ceil
 --WoW API / Variables
 local GetTime = GetTime
 local CreateFrame = CreateFrame
+local GetPlayerBuff = GetPlayerBuff
 local IsShiftKeyDown = IsShiftKeyDown
 local IsAltKeyDown = IsAltKeyDown
 local IsControlKeyDown = IsControlKeyDown
 local UnitCanAttack = UnitCanAttack
 local UnitIsFriend = UnitIsFriend
-local UnitIsUnit = UnitIsUnit
 
 function UF:Construct_Buffs(frame)
 	local buffs = CreateFrame("Frame", frame:GetName().."Buffs", frame)
@@ -25,7 +26,7 @@ function UF:Construct_Buffs(frame)
 	buffs.PreSetPosition = (not frame:GetScript("OnUpdate")) and self.SortAuras or nil
 	buffs.PostCreateIcon = self.Construct_AuraIcon
 	buffs.PostUpdateIcon = self.PostUpdateAura
-	--buffs.CustomFilter = self.AuraFilter
+	buffs.CustomFilter = self.AuraFilter
 	buffs:SetFrameLevel(frame.RaisedElementParent:GetFrameLevel() + 10) --Make them appear above any text element
 	buffs.type = "buffs"
 	--Set initial width to prevent division by zero. This value doesn't matter, as it will be updated later
@@ -40,7 +41,7 @@ function UF:Construct_Debuffs(frame)
 	debuffs.PreSetPosition = (not frame:GetScript("OnUpdate")) and self.SortAuras or nil
 	debuffs.PostCreateIcon = self.Construct_AuraIcon
 	debuffs.PostUpdateIcon = self.PostUpdateAura
-	--debuffs.CustomFilter = self.AuraFilter
+	debuffs.CustomFilter = self.AuraFilter
 	debuffs.type = "debuffs"
 	debuffs:SetFrameLevel(frame.RaisedElementParent:GetFrameLevel() + 10) --Make them appear above any text element
 	--Set initial width to prevent division by zero. This value doesn't matter, as it will be updated later
@@ -487,42 +488,137 @@ function UF:UpdateAuraTimer(elapsed)
 	if self.textBG then self.textBG:Show() end
 end
 
+--Group frames store these per reaction, single frames store a plain boolean.
+local function FilterFlag(value, isFriend)
+	if type(value) == "table" then
+		return isFriend and value.friendly or value.enemy
+	end
+
+	return value
+end
+
+--There are two aura index spaces on this client and they do not line up. The player's own
+--auras are addressed through GetPlayerBuff/SetPlayerBuff; every other unit is addressed by
+--the aura's own index. Reading one with the other returns a different aura's name, which
+--is not an error and not visibly wrong -- it just quietly answers about the wrong spell.
+--Blacklisting Demon Armor hid Unending Breath that way.
+--
+--The branching is lifted from UpdateTooltip in Libraries/oUF/elements/auras.lua, which is
+--the authority on how this element addresses an aura. NP:ScanAuraName is NOT usable here:
+--it only knows the unit-index form.
+local scanner, scannerLine
+local function ScanAuraName(unit, index, filter)
+	if not scanner then
+		scanner = CreateFrame("GameTooltip", "ElvUI_UnitFrameAuraScanner", nil, "GameTooltipTemplate")
+		scannerLine = _G["ElvUI_UnitFrameAuraScannerTextLeft1"]
+	end
+
+	scanner:SetOwner(E.UIParent, "ANCHOR_NONE")
+	scanner:ClearLines()
+
+	if unit == "player" then
+		local buffIndex = GetPlayerBuff(index - 1, filter)
+		if not buffIndex or buffIndex < 0 then return end
+
+		scanner:SetPlayerBuff(buffIndex)
+	elseif filter == "HELPFUL" then
+		scanner:SetUnitBuff(unit, index, filter)
+	else
+		scanner:SetUnitDebuff(unit, index, filter)
+	end
+
+	return scannerLine and scannerLine:GetText()
+end
+
+--A scan is expensive, so the answer is cached against the icon sitting in that slot and
+--only redone when it changes -- the same trick the nameplate auras element uses.
+local function AuraName(element, unit, index, texture, filter)
+	if not index then return end
+
+	if not element.filterNameCache then
+		element.filterNameCache, element.filterNameTexture = {}, {}
+	end
+
+	if element.filterNameTexture[index] ~= texture then
+		element.filterNameTexture[index] = texture
+		element.filterNameCache[index] = ScanAuraName(unit, index, filter)
+	end
+
+	return element.filterNameCache[index]
+end
+
+--Rewritten for what this client will actually part with. Upstream's version read `name`,
+--`caster`, `spellID` and `isStealable` -- none of which exist here, UnitAura returns
+--texture, count and dispel type -- and then handed them to UF:CheckFilter, which is
+--called in exactly one place and defined in none. So it was commented out rather than
+--fixed, and with it went `button.dtype`, which is why every debuff border drew in the
+--"none" colour.
+--
+--What is deliberately NOT implemented:
+--  * the `priority` token language (Personal, nonPersonal, blockNonPersonal) -- every one
+--    of those tokens needs the aura's caster, and there is no caster on this client. No
+--    unit frame aura default sets `priority` anyway; the eight that do are nameplates,
+--    which run their own filter in Modules/NamePlates/Elements/Auras.lua.
+--  * the `noDuration` setting. Debuffs default it to false, meaning "hide auras with no
+--    duration", and on this client a duration is only known for debuffs the player
+--    applied -- so honouring it would hide most of what is on a party member.
 function UF:AuraFilter(unit, button, texture, count, dispelType, duration, expiration)
 	local db = self:GetParent().db
 	if not db or not db[self.type] then return true end
 
 	db = db[self.type]
 
-	if not name then return nil end
-	local filterCheck, isUnit, isFriend, isPlayer, canDispell, allowDuration, noDuration, spellPriority
+	local isFriend = (unit and UnitIsFriend("player", unit) and not UnitCanAttack("player", unit)) and true or false
 
-	isPlayer = (caster == "player")
-	isFriend = unit and UnitIsFriend("player", unit) and not UnitCanAttack("player", unit)
-
-	button.isPlayer = isPlayer
+	--PostUpdateAura reads dtype for the border colour and expiration/duration for the
+	--countdown, and the sorters read name.
 	button.isFriend = isFriend
-	button.isStealable = isStealable
 	button.dtype = dispelType
 	button.duration = duration
 	button.expiration = expiration
-	button.name = name
-	button.owner = caster --what uses this?
-	button.spell = name --what uses this? (SortAurasByName?)
 	button.priority = 0
 
-	noDuration = (not duration or duration == 0)
-	allowDuration = noDuration or (duration and (duration > 0) and (db.maxDuration == 0 or duration <= db.maxDuration) and (db.minDuration == 0 or duration >= db.minDuration))
-
-	if db.priority ~= "" then
-		isUnit = unit and caster and UnitIsUnit(unit, caster)
-		canDispell = (self.type == "buffs" and isStealable) or (self.type == "debuffs" and dispelType and E:IsDispellableByMe(dispelType))
-		filterCheck, spellPriority = UF:CheckFilter(name, caster, spellID, isFriend, isPlayer, isUnit, allowDuration, noDuration, canDispell, strsplit(",", db.priority))
-		if spellPriority then button.priority = spellPriority end -- this is the only difference from auarbars code
-	else
-		filterCheck = allowDuration and true -- Allow all auras to be shown when the filter list is empty, while obeying duration sliders
+	--Both default to 0, meaning off, so this only bites for someone who set a slider.
+	if duration and duration > 0 then
+		if db.maxDuration and db.maxDuration > 0 and duration > db.maxDuration then return false end
+		if db.minDuration and db.minDuration > 0 and duration < db.minDuration then return false end
 	end
 
-	return filterCheck
+	local useBlacklist = FilterFlag(db.useBlacklist, isFriend)
+	local useWhitelist = FilterFlag(db.useWhitelist, isFriend)
+	if not (useBlacklist or useWhitelist) then return true end
+
+	local filters = E.global.unitframe.aurafilters
+	local blacklist = useBlacklist and filters.Blacklist and filters.Blacklist.spells
+	local whitelist = useWhitelist and filters.Whitelist and filters.Whitelist.spells
+
+	--An empty list means "no opinion", never "hide everything" -- buffs ship with
+	--useWhitelist on and the Whitelist empty, and treating that as a whitelist proper
+	--would hide every buff in the game. It also skips the tooltip scan below, which is
+	--the whole cost of this function.
+	local haveBlacklist = blacklist and next(blacklist) ~= nil
+	local haveWhitelist = whitelist and next(whitelist) ~= nil
+	if not (haveBlacklist or haveWhitelist) then return true end
+
+	local name = AuraName(self, unit, button.index, texture, button.filter)
+	button.name = name
+	button.spell = name
+
+	--No name means no lookup is possible. Show it rather than hide something that cannot
+	--defend itself.
+	if not name then return true end
+
+	if haveBlacklist then
+		local entry = blacklist[name]
+		if entry and entry.enable then return false end
+	end
+
+	if haveWhitelist then
+		local entry = whitelist[name]
+		if not (entry and entry.enable) then return false end
+	end
+
+	return true
 end
 
 function UF:UpdateBuffsHeaderPosition()
