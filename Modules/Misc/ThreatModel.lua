@@ -477,6 +477,12 @@ function M:ThreatOn(targetGuid)
 			damage = inputs.damage,
 			healing = inputs.healing,
 			flat = inputs.flat,
+			--Read from the cache ActorModifier already filled, never looked up fresh. The
+			--threat window colours its bars by class and had no other way to ask: doing it
+			--there would mean UnitClass on a GUID from a draw loop, which is the lookup the
+			--note on classCache says not to make. Nil for a pet -- UnitClass has no answer
+			--for one -- and the window falls back to a neutral colour for those.
+			class = ActorClass(guid),
 		})
 	end
 

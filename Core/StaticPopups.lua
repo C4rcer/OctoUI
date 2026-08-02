@@ -551,7 +551,17 @@ function E:StaticPopup_SetUpPosition(dialog)
 		if lastFrame then
 			dialog:SetPoint("TOP", lastFrame, "BOTTOM", 0, -4)
 		else
-			dialog:SetPoint("TOP", E.UIParent, "TOP", 0, -100)
+			--Was a hardcoded TOP of the screen, -100. Every static popup goes through here,
+			--including the ones the game raises rather than this addon -- the bind-on-pickup
+			--confirmation among them, via the StaticPopup_Resize hook at the bottom of this
+			--file -- so "are you sure you want to bind this" was appearing tucked under the
+			--top edge, nowhere near where you are looking when an item drops.
+			--
+			--Anchored to a holder instead so it has a mover and can be put wherever, which
+			--is the same answer the threat window and the damage meter got. The holder is
+			--popup-sized, so the mover box in /moveui is a true preview of where a popup
+			--will land rather than an abstract handle.
+			dialog:SetPoint("TOP", E.StaticPopupHolder or E.UIParent, "TOP", 0, E.StaticPopupHolder and 0 or -100)
 		end
 		tinsert(E.StaticPopup_DisplayedFrames, dialog)
 	end
@@ -1043,6 +1053,16 @@ end
 
 function E:Contruct_StaticPopups()
 	E.StaticPopupFrames = {}
+
+	--Where the first popup of a stack anchors; the rest chain below it as before. Sized
+	--like a typical popup so the mover shows the space one will actually occupy, and
+	--centred by default -- a confirmation you have to answer belongs where you are already
+	--looking, not against the top edge of the screen.
+	E.StaticPopupHolder = CreateFrame("Frame", "ElvUI_StaticPopupHolder", E.UIParent)
+	E.StaticPopupHolder:SetWidth(320)
+	E.StaticPopupHolder:SetHeight(130)
+	E.StaticPopupHolder:SetPoint("CENTER", E.UIParent, "CENTER", 0, 0)
+	E:CreateMover(E.StaticPopupHolder, "StaticPopupMover", L["Popups"], nil, nil, nil, "ALL,GENERAL")
 
 	local S = self:GetModule("Skins")
 	for index = 1, MAX_STATIC_POPUPS do

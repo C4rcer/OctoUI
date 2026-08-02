@@ -54,6 +54,10 @@ function UF:RaidPetsSmartVisibility()
 	else
 		self:Hide()
 	end
+	--Same as the party header: this handler replaced roster rebuilding with a visibility
+	--decision, and the group header's own OnEvent fires before the client has the joining
+	--member's unit data. See UF:RebuildGroupHeaders.
+	UF:ScheduleGroupHeaderRebuild(self)
 end
 
 function UF:Update_RaidpetHeader(header, db)

@@ -554,6 +554,46 @@ function UF.groupPrototype:UpdateHeader(self)
 	UF["Update_"..E:StringTitle(group).."Header"](UF, self, UF.db.units[group]);
 end
 
+--Rebuild the child roster of a group container's headers.
+--
+--The unit buttons are built by oUF's SecureGroupHeader_Update, and the only thing that
+--calls it on a roster change is the header's own OnEvent from Libraries\oUF\templates.xml.
+--That handler is right and does fire -- but PARTY_MEMBERS_CHANGED arrives before the new
+--member's unit data does, so the UnitExists("partyN") inside GetGroupRosterInfo is still
+--false and that member is filtered out of the sort it drives. Nothing fires afterwards to
+--correct it, which is why a member who joined never got a frame until something else
+--rebuilt the header -- and the thing that did was /reload, through the template's OnShow.
+--
+--Hence twice: once now, which is right for a member leaving and for anything the client
+--already knows, and once shortly after, by which time it does. A rebuild re-sorts and
+--re-anchors what is already there, so the second pass changes nothing when the first
+--already got it right.
+local REBUILD_RETRY = 0.5
+
+function UF:RebuildGroupHeaders(container)
+	if not container then return end
+
+	--A container with numGroups holds the real headers in .groups; without one it *is* the
+	--header. GetAttribute tells them apart: only a SpawnHeader frame has it.
+	local headers = container.groups or (container.GetAttribute and {container})
+	if not headers then return end
+
+	for i = 1, getn(headers) do
+		local header = headers[i]
+		--IsVisible rather than IsShown, matching the check the template's own handler
+		--makes: building buttons into a header whose container is hidden is work for
+		--something nobody can see, and it will be rebuilt when it is shown again.
+		if header and header.GetAttribute and header:IsVisible() then
+			SecureGroupHeader_Update(header)
+		end
+	end
+end
+
+function UF:ScheduleGroupHeaderRebuild(container)
+	UF:RebuildGroupHeaders(container)
+	E:Delay(REBUILD_RETRY, UF.RebuildGroupHeaders, UF, container)
+end
+
 function UF.headerPrototype:ClearChildPoints()
 	for i = 1, self:GetNumChildren() do
 		local child = select(i, self:GetChildren())

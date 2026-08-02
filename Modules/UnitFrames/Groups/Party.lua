@@ -114,6 +114,11 @@ function UF:PartySmartVisibility()
 	else
 		self:Hide()
 	end
+
+	--This handler runs on PARTY_MEMBERS_CHANGED and decided visibility only, which left
+	--the roster itself to the group header's own OnEvent -- and that one runs too early to
+	--see a member who has just joined. See UF:RebuildGroupHeaders.
+	UF:ScheduleGroupHeaderRebuild(self)
 end
 
 function UF:Update_PartyFrames(frame, db)

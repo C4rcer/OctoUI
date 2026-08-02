@@ -70,11 +70,25 @@ function A:UpdateTime(elapsed)
 			self.timeLeft = 0
 		end
 	else
-		self.timeLeft = GetPlayerBuffTimeLeft(self.index)
+		local timeLeft = GetPlayerBuffTimeLeft(self.index)
+
+		--See UF:UpdateAuraTimer. Re-reading the live time is not enough on its own: the
+		--nextUpdate GetTimeInfo hands back assumes the number only falls, so a refresh --
+		--which fires no event when the aura set is unchanged -- leaves the old string up
+		--until the throttle happens to lapse. Force the redraw when time goes back on.
+		if timeLeft and timeLeft > (self.timeLeft or 0) + 1 then
+			self.nextUpdate = -1
+		end
+
+		self.timeLeft = timeLeft
 	end
 
+	--Was `not self.offset and self.nextUpdate - elapsed or 1`, which for a weapon enchant
+	--(offset set) evaluates to a flat 1 -- never decremented, so the branch returned on
+	--every frame from then on and the enchant countdown froze at whatever it read the
+	--first time. Both kinds of icon count the same way down.
 	if self.nextUpdate > 0 then
-		self.nextUpdate = not self.offset and self.nextUpdate - elapsed or 1
+		self.nextUpdate = self.nextUpdate - elapsed
 		return
 	end
 

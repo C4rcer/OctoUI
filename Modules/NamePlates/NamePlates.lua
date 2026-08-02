@@ -283,8 +283,60 @@ function mod:UnitClass(name, type)
 	end
 end
 
+--Threat colouring for the nameplate health bar. Everything that consumes this -- the four
+--status colours, the good/bad scaling -- was already written in Elements\HealthBar.lua and
+--had been unreachable since the port, because this returned a flat false: there was no
+--threat data on this client to return. There is now, so this is the join.
+--
+--Only ever the target's plate, and that is a limit rather than a shortcut. A 1.12 nameplate
+--carries no unit token and no GUID, so the only handle on it is the name drawn above it --
+--which cannot tell two Wastewander Bandits apart, and the whole point of storing threat per
+--target GUID is that those two are different fights. The target is the one plate that can
+--be matched to a GUID with certainty, via UnitExists('target'). Every other plate returns
+--nil and falls back to reaction colours, which is the honest answer to "I do not know".
 function mod:UnitDetailedThreatSituation(frame)
-	return false
+	if not (frame and frame.isTarget) then return false end
+	if not (mod.db.threat and mod.db.threat.useThreatColor) then return false end
+
+	--Out of combat there is no threat to be in, and last fight's numbers linger in the
+	--meter until the next one starts. Colouring from those would leave a mob red on a
+	--fresh pull because of something that already died.
+	if not UnitAffectingCombat("player") then return false end
+
+	local TM = E:GetModule("ThreatMeter", true)
+	if not (TM and TM.ThreatStatus) then return false end
+
+	return TM:ThreatStatus()
+end
+
+--Repaint on a threat change rather than waiting for one.
+--
+--Nothing polls the health bar's colour: it is recalculated when the health value changes,
+--when the target changes, and on a full element pass. That covers most of a fight by
+--accident -- health ticks constantly -- but it means the moment you actually pull aggro is
+--only drawn if the mob happens to take damage right then, which is precisely the moment
+--not to be showing a stale colour.
+--
+--Called by the threat meter each time it refreshes. Cheap on purpose: the status is one
+--table lookup, and unchanged status -- which is nearly every call -- does no work at all.
+local lastThreatStatus, threatStatusSet
+function mod:UpdateElement_ThreatChanged()
+	if not (mod.db and mod.db.threat and mod.db.threat.useThreatColor) then return end
+
+	local TM = E:GetModule("ThreatMeter", true)
+	local status = TM and TM.ThreatStatus and TM:ThreatStatus()
+
+	--Tracked with a separate flag because nil is a meaningful status here ("no data") and
+	--is also what an uninitialised local holds, so the first call out of combat would
+	--otherwise compare equal and skip the repaint that clears last fight's colour.
+	if threatStatusSet and status == lastThreatStatus then return end
+	lastThreatStatus, threatStatusSet = status, true
+
+	for frame in pairs(mod.VisiblePlates) do
+		if frame.isTarget then
+			mod:UpdateElement_HealthColor(frame)
+		end
+	end
 end
 
 function mod:UnitLevel(frame)

@@ -112,7 +112,12 @@ function UF:Construct_AuraIcon(button)
 	button.overlay:SetTexture(nil)
 
 	button:RegisterForClicks("RightButtonUp")
-	button:SetScript("OnClick", function(self)
+	--`function(self)` leaves self nil here: a 1.12 script handler is passed nothing and
+	--reaches its frame through the `this` global, the way every other handler in this file
+	--already does. The modifier check happened to run fine on nil, so this only raised at
+	--`self.name` -- i.e. only on the click that was meant to blacklist something.
+	button:SetScript("OnClick", function()
+		local self = this
 		if E.db.unitframe.auraBlacklistModifier == "NONE"
 		or not ((E.db.unitframe.auraBlacklistModifier == "SHIFT" and IsShiftKeyDown())
 			or (E.db.unitframe.auraBlacklistModifier == "ALT" and IsAltKeyDown())
@@ -463,7 +468,27 @@ function UF:UpdateAuraTimer(elapsed)
 	--for those the countdown against LibDebuff's reconstructed expiry is all there is.
 	if self.playerBuffIndex then
 		local timeLeft = GetPlayerBuffTimeLeft(self.playerBuffIndex)
-		self.expirationSaved = (timeLeft and timeLeft > 0) and timeLeft or 0
+		timeLeft = (timeLeft and timeLeft > 0) and timeLeft or 0
+
+		--Re-reading the live value is only half of it. GetTimeInfo sizes nextupdate for a
+		--number that only ever falls -- "no point redrawing until the minute rolls over" --
+		--so the throttle below sits on a stale string for up to ~30s at minute scale, and
+		--up to ~30 *minutes* once a buff is long enough to read in hours. A refresh puts
+		--time back on the aura, which that assumption does not allow for, so recasting
+		--Demon Armor at 8 minutes went on reading 8m long enough to look like it was never
+		--updating at all. Nothing else will correct it either: a refresh that does not
+		--change the aura set fires no event, so PostUpdateAura -- the one place that clears
+		--nextupdate -- never runs.
+		--
+		--Only an increase forces the redraw. A decrease is the normal countdown and is
+		--exactly what the throttle exists for; jumping on those would give every aura icon
+		--a per-frame SetText. The second of slack keeps float jitter in the client's
+		--remaining time from tripping it.
+		if timeLeft > (self.expirationSaved or 0) + 1 then
+			self.nextupdate = -1
+		end
+
+		self.expirationSaved = timeLeft
 	else
 		self.expirationSaved = self.expirationSaved - elapsed
 	end

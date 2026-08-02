@@ -945,7 +945,13 @@ function TWT.combatStart()
     --Was an unconditional "solo means stop here", which returned before threatQuery was
     --ever shown -- so solo play never ran the loop that asks the server for threat, and
     --the window sat empty and blameless. See TWT.ThreatWanted.
-    if not TWT.ThreatWanted() then
+    --
+    --Now it also has to survive having given up on the server: once solo threat stops
+    --asking, ThreatWanted is false for the rest of the session, and returning here would
+    --take the local model down with it -- along with the spec scan, getClasses and the bar
+    --animator, none of which are about the server at all. Stop only when neither source
+    --can produce anything.
+    if not (TWT.ThreatWanted() or TWT.LocalAvailable()) then
         return false
     end
 
@@ -992,7 +998,12 @@ function TWT.combatStart()
         sendTex = 'ability_warrior_savageblow' --ms
     end
 
-    TWT.send('TWTRoleTexture:' .. sendTex)
+    --Skipped when nothing is listening: with the server silent this is one more packet a
+    --tick that goes nowhere, and the counters in /octoui-threat should not fill up with
+    --sends that were never going to be answered.
+    if TWT.ThreatWanted() then
+        TWT.send('TWTRoleTexture:' .. sendTex)
+    end
 
     TWT.getClasses()
 
@@ -1309,6 +1320,129 @@ function TWT.UnitDetailedThreatSituation(limit)
     end
 end
 
+--[[ locally modelled threat as a source ]]--
+--
+--Everything above this asks the server and draws the answer. On this server that answer
+--never comes outside a group, and the window sat empty for exactly the players who most
+--need it -- a warlock or hunter solo, whose whole question is whether the pet is holding.
+--
+--Modules\Misc\ThreatModel.lua already computes threat from nampower's combat events, per
+--mob and per actor, and until now it could only be read as a printed report. This section
+--is the join: it fills TWT.threats in the same shape handleThreatPacket does, so every
+--consumer downstream -- the bars, the aggro line, the target-frame glow, the warning
+--sound -- works without knowing which source it is looking at.
+--
+--The server wins whenever it is talking. This is a fallback and must never overwrite live
+--server data with a model, however good the model is.
+
+--The server counts as answering if it has replied at all recently. Two update cycles of
+--slack, because replies arrive on their own schedule and one late packet is not a dead
+--server. Never having replied at all is the solo case and falls straight through.
+local SERVER_STALE_AFTER = 5
+
+function TWT.ServerAnswering()
+    if not TWT.lastReply then return false end
+
+    return (GetTime() - TWT.lastReply) < SERVER_STALE_AFTER
+end
+
+--Resolved on demand: this file loads before the Misc module exists.
+local function LocalModel()
+    local M = E.GetModule and E:GetModule("Misc", true)
+    if not (M and M.ThreatOn and M.ThreatModelAvailable) then return end
+    if not M:ThreatModelAvailable() then return end
+
+    return M
+end
+
+function TWT.LocalAvailable()
+    return LocalModel() and true or false
+end
+
+--Melee or ranged decides the threshold you have to cross to pull -- 110% against 130% --
+--and it is a large difference to get wrong, so it is measured rather than assumed from
+--class. UnitXP SP3 answers exactly when it is loaded. CheckInteractDistance is the
+--fallback and is only an approximation: index 3 is about 9.9 yards against melee's 5, so
+--without SP3 this errs towards calling you melee, which errs towards warning early.
+local function InMeleeRange()
+    if UnitXP then
+        local ok, distance = pcall(UnitXP, 'distanceBetween', 'player', 'target')
+        if ok and type(distance) == 'number' then
+            return distance <= 5
+        end
+    end
+
+    return CheckInteractDistance('target', 3) and true or false
+end
+
+--The window colours by class name and indexes classCoords with it, so anything it does
+--not recognise -- a pet, which UnitClass has no answer for -- has to become something it
+--does. Priest is the neutral white entry.
+local function BarClass(class)
+    class = class and __lower(class)
+
+    return (class and TWT.classColors[class] and class) or 'priest'
+end
+
+function TWT.buildLocalThreats()
+    local M = LocalModel()
+    if not M then return false end
+
+    local rows = M:ThreatOn()
+    if __getn(rows) == 0 then return false end
+
+    TWT.threats = TWT.wipe(TWT.threats)
+    TWT.tankName = ''
+
+    local melee = InMeleeRange()
+    local now = time()
+
+    for i = 1, __getn(rows) do
+        local row = rows[i]
+        --Top threat is holding the mob. That is what the server's `tank` flag means and
+        --the model's ordering answers the same question, so the rest of the file needs no
+        --idea which one filled this in.
+        local tank = (i == 1)
+
+        --calcTPS reads this table and nothing else, so feeding it here is what makes the
+        --TPS column work on modelled threat too. Written before calcTPS is called, which
+        --is the ordering handleThreatPacket also relies on.
+        if not TWT.history[row.name] then TWT.history[row.name] = {} end
+        TWT.history[row.name][now] = row.threat
+
+        TWT.threats[row.name] = {
+            threat = row.threat,
+            tank = tank,
+            perc = row.share * 100,
+            --Only the player's own melee state is ever read, off the player's own row
+            melee = melee,
+            tps = TWT.calcTPS(row.name),
+            class = BarClass(row.class),
+            modelled = true
+        }
+
+        if tank then
+            TWT.tankName = row.name
+        end
+    end
+
+    --updateUI and calcAGROPerc both bail without a row for the player, and a warlock whose
+    --void has done all the damage so far legitimately has none. An explicit zero row says
+    --"you are on this list with nothing on it", which is the true and useful answer, where
+    --drawing nothing says only that the meter is broken.
+    if not TWT.threats[TWT.name] then
+        TWT.threats[TWT.name] = {
+            threat = 0, tank = false, perc = 0, melee = melee,
+            tps = 0, class = BarClass(TWT.class), modelled = true
+        }
+    end
+
+    TWT.calcAGROPerc()
+    TWT.updateUI('localModel')
+
+    return true
+end
+
 function TWT.updateUI(from)
 
     --OctoTWTDebug('update ui call from [' .. (from or '') .. ']')
@@ -1603,9 +1737,11 @@ TWT.threatQuery:SetScript("OnUpdate", function()
     local st = (this.startTime + plus) * 1000
     if gt >= st then
         this.startTime = GetTime()
-        if not TWT.ThreatWanted() then
-            return false
-        end
+
+        --The ThreatWanted check used to sit here and return, which is right for the asking
+        --and wrong for everything else: once solo threat gives up on a server that does not
+        --answer, this loop did nothing at all -- including the local model, which is
+        --precisely the situation it exists for. Gate the send, not the tick.
         if UnitAffectingCombat('player') and UnitAffectingCombat('target') then
 
             if TWT.targetName == '' then
@@ -1615,15 +1751,25 @@ TWT.threatQuery:SetScript("OnUpdate", function()
                 return false
             end
 
-            if OctoTWT_CONFIG.glow or OctoTWT_CONFIG.perc or
-                    OctoTWT_CONFIG.glowUF or OctoTWT_CONFIG.percUF or
-                    OctoTWT_CONFIG.fullScreenGlow or OctoTWT_CONFIG.tankmode or
-                    OctoTWT_CONFIG.visible then
-                if TWT.healerMasterTarget == '' then
-                    TWT.UnitDetailedThreatSituation(OctoTWT_CONFIG.visibleBars - 1)
+            if TWT.ThreatWanted() then
+                if OctoTWT_CONFIG.glow or OctoTWT_CONFIG.perc or
+                        OctoTWT_CONFIG.glowUF or OctoTWT_CONFIG.percUF or
+                        OctoTWT_CONFIG.fullScreenGlow or OctoTWT_CONFIG.tankmode or
+                        OctoTWT_CONFIG.visible then
+                    if TWT.healerMasterTarget == '' then
+                        TWT.UnitDetailedThreatSituation(OctoTWT_CONFIG.visibleBars - 1)
+                    end
+                else
+                    OctoTWTDebug('not asking threat situation')
                 end
-            else
-                OctoTWTDebug('not asking threat situation')
+            end
+
+            --Last, and only when the server is silent. A reply landing between two ticks
+            --has to win over anything modelled, so this reads the traffic counters rather
+            --than assuming solo means no server: a group on a server that answers keeps
+            --the real numbers, and everyone else stops looking at an empty window.
+            if not TWT.ServerAnswering() then
+                TWT.buildLocalThreats()
             end
 
         end
@@ -1670,6 +1816,15 @@ function TWT.calcTPS(name)
 end
 
 function TWT.updateTargetFrameThreatIndicators(perc)
+
+    --The nameplate health bar is the third place threat is drawn, alongside the two target
+    --frames below. It lives in another module and paints itself off health events, so it
+    --has to be told; it does its own change check and costs nothing when nothing moved.
+    --Ahead of the -1 early return on purpose, so leaving combat clears its colour too.
+    local NP = E.GetModule and E:GetModule("NamePlates", true)
+    if NP and NP.UpdateElement_ThreatChanged then
+        NP:UpdateElement_ThreatChanged()
+    end
 
     if OctoTWT_CONFIG.fullScreenGlow then
         _G['OctoTWTFullScreenGlow']:Show()
@@ -2540,6 +2695,52 @@ E.ThreatMeter = TM
 --causes of an empty window that look identical on screen.
 function TM:ThreatTraffic()
     return TWT.requestsSent or 0, TWT.repliesSeen or 0, TWT.lastReply, TWT.sendFailures or 0
+end
+
+--Your standing on the current target, in the four states the nameplate health bar and the
+--unit frame threat colouring already know how to draw:
+--
+--  3  holding it, comfortably     2  holding it, barely
+--  1  not holding it, close       0  not holding it
+--
+--nil rather than 0 when there is nothing to say. The nameplate falls back to reaction
+--colours on nil, and "no data" has to be distinguishable from "no threat" or every mob in
+--the world would be drawn as though you had just failed to pull it.
+--
+--Reads whatever filled TWT.threats, server or model, deliberately. One answer on screen:
+--the bars, the glow and the nameplate cannot disagree with each other if they are all
+--looking at the same table.
+function TM:ThreatStatus()
+    if not TWT.enabled then return end
+
+    local me = TWT.threats and TWT.threats[TWT.name]
+    if not me then return end
+
+    --110% in melee, 130% at range: the margin the game makes you exceed to take a mob off
+    --its current holder. The same numbers calcAGROPerc draws the aggro line at.
+    local pull = me.melee and 110 or 130
+
+    if TWT.tankName == TWT.name then
+        --Holding it. The question is by how much, and that is measured against whoever is
+        --second -- not against the aggro line, which is drawn relative to you and would
+        --make this circular.
+        local second = 0
+        for name, data in __pairs(TWT.threats) do
+            if name ~= TWT.name and name ~= TWT.AGRO and data.threat > second then
+                second = data.threat
+            end
+        end
+
+        --Nobody else on the list is the safest possible state, not an unknown one
+        if second <= 0 then return 3, me.perc end
+
+        return (((me.threat / second) * 100) >= pull) and 3 or 2, me.perc
+    end
+
+    --Not holding it. The warning threshold is the one already in the settings panel and
+    --already driving the sound and the full-screen glow, so raising it quiets every
+    --warning at once rather than leaving them disagreeing about what "close" means.
+    return (me.perc >= (OctoTWT_CONFIG.aggroThreshold or 85)) and 1 or 0, me.perc
 end
 
 --Whether the solo back-off has tripped this session; see SOLO_GIVE_UP_AFTER.
