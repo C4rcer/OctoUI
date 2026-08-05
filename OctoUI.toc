@@ -32,6 +32,7 @@ Config\Locales\Load_Locales.xml
 Config\Core.lua
 Config\General.lua
 Config\ActionBars.lua
+Config\AddOns.lua
 Config\Auras.lua
 Config\Bags.lua
 Config\Chat.lua

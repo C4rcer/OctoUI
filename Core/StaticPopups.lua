@@ -212,6 +212,20 @@ E.PopupDialogs["GLOBAL_RL"] = {
 	hideOnEscape = false
 }
 
+--Raised by Config/AddOns.lua. Deliberately does not name the addon: flipping six rows
+--should not produce six identical dialogs, and the chat line carries the name anyway.
+--hideOnEscape, unlike its neighbours -- this fires mid-config and blocking Escape while
+--somebody is still ticking boxes would be its own bug.
+E.PopupDialogs["ADDON_RL"] = {
+	text = L["AddOn changes take effect the next time the UI loads. Reload now?"],
+	button1 = ACCEPT,
+	button2 = CANCEL,
+	OnAccept = ReloadUI,
+	timeout = 0,
+	whileDead = 1,
+	hideOnEscape = true
+}
+
 E.PopupDialogs["PRIVATE_RL"] = {
 	text = L["A setting you have changed will change an option for this character only. This setting that you have changed will be uneffected by changing user profiles. Changing this setting requires that you reload your User Interface."],
 	button1 = ACCEPT,

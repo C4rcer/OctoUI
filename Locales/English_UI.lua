@@ -473,3 +473,6 @@ L["Hold [Shift] to use item."] = true;
 
 --Modules/UnitFrames/UnitFrames.lua
 L["You cannot copy settings from the same unit."] = true;
+
+--Core/StaticPopups.lua
+L["AddOn changes take effect the next time the UI loads. Reload now?"] = true;

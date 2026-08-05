@@ -150,7 +150,7 @@ local BLIZZARD_ADDONS = {
 
 function E:EnableBlizzardAddOns()
 	for _, addon in pairs(BLIZZARD_ADDONS) do
-		local reason = select(5, GetAddOnInfo(addon))
+		local reason = select(6, GetAddOnInfo(addon)) --reason, not loadable at 5
 		if reason == "DISABLED" then
 			EnableAddOn(addon)
 			E:Print("The following addon was re-enabled:", addon)

@@ -15,11 +15,15 @@ local GetRealZoneText = GetRealZoneText
 local GetScreenResolutions = GetScreenResolutions
 local UnitLevel = UnitLevel
 
+--1.12 GetAddOnInfo returns name, title, notes, enabled, loadable, reason, security:
+--one field more than the modern signature this was ported from. A load-on-demand
+--addon reports loadable as nil with reason "DEMAND_LOADED", so it has to be counted
+--separately from the ones that load at startup.
 local function AreOtherAddOnsEnabled()
-	local name, loadable, reason, _
+	local name, enabled, loadable, reason, _
 	for i = 1, GetNumAddOns() do
-		name, _, _, loadable, reason = GetAddOnInfo(i)
-		if (name ~= "OctoUI") and (loadable or (not loadable and reason == "DEMAND_LOADED")) then --Loaded or load on demand
+		name, _, _, enabled, loadable, reason = GetAddOnInfo(i)
+		if (name ~= "OctoUI") and enabled and (loadable or reason == "DEMAND_LOADED") then --Loaded or load on demand
 			return "Yes"
 		end
 	end

@@ -1368,3 +1368,19 @@ L["Alert"] = true
 L["Alert 2"] = true
 L["Arthas"] = true
 L["Skull"] = true
+
+-- Config/AddOns.lua
+L["ADDONS_DESC"] = "Enable and disable other addons. Changes apply the next time the UI loads."
+L["AddOns"] = true
+L["All At Once"] = true
+L["Enable All"] = true
+L["Enable every addon, including any you switched off deliberately?"] = true
+L["Disable All Except OctoUI"] = true
+L["Leaves OctoUI on so you can switch things back afterwards. The fastest way to find out what an addon is costing you."] = true
+L["Switch off every addon except OctoUI?"] = true
+L["Blizzard"] = true
+L["These load on demand when the game needs them. Switching one off removes the window it provides, so leave them alone unless that is the intention."] = true
+L["Disabling OctoUI removes this options window along with the rest of the UI. You would need to re-enable it from Blizzard's own addon list at the character screen. Continue?"] = true
+L["No changes waiting. What is ticked here is what is running."] = true
+L["%d change(s) waiting for a reload."] = true
+L["Apply every change on this page now."] = true

@@ -11,12 +11,14 @@ local checked
 local function LoadDebugTools()
 	if checked then return end
 
-	local _, _, _, loadable, _, reason = GetAddOnInfo("!DebugTools")
+	local _, _, _, _, loadable, reason = GetAddOnInfo("!DebugTools")
 	checked = true
 
 	if reason == "MISSING" then return end
 
-	if loadable then
+	--Load-on-demand reports loadable as nil, so it needs testing on its own; only a
+	--genuinely disabled addon takes the enable/load/disable path below.
+	if loadable or reason == "DEMAND_LOADED" then
 		LoadAddOn("!DebugTools")
 	else
 		EnableAddOn("!DebugTools")
