@@ -53,6 +53,11 @@ P["general"] = {
 	--Auction house browse list, open item 19
 	["auctionUnitPrice"] = true,
 
+	--Mailbox take-all, open item 18. The interval is a floor on top of waiting for
+	--MAIL_INBOX_UPDATE, not a substitute for it.
+	["mailTakeAll"] = true,
+	["mailTakeAllInterval"] = 0.3,
+
 	["fontSize"] = 12,
 	["font"] = "PT Sans Narrow",
 	["fontStyle"] = "NONE",

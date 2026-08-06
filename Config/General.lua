@@ -313,6 +313,21 @@ E.Options.args.general = {
 					--list next happens to redraw. Guarded because AuctionHouse.lua is a new file.
 					set = function(info, value) E.db.general.auctionUnitPrice = value if E.Misc and E.Misc.UpdateAuctionBrowse then E.Misc.UpdateAuctionBrowse() end end
 				},
+				mailTakeAll = {
+					order = 12.67,
+					type = "toggle",
+					name = L["Mail Take All"],
+					desc = L["MAIL_TAKEALL_DESC"],
+					set = function(info, value) E.db.general.mailTakeAll = value if E.Misc and E.Misc.UpdateMailButton then E.Misc.UpdateMailButton() end end
+				},
+				mailTakeAllInterval = {
+					order = 12.68,
+					type = "range",
+					name = L["Take All Interval"],
+					desc = L["MAIL_TAKEALL_INTERVAL_DESC"],
+					min = 0.1, max = 1, step = 0.05,
+					disabled = function() return not E.db.general.mailTakeAll end
+				},
 				bottomPanel = {
 					order = 13,
 					type = "toggle",

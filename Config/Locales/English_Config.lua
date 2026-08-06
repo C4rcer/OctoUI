@@ -1392,3 +1392,9 @@ L["AUCTION_UNIT_PRICE_DESC"] = "On the auction house browse list, show each row'
 --Modules/Tooltip/Tooltip.lua
 L["Auction Price"] = true;
 L["AUCTION_PRICE_DESC"] = "Show what the auction house is charging for an item next to what the vendor pays, so 'list it or vendor it' can be answered without walking to the auctioneer. Only covers items an auction house scan has actually seen, and the figure is the cheapest per unit before the auction house's cut."
+
+--Modules/Misc/MailTools.lua
+L["Mail Take All"] = true;
+L["Take All Interval"] = true;
+L["MAIL_TAKEALL_DESC"] = "Add a Take All button to the mailbox that empties every letter of its money and attachments. Cash-on-delivery letters are always skipped, because taking one pays the sender out of your own gold."
+L["MAIL_TAKEALL_INTERVAL_DESC"] = "Seconds to wait between mail actions. This is a floor on top of waiting for the server to confirm each one, not a replacement for it -- raise it if attachments are being missed."

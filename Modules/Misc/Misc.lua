@@ -184,6 +184,7 @@ function M:Initialize()
 	--existing file into a newly added one needs this until the next full restart.
 	if self.LoadBlacklist then self:LoadBlacklist() end
 	if self.LoadAuctionHouse then self:LoadAuctionHouse() end
+	if self.LoadMailTools then self:LoadMailTools() end
 	self:LoadLoot()
 	self:LoadLootRoll()
 	self:LoadChatBubbles()

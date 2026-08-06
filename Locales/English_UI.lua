@@ -544,3 +544,13 @@ L["AUCTION_TOOLTIP_STACK"] = "%s each, %s for %d"
 L["AUCTION_TOOLTIP_LIST_IT"] = "%.1fx vendor -- worth listing"
 L["AUCTION_TOOLTIP_MARGINAL"] = "%.1fx vendor -- marginal"
 L["AUCTION_TOOLTIP_VENDOR_IT"] = "the vendor pays more -- do not list"
+
+--Modules/Misc/MailTools.lua
+L["Take All"] = true;
+L["Stop"] = true;
+L["MAIL_TAKEALL_DONE"] = "Mailbox: %d attachment(s) and %s collected."
+L["MAIL_TAKEALL_COD"] = "%d cash-on-delivery letter(s) left alone -- taking those spends your gold, so they are never automatic."
+L["MAIL_TAKEALL_TIMEOUT"] = "Stopped: the server stopped answering."
+L["MAIL_TAKEALL_STALLED"] = "Stopped: the last action was refused without an error, which usually means there is nowhere to put the item."
+L["MAIL_TAKEALL_BAGS_FULL"] = "Stopped: no free bag space."
+L["MAIL_TAKEALL_CANCELLED"] = "Stopped."

@@ -18,4 +18,5 @@
 	<Script file="BagItemClick.lua"/>
 	<Script file="Blacklist.lua"/>
 	<Script file="AuctionHouse.lua"/>
+	<Script file="MailTools.lua"/>
 </Ui>
