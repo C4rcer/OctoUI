@@ -16,6 +16,12 @@ G["general"] = {
 
 G["classCache"] = {}
 
+--Per account rather than per character: a ninja looter is the same person on every alt.
+G["blacklist"] = {
+	["enable"] = true,
+	["players"] = {}
+}
+
 G["classtimer"] = {}
 
 G["nameplates"] = {}

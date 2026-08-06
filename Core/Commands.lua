@@ -3,7 +3,8 @@ local E, L, V, P, G = unpack(ElvUI); --Import: Engine, Locales, PrivateDB, Profi
 --Cache global variables
 --Lua functions
 local _G = _G
-local tonumber, type, pairs = tonumber, type, pairs
+local tonumber, type, pairs, ipairs = tonumber, type, pairs, ipairs
+local getn = table.getn
 local format, len, lower, match = string.format, string.len, string.lower, string.match
 --WoW API / Variables
 local UIFrameFadeOut, UIFrameFadeIn = UIFrameFadeOut, UIFrameFadeIn
@@ -659,6 +660,93 @@ local function FilterNames()
 	return out
 end
 
+--Editing the blacklist. A slash command rather than a config page for the same reason
+--/octoui-filter is one: the moment you want to add someone is the moment you have just
+--been ninja looted, and that is not a moment for a three-click options tree.
+function E:BlacklistCommand(msg)
+	local M = E:GetModule("Misc")
+
+	--Slashes, not pipes, in user-facing text: `|` is the chat escape character and eats
+	--the character after it. See the note in E:FilterCommand.
+	local action, rest = match(msg or "", "^%s*(%S*)%s*(.-)%s*$")
+	action = lower(action or "")
+
+	if not M:IgnoreAPIPresent() then
+		E:Print("This client does not provide the ignore list API, so there is nothing to annotate.")
+		return
+	end
+
+	if action == "" or action == "list" then
+		local list = M:GetIgnoreList()
+		local count = getn(list)
+		if count == 0 then
+			E:Print("Your ignore list is empty. /ignore <name> adds one, then: /octoui-blacklist note <name> <why>")
+			return
+		end
+
+		E:Print(format("Ignore list -- %d player(s). Usage: /octoui-blacklist [note / add / remove / list] <name> <reason>", count))
+		for _, entry in ipairs(list) do
+			E:Print(format("  %s -- %s |cff888888(noted %s)|r",
+				entry.name,
+				(entry.reason and entry.reason ~= "" and entry.reason) or "no reason recorded",
+				entry.added or "?"))
+		end
+		return
+	end
+
+	--The common case: they are already ignored, you just want to record why.
+	if action == "note" then
+		local name, reason = match(rest or "", "^(%S+)%s*(.-)$")
+		if not name or name == "" then
+			E:Print("Usage: /octoui-blacklist note <name> <reason>. The reason is the whole point -- a bare name means nothing in a month.")
+			return
+		end
+
+		if reason == "" then
+			M:SetBlacklistNote(name, nil)
+			E:Print(format("Cleared the note on %s.", name))
+		else
+			local note = M:SetBlacklistNote(name, reason)
+			E:Print(format("%s -- %s |cff888888(noted %s)|r", name, note.reason, note.added))
+		end
+
+		M:ScheduleBlacklistRefresh()
+		M:CheckGroupForBlacklisted()
+		return
+	end
+
+	if action == "add" then
+		local name, reason = match(rest or "", "^(%S+)%s*(.-)$")
+		if not name or name == "" then
+			E:Print("Usage: /octoui-blacklist add <name> <reason>. Same as /ignore, but records why at the same time.")
+			return
+		end
+
+		M:AddToIgnore(name, reason ~= "" and reason or nil)
+		E:Print(format("Ignoring %s -- %s", name, (reason ~= "" and reason) or "no reason recorded"))
+		M:ScheduleBlacklistRefresh()
+		M:CheckGroupForBlacklisted()
+		return
+	end
+
+	if action == "remove" then
+		local name = match(rest or "", "^(%S+)")
+		if not name or name == "" then
+			E:Print("Usage: /octoui-blacklist remove <name>")
+			return
+		end
+
+		--The note is kept on purpose: un-ignoring is not the same as deciding you were
+		--wrong, and if they end up back on the list the history is still there.
+		M:RemoveFromIgnore(name)
+		E:Print(format("Removed %s from your ignore list. The note is kept.", name))
+		M:ScheduleBlacklistRefresh()
+		return
+	end
+
+	E:Print("Usage: /octoui-blacklist [note / add / remove / list] <name> <reason>")
+end
+
 function E:FilterCommand(msg)
 	local filters = E.global.unitframe.aurafilters
 	if not filters then
@@ -893,6 +981,7 @@ function E:LoadCommands()
 	self:RegisterChatCommand("octoui-dps", "MeterReport")
 	self:RegisterChatCommand("octoui-threatmodel", "ThreatModelReport")
 	self:RegisterChatCommand("octoui-filter", "FilterCommand")
+	self:RegisterChatCommand("octoui-blacklist", "BlacklistCommand")
 	self:RegisterChatCommand("octoui-auras", "AuraReport")
 	self:RegisterChatCommand("octoui-dismount", "DismountReport")
 	self:RegisterChatCommand("octoui-threatreset", "ThreatReset")

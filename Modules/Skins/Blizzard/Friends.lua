@@ -211,6 +211,31 @@ local function LoadSkin()
 	E:Point(GuildFrameColumnHeader2, "LEFT", GuildFrameColumnHeader1, "RIGHT", -2, -0)
 	E:Width(GuildFrameColumnHeader2, 127)
 
+	--Turtle adds a guild search box that stock 1.12 never had, so ElvUI's layout has no
+	--line placing it and it keeps whatever width the client gave it -- which runs on and
+	--under the Show Offline Members checkbox. Same class of bug as the trade skill search
+	--box; see Modules/Skins/Blizzard/TradeSkill.lua.
+	--
+	--Measured in game: the box spans 78-209 and its PARENT, GuildFrameLFGFrame, spans
+	--131-341 -- so it straddles its own parent's left edge by 78 units, and that parent is
+	--the bordered region holding Show Offline Members. Names from GetMouseFocus on
+	--GuildFrameSearchBoxClearButton and an enumeration of GuildFrame's children.
+	--
+	--The parent cannot be anchored to the child to close the gap, that is circular, and
+	--re-parenting the box would break it following the LFG frame's own show/hide. Pinning
+	--the box's right edge just inside its parent's left edge does the same job with one
+	--anchor and no ownership changes: it now ends where the offline area begins, whatever
+	--the client later does to either.
+	local guildSearch = _G["GuildFrameSearchBox"]
+	local lfgFrame = _G["GuildFrameLFGFrame"]
+	if guildSearch and lfgFrame then
+		guildSearch:ClearAllPoints()
+		guildSearch:SetPoint("RIGHT", lfgFrame, "LEFT", -6, 0)
+		--Narrower than the 131 it had: the space to the left is finite and this keeps it
+		--clear of the frame edge as well as of the checkbox.
+		E:Width(guildSearch, 105)
+	end
+
 	for i = 1, GUILDMEMBERS_TO_DISPLAY do
 		local button = _G["GuildFrameButton"..i]
 		local name = _G["GuildFrameButton"..i.."Name"]

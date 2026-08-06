@@ -476,3 +476,18 @@ L["You cannot copy settings from the same unit."] = true;
 
 --Core/StaticPopups.lua
 L["AddOn changes take effect the next time the UI loads. Reload now?"] = true;
+
+--Modules/Misc/Blacklist.lua
+L["Ignore List"] = true;
+L["Notes on the players you have ignored. Membership is the game's own ignore list -- use /ignore and /unignore as normal, and this remembers why."] = true;
+L["Warn me in my group"] = true;
+L["Prints a private line when someone on your ignore list is in your party or raid. Only you ever see it."] = true;
+L["Ignore a player"] = true;
+L["Same as typing /ignore. Add the reason afterwards below."] = true;
+L["Your ignore list is empty. Use /ignore <name> in game, then add a note here."] = true;
+L["This client does not provide the ignore list API, so nothing can be shown here."] = true;
+L["Reason"] = true;
+L["Noted %s"] = true;
+L["Why this player is on your list."] = true;
+L["Un-ignore"] = true;
+L["Removes them from the game's ignore list. The note is kept in case they end up back on it."] = true;

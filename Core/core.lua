@@ -1074,16 +1074,35 @@ function E:InitializeModules()
 	end
 
 	--Old deprecated initialize method, we keep it for any plugins that may need it
+	--
+	--This pcall used to drop the error unless ShowErrors was on, which meant a module
+	--that raised on load looked EXACTLY like a module that was switched off: no message,
+	--no partial state, nothing to tell the two apart from the outside. That cost most of
+	--a session on the standalone buff panels alone. Failures are recorded now whether or
+	--not anyone is watching, and /oprobe (octoui-dev\OctoProbe) reports them.
+	E.ModuleLoadErrors = {}
+
 	for _, module in pairs(E.RegisteredModules) do
+		local moduleName = module
 		module = self:GetModule(module)
 		if module.Initialize then
 			local _, catch = pcall(module.Initialize, module)
 
-			if catch and GetCVar("ShowErrors") == "1" then
-				ScriptErrorsFrame_OnError(catch, false)
+			if catch then
+				tinsert(E.ModuleLoadErrors, {module = moduleName, error = catch})
+
+				if GetCVar("ShowErrors") == "1" then
+					ScriptErrorsFrame_OnError(catch, false)
+				end
 			end
 		end
 	end
+end
+
+--Zero is the answer everyone expects; anything else is the first thing to look at when a
+--module "is not there". Returns the count so a caller can decide whether to say anything.
+function E:GetModuleLoadErrors()
+	return E.ModuleLoadErrors or {}, getn(E.ModuleLoadErrors or {})
 end
 
 --DATABASE CONVERSIONS

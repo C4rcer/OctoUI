@@ -177,6 +177,12 @@ function M:Initialize()
 	if E.db.general.vendorGrays then E.db.bags.vendorGrays.enable = E.db.general.vendorGrays end
 
 	self:LoadRaidMarker()
+	--Guarded because Blacklist.lua is a NEW file, and 1.12 indexes the AddOns folder at
+	--process start -- so after a /reload this file is current while that one does not
+	--exist yet. Unguarded, the nil call raised here and took every Load* below it with it,
+	--which reads as "half of Misc stopped working" and names no culprit. Any call from an
+	--existing file into a newly added one needs this until the next full restart.
+	if self.LoadBlacklist then self:LoadBlacklist() end
 	self:LoadLoot()
 	self:LoadLootRoll()
 	self:LoadChatBubbles()
