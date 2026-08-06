@@ -491,3 +491,7 @@ L["Noted %s"] = true;
 L["Why this player is on your list."] = true;
 L["Un-ignore"] = true;
 L["Removes them from the game's ignore list. The note is kept in case they end up back on it."] = true;
+
+--Modules/Bags/Bags.lua
+L["Hearthstone"] = true;
+L["No hearthstone found in your bags."] = true;

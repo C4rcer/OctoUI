@@ -23,6 +23,7 @@ local GetContainerItemCooldown = GetContainerItemCooldown
 local GetContainerItemInfo = GetContainerItemInfo
 local GetContainerItemLink = GetContainerItemLink
 local GetContainerNumSlots = GetContainerNumSlots
+local NUM_BAG_SLOTS = NUM_BAG_SLOTS
 local GetItemInfo = GetItemInfo
 local GetItemQualityColor = GetItemQualityColor
 local GetMoney = GetMoney
@@ -928,6 +929,71 @@ function B:UpdateAll()
 	end
 end
 
+--[[
+	The hearthstone button on the bag frame.
+
+	A SET of ids, not one: OctoWoW is Vanilla+ and servers of that kind routinely add
+	hearthstone equivalents. 6948 is vanilla's. Listing an id the server does not have costs
+	nothing, so add to it freely rather than assuming 6948 is the whole story.
+]]
+local HEARTHSTONE_IDS = {
+	[6948] = true,   --Hearthstone
+	[54452] = true,  --Ethereal Portal, if this server has it
+	[64488] = true,  --The Innkeeper's Daughter, likewise
+}
+
+--Scans the player bags for one. Deliberately NOT on a timer: the slot can only move when
+--the bags change, and BAG_UPDATE is already registered on this frame.
+function B:FindHearthstone()
+	for bagID = 0, NUM_BAG_SLOTS do
+		for slotID = 1, GetContainerNumSlots(bagID) do
+			local link = GetContainerItemLink(bagID, slotID)
+			if link then
+				local itemID = match(link, "item:(%d+)")
+				if itemID and HEARTHSTONE_IDS[tonumber(itemID)] then
+					return bagID, slotID
+				end
+			end
+		end
+	end
+end
+
+function B:UpdateHearthstone(f)
+	local button = f and f.hearthButton
+	if not button then return end
+
+	local bagID, slotID = B:FindHearthstone()
+	button.bagID, button.slotID = bagID, slotID
+
+	--Dimmed rather than hidden when there is none. A button that disappears re-flows every
+	--other button on the row, and this one is absent often enough while levelling that the
+	--row would move around constantly.
+	if not bagID then
+		button:SetAlpha(0.3)
+		CooldownFrame_SetTimer(button.cooldown, 0, 0, 0)
+		return
+	end
+
+	button:SetAlpha(1)
+
+	local start, duration, enable = GetContainerItemCooldown(bagID, slotID)
+	CooldownFrame_SetTimer(button.cooldown, start, duration, enable)
+end
+
+function B.UseHearthstone()
+	local button = this
+	if not button.bagID then
+		E:Print(L["No hearthstone found in your bags."])
+		return
+	end
+
+	--The file-local UseContainerItem cached at the top of this file, on purpose. That copy
+	--bypasses both the item-lock guards and BagItemClick's wrapper -- which is right here:
+	--this button means "use the hearthstone" and nothing else, so it should not inherit
+	--BagItemClick's alternate click behaviours or be refusable by a lock.
+	UseContainerItem(button.bagID, button.slotID)
+end
+
 function B:OnEvent()
 	if event == "ITEM_LOCK_CHANGED" or event == "ITEM_UNLOCKED" then
 		local bag, slot = arg1, arg2
@@ -957,6 +1023,9 @@ function B:OnEvent()
 
 		this:UpdateBagSlots(bag, slot)
 
+		--The hearthstone can move, be sold or be acquired; this is the event that says so.
+		B:UpdateHearthstone(this)
+
 		--Refresh search in case we moved items around
 		if B:IsSearching() then
 			B:RefreshSearch()
@@ -964,6 +1033,9 @@ function B:OnEvent()
 	elseif event == "BAG_UPDATE_COOLDOWN" then
 		if not this:IsShown() then return end
 		this:UpdateCooldowns()
+		--The hearthstone button draws its own cooldown and is not a bag slot, so
+		--UpdateCooldowns does not reach it.
+		B:UpdateHearthstone(this)
 	elseif event == "PLAYERBANKSLOTS_CHANGED" then
 		this:UpdateBagSlots(-1)
 	end
@@ -1354,14 +1426,50 @@ function B:ContructContainerFrame(name, isBank)
 		f.vendorGraysButton:SetScript("OnLeave", self.Tooltip_Hide)
 		f.vendorGraysButton:SetScript("OnClick", B.VendorGrayCheck)
 
+		--Hearthstone
+		f.hearthButton = CreateFrame("Button", name.."HearthButton", f.holderFrame)
+		E:Size(f.hearthButton, 16 + E.Border)
+		E:SetTemplate(f.hearthButton)
+		E:Point(f.hearthButton, "RIGHT", f.vendorGraysButton, "LEFT", -5, 0)
+		f.hearthButton:SetNormalTexture("Interface\\ICONS\\INV_Misc_Rune_01")
+		f.hearthButton:GetNormalTexture():SetTexCoord(unpack(E.TexCoords))
+		E:SetInside(f.hearthButton:GetNormalTexture())
+		f.hearthButton:SetPushedTexture("Interface\\ICONS\\INV_Misc_Rune_01")
+		f.hearthButton:GetPushedTexture():SetTexCoord(unpack(E.TexCoords))
+		E:SetInside(f.hearthButton:GetPushedTexture())
+		E:StyleButton(f.hearthButton, nil, true)
+		f.hearthButton.ttText = L["Hearthstone"]
+		f.hearthButton:SetScript("OnEnter", self.Tooltip_Show)
+		f.hearthButton:SetScript("OnLeave", self.Tooltip_Hide)
+		f.hearthButton:SetScript("OnClick", B.UseHearthstone)
+
+		--Its own cooldown child, and registered so it picks up the addon's cooldown text
+		--the same way every bag slot does.
+		f.hearthButton.cooldown = CreateFrame("Model", name.."HearthButtonCooldown", f.hearthButton, "CooldownFrameTemplate")
+		E:SetInside(f.hearthButton.cooldown)
+		E:RegisterCooldown(f.hearthButton.cooldown)
+
+		B:UpdateHearthstone(f)
+
 		--Search
 		f.editBox = CreateFrame("EditBox", name.."EditBox", f)
 		f.editBox:SetFrameLevel(f.editBox:GetFrameLevel() + 2)
 		E:CreateBackdrop(f.editBox, "Default")
 		E:Point(f.editBox.backdrop, "TOPLEFT", f.editBox, "TOPLEFT", -20, 2)
 		E:Height(f.editBox, 15)
+		--Fixed width, pinned to the LEFT of the frame, with no right anchor at all.
+		--
+		--It used to stretch from here to whatever button was leftmost on the row, and it
+		--sets its own frame level +2 -- so adding the hearthstone button to that row put a
+		--button underneath the edit box, which then swallowed every click on it. Ending the
+		--stretch is what fixes that properly: a box with no right anchor cannot grow into
+		--the button row however many buttons are added later.
+		--
+		--A stated width rather than a proportion, because "half" is meaningless here. The
+		--buttons already occupy the right of the frame, so anchoring the left edge to the
+		--midpoint left about 35 units, not half.
+		E:Width(f.editBox, 150)
 		E:Point(f.editBox, "BOTTOMLEFT", f.holderFrame, "TOPLEFT", (E.Border * 2) + 18, E.Border * 2 + 2)
-		E:Point(f.editBox, "RIGHT", f.vendorGraysButton, "LEFT", -5, 0)
 		f.editBox:SetAutoFocus(false)
 		f.editBox:SetScript("OnEscapePressed", self.ResetAndClear)
 		f.editBox:SetScript("OnEnterPressed", function() this:ClearFocus() end)
