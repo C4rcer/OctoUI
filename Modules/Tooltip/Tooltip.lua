@@ -326,7 +326,13 @@ end
 	undercut, not an average -- and it is before the auction house's cut. The 1.2x
 	threshold leaves room for that rather than pretending to model it.
 ]]
+--Parked 2026-08-06 with the rest of the auction house work. The switch at the top of
+--Modules/Misc/AuctionHouse.lua is the other half; both come back together, since this line
+--has nothing to read until a scan has run.
+local AUCTION_TOOLTIP_ENABLED = false
+
 function TT:SetAuctionPrice(tt, id, count, vendorPrice)
+	if not AUCTION_TOOLTIP_ENABLED then return end
 	if not E.db.tooltip.auctionPrice then return end
 	if not (id and E.global and E.global.auctionPrices) then return end
 

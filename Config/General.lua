@@ -306,6 +306,9 @@ E.Options.args.general = {
 					type = "toggle",
 					name = L["Auction Unit Prices"],
 					desc = L["AUCTION_UNIT_PRICE_DESC"],
+					--Parked with the feature itself, see Modules/Misc/AuctionHouse.lua. A
+					--toggle that changes nothing is worse than no toggle.
+					hidden = true,
 					--Cleared straight away when switched off, rather than at whatever point the
 					--list next happens to redraw. Guarded because AuctionHouse.lua is a new file.
 					set = function(info, value) E.db.general.auctionUnitPrice = value if E.Misc and E.Misc.UpdateAuctionBrowse then E.Misc.UpdateAuctionBrowse() end end

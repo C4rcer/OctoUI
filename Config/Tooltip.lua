@@ -84,7 +84,9 @@ E.Options.args.tooltip = {
 					order = 7.1,
 					type = "toggle",
 					name = L["Auction Price"],
-					desc = L["AUCTION_PRICE_DESC"]
+					desc = L["AUCTION_PRICE_DESC"],
+					--Parked with the feature itself, see Modules/Misc/AuctionHouse.lua
+					hidden = true
 				},
 				spellID = {
 					order = 8,

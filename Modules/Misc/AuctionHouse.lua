@@ -85,18 +85,99 @@ local hooksecurefunc = hooksecurefunc
 	    MoneyFrame (bid)     539 .. 610
 
 	So the name column ENDS at 210 and the level column STARTS at 205: they overlap, and
-	there is no slack after a long name at all. The 94px between the seller and the Buyout
-	label is the only span on the row that draws nothing, which makes it the one place a
-	new column can go without fighting an existing one. Right-aligned and with no width
-	set, so it grows leftwards into that gap and can never truncate a price.
+	there is no slack after a long name at all.
+
+	**BuyoutText's box is not the Buyout label.** The probe reports it as a Button 10 wide
+	at +517, and the word it draws is roughly four times that and spills LEFT of the box.
+	Anchoring at 510 -- "7px clear of the button" -- put the per-unit text straight through
+	the word. That is the same mistake twice in one feature: measuring the widget instead
+	of what the widget draws. So the right-hand bound is now taken from the label's own
+	FONT STRING at runtime, and only falls back to a constant when the frame has not been
+	laid out yet.
+
+	This still occupies leftover space rather than space that was made for it, which is
+	the real criticism and is answered separately: the browse row's own columns want
+	re-laying out to carry a proper per-unit column with a heading, rather than a fourth
+	thing wedged into the gaps between three others.
 
 	Vertically it anchors to the NAME region, not to the row button. The button measures
 	13 tall while Name is 32 and the icon overflows both, so the button's centre is not the
 	row's centre -- anchoring there would sit the text above the name rather than beside it.
 ]]
-local NAME_LEFT = 43    --where BrowseButton%dName begins, from the row's left
-local TEXT_RIGHT = 510  --where our column ends, 7px clear of the Buyout label at 517
+--[[
+	PARKED 2026-08-06, at the user's request, to be picked up later.
+
+	Everything in this file stays exactly as written. This one switch is what turns it back
+	on: with it false, M:LoadAuctionHouse returns immediately, so nothing hooks
+	AuctionFrameBrowse_Update, no event is registered, no Scan button is built and no font
+	string is created. The tooltip half is parked by the matching switch at
+	TT:SetAuctionPrice in Modules/Tooltip/Tooltip.lua, and both options are hidden from
+	the config tree rather than left as toggles that do nothing.
+
+	Why it was parked rather than finished: the per-unit text is wedged into whatever gaps
+	Blizzard's browse row leaves between its existing columns, and that is the wrong shape.
+	The row wants re-laying out to carry a real per-unit column with a heading. See open
+	item 19 in HANDOFF.md for the measured geometry and what that work involves.
+
+	`G["auctionPrices"]` in Settings/Global.lua is left in place. It is defaults-only until
+	a scan runs, so it costs nothing while this is off, and removing it would discard any
+	prices already collected.
+]]
+local ENABLED = false
+
+--Fallbacks only, for the window that has never been laid out. Everything real is measured.
+local NAME_LEFT_FALLBACK = 43
+local TEXT_RIGHT_FALLBACK = 470
+local TEXT_GAP = 8
 local TEXT_SIZE = 10
+
+--Measured once the auction house has drawn, then cached. GetLeft answers nil for a frame
+--that is hidden or not yet laid out, so this returns nil until it can be trusted rather
+--than defaulting the difference to zero.
+local geom = nil
+
+local function Geometry()
+	if geom then return geom end
+
+	local row = _G.BrowseButton1
+	local rowLeft = row and row.GetLeft and row:GetLeft()
+	if not rowLeft then return nil end
+
+	local name = _G.BrowseButton1Name
+	local nameLeft = name and name:GetLeft()
+	if not nameLeft then return nil end
+
+	--The leftmost edge of anything the Buyout label actually draws. GetFontString covers
+	--the ordinary case; the region walk covers a label whose text is not the button's own
+	--font string, which is exactly the shape that caused the overlap.
+	local label = _G.BrowseButton1BuyoutText
+	local edge = nil
+
+	if label then
+		if label.GetFontString then
+			local labelText = label:GetFontString()
+			if labelText and labelText.GetLeft then edge = labelText:GetLeft() end
+		end
+
+		if label.GetRegions then
+			local regions = {label:GetRegions()}
+			for r = 1, getn(regions) do
+				local region = regions[r]
+				if region and region.GetObjectType and region:GetObjectType() == "FontString" then
+					local left = region:GetLeft()
+					if left and (not edge or left < edge) then edge = left end
+				end
+			end
+		end
+
+		if not edge then edge = label:GetLeft() end
+	end
+
+	if not edge then return nil end
+
+	geom = {nameLeft = nameLeft - rowLeft, columnRight = (edge - rowLeft) - TEXT_GAP}
+	return geom
+end
 
 local GREEN, GREY, ORANGE = "|cff00ff00", "|cffa0a0a0", "|cffff8000"
 local MARKER = "|cffffff00>>|r "
@@ -131,19 +212,31 @@ local function RowFontString(i)
 	E:FontTemplate(fs, nil, TEXT_SIZE, "OUTLINE")
 	fs:SetJustifyH("RIGHT")
 
-	--Fixed, so it is set once here rather than recomputed on every list update the way the
-	--after-the-name version had to be.
+	unitText[i] = fs
+	return fs
+end
+
+--Re-applied rather than set once at creation, because the measurement is not available
+--until the auction house has been laid out and the font strings can be created before
+--that. Once Geometry answers, the anchor stops changing and this is one comparison.
+local function AnchorRowText(fs, i)
+	local measured = Geometry()
+	local right = measured and measured.columnRight or TEXT_RIGHT_FALLBACK
+	local nameLeft = measured and measured.nameLeft or NAME_LEFT_FALLBACK
+
+	if fs.anchoredAt == right then return end
+	fs.anchoredAt = right
+
+	fs:ClearAllPoints()
+
 	local name = _G["BrowseButton"..i.."Name"]
 	if name then
-		fs:SetPoint("RIGHT", name, "LEFT", TEXT_RIGHT - NAME_LEFT, 0)
+		fs:SetPoint("RIGHT", name, "LEFT", right - nameLeft, 0)
 	else
 		--No name region to take the vertical from. Wrong height, right column, and visible
 		--either way -- which makes a broken assumption reportable rather than silent.
-		fs:SetPoint("RIGHT", button, "LEFT", TEXT_RIGHT, 0)
+		fs:SetPoint("RIGHT", _G["BrowseButton"..i], "LEFT", right, 0)
 	end
-
-	unitText[i] = fs
-	return fs
 end
 
 --Which auction a row is showing, and whether that answer can be trusted.
@@ -497,13 +590,27 @@ local function ScrollBrowseTo(index)
 
 	--Driving the scroll bar rather than the faux scroll frame directly: its OnValueChanged
 	--is what sets the offset AND moves the visible thumb, so the list and the bar cannot
-	--end up disagreeing. FauxScrollFrame_SetOffset is the fallback because it has never
+	--end up disagreeing. FauxScrollFrame_SetOffset is the fallback, because it has never
 	--been confirmed on this client.
+	--
+	--The step comes from the bar's OWN range, not from a row's height. That was the first
+	--version and it was wrong: /oprobe kids BrowseButton1 reports the button at 13 tall
+	--against a row pitch of roughly 36, with a 32px icon child overflowing it, so the
+	--button is not the row and its height is not the pitch. Deriving the step removes the
+	--question rather than answering it.
+	local scrolled = false
 	local bar = _G.BrowseScrollFrameScrollBar
-	local rowHeight = _G.BrowseButton1 and _G.BrowseButton1:GetHeight() or 0
-	if bar and rowHeight > 0 then
-		bar:SetValue(offset * rowHeight)
-	elseif type(_G.FauxScrollFrame_SetOffset) == "function" and _G.BrowseScrollFrame then
+	local scrollable = batch - rows
+
+	if bar and scrollable > 0 then
+		local _, maxValue = bar:GetMinMaxValues()
+		if maxValue and maxValue > 0 then
+			bar:SetValue(offset * (maxValue / scrollable))
+			scrolled = true
+		end
+	end
+
+	if not scrolled and offset > 0 and type(_G.FauxScrollFrame_SetOffset) == "function" and _G.BrowseScrollFrame then
 		FauxScrollFrame_SetOffset(_G.BrowseScrollFrame, offset)
 	end
 
@@ -981,6 +1088,8 @@ local function Install()
 end
 
 function M:LoadAuctionHouse()
+	--Parked. See the block at the top of this file; flip ENABLED to bring it all back.
+	if not ENABLED then return end
 	if eventFrame then return end
 
 	eventFrame = CreateFrame("Frame", "ElvUI_AuctionBrowse", UIParent)
