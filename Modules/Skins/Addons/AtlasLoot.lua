@@ -7,6 +7,7 @@ local _G = _G
 local unpack = unpack
 local getn = table.getn
 local pcall = pcall
+local find = string.find
 --WoW API / Variables
 local HookScript = HookScript
 
@@ -149,6 +150,44 @@ local function SkinItemRows()
 	end
 end
 
+--[[
+	AtlasLoot's own banner inside the Atlas window -- "AtlasLoot TW Edition v1.0.2" and
+	"ALT+Click to use WishList." -- removed on request. It is duplicated information
+	sitting in a corner that is already fighting over space.
+
+	AtlasLootInfo itself is NOT hidden, deliberately: the Toggle AL Panel BUTTON is a
+	child of that same frame (AtlasLoot Core/AtlasLoot.xml:854-875), so hiding the
+	parent would take a working control away with the text.
+
+	Matched on content rather than by name because the version FontString is declared
+	anonymously in the XML (Core/AtlasLoot.xml:511, no name attribute), so there is no
+	global to reach it by. Walking the regions is the only way to it -- the same reason
+	the Atlas fork needed a GetChildren walk for its unnamed buttons.
+]]
+local BANNER_PATTERNS = {"AtlasLoot TW Edition", "WishList%."}
+
+local function HideAtlasLootBanner()
+	local info = _G["AtlasLootInfo"]
+	if not info or not info.GetNumRegions then return end
+
+	local regions = {info:GetRegions()}
+	for i = 1, getn(regions) do
+		local region = regions[i]
+		if region and region.GetObjectType and region:GetObjectType() == "FontString" then
+			local text = region:GetText()
+			if text then
+				for p = 1, getn(BANNER_PATTERNS) do
+					if find(text, BANNER_PATTERNS[p]) then
+						region:SetText("")
+						region:Hide()
+						break
+					end
+				end
+			end
+		end
+	end
+end
+
 local function LoadSkin()
 	Apply(windows, function(frame)
 		if frame:GetObjectType() ~= "Frame" or frame.template then return end
@@ -167,6 +206,7 @@ local function LoadSkin()
 
 	SkinItemRows()
 
+
 	--Rows are created as loot tables are browsed, not up front, so a single pass at
 	--load catches only what already exists.
 	--HasScript is not a frame method on this client -- MinimapButtons.lua carries its own
@@ -175,6 +215,13 @@ local function LoadSkin()
 	local items = _G["AtlasLootItemsFrame"]
 	if items then
 		HookScript(items, "OnShow", SkinItemRows)
+	end
+
+	HideAtlasLootBanner()
+	--AtlasLoot rewrites Text2 from its own OnShow, so once at load is not enough.
+	local info = _G["AtlasLootInfo"]
+	if info then
+		HookScript(info, "OnShow", HideAtlasLootBanner)
 	end
 
 	if failures then
