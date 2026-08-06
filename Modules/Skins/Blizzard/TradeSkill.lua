@@ -61,6 +61,39 @@ local function LoadSkin()
 	TradeSkillListScrollFrame:ClearAllPoints()
 	TradeSkillListScrollFrame:SetPoint("TOPLEFT", 17, -95)
 
+	--Turtle adds a search box that stock 1.12 never had, so ElvUI's layout has no line
+	--placing it and it keeps whatever anchor the client gave it -- which lands on top of
+	--the recipe list once this skin has moved the list underneath it. First Aid looked
+	--fine only because its list is short and the box sat in the empty space below the
+	--last row; Tailoring fills the list and the overlap shows.
+	--
+	--Put on the header row beside the expand-all control rather than under the list. Under
+	--the list it sits in space the list itself uses, so it reads fine on a short recipe
+	--list and covers rows on a long one -- which is exactly how it first showed up, fine
+	--in First Aid and on top of the recipes in Tailoring.
+	--
+	--All three anchors are relative to existing widgets, none are pixel offsets from the
+	--frame edge: the client sizes this window itself after this skin runs, so the numbers
+	--above do not survive it. The vertical position comes from the LEFT anchor.
+	--Name confirmed by GetMouseFocus on its clear button, TradeSkillSearchBoxClearButton.
+	--On the rank bar's own row, immediately left of it. The bar shifts right by half the
+	--space that takes, so its centring still works out, and both windows have the room on
+	--the right for it. Height comes from the bar rather than a number, so the two line up
+	--whatever the client sizes the bar to.
+	local SEARCH_WIDTH, SEARCH_GAP = 150, 8
+	local searchBox = _G["TradeSkillSearchBox"]
+	if searchBox then
+		TradeSkillRankFrame:ClearAllPoints()
+		TradeSkillRankFrame:SetPoint("TOP", ((SEARCH_WIDTH + SEARCH_GAP) / 2) - 10, -38)
+
+		searchBox:ClearAllPoints()
+		searchBox:SetWidth(SEARCH_WIDTH)
+		searchBox:SetPoint("TOPRIGHT", TradeSkillRankFrame, "TOPLEFT", -SEARCH_GAP, 0)
+		searchBox:SetPoint("BOTTOMRIGHT", TradeSkillRankFrame, "BOTTOMLEFT", -SEARCH_GAP, 0)
+
+		if S.HandleEditBox then S:HandleEditBox(searchBox) end
+	end
+
 	E:StripTextures(TradeSkillDetailScrollFrame)
 	E:Size(TradeSkillDetailScrollFrame, 300, 381)
 	TradeSkillDetailScrollFrame:ClearAllPoints()
@@ -139,8 +172,24 @@ local function LoadSkin()
 		end
 	end)
 
+	--Only create what the client has not already made.
+	--
+	--Stock 1.12 stops at 8, and this loop existed to extend the list to 25. Turtle's
+	--expanded list already defines buttons past 8 -- and CreateFrame with a name that is
+	--already taken does NOT fail. It builds a second frame and rebinds the global, which
+	--orphans the client's original: still shown, still wearing the template's default
+	--minus texture, and unreachable by name, so nothing ever hides it and no code that
+	--looks it up by name can see it. That was a column of stray red glyphs down the left
+	--of the recipe list on every profession with more than a handful of recipes, and it
+	--is invisible to a name-based walk, which is what made it hard to find.
+	local previous = TradeSkillSkill8
 	for i = 9, 25 do
-		CreateFrame("Button", "TradeSkillSkill"..i, TradeSkillFrame, "TradeSkillSkillButtonTemplate"):SetPoint("TOPLEFT", _G["TradeSkillSkill"..i - 1], "BOTTOMLEFT")
+		local button = _G["TradeSkillSkill"..i]
+		if not button then
+			button = CreateFrame("Button", "TradeSkillSkill"..i, TradeSkillFrame, "TradeSkillSkillButtonTemplate")
+			button:SetPoint("TOPLEFT", previous, "BOTTOMLEFT")
+		end
+		previous = button
 	end
 
 	for i = 1, TRADE_SKILLS_DISPLAYED do

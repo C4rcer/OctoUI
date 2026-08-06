@@ -93,6 +93,26 @@ local function LoadSkin()
 
 	E:StripTextures(CraftExpandButtonFrame)
 
+	--Same treatment as the TradeSkill window -- see the note there for why the header row
+	--and not under the list. The name is NOT confirmed here the way TradeSkillSearchBox
+	--was: that one was read off GetMouseFocus in game, this is the symmetric guess plus
+	--the two names Atlas-OctoUI probes for in ProfessionHooks.lua:1308. If Enchanting
+	--still shows a floating search box, none of these matched and the real name wants
+	--reading with GetMouseFocus on its clear button.
+	local SEARCH_WIDTH, SEARCH_GAP = 150, 8
+	local craftSearchBox = _G["CraftSearchBox"] or _G["CraftFrameSearchBox"] or _G["CraftFrameEditBox"]
+	if craftSearchBox then
+		CraftRankFrame:ClearAllPoints()
+		CraftRankFrame:SetPoint("TOP", ((SEARCH_WIDTH + SEARCH_GAP) / 2) - 10, -38)
+
+		craftSearchBox:ClearAllPoints()
+		craftSearchBox:SetWidth(SEARCH_WIDTH)
+		craftSearchBox:SetPoint("TOPRIGHT", CraftRankFrame, "TOPLEFT", -SEARCH_GAP, 0)
+		craftSearchBox:SetPoint("BOTTOMRIGHT", CraftRankFrame, "BOTTOMLEFT", -SEARCH_GAP, 0)
+
+		if S.HandleEditBox then S:HandleEditBox(craftSearchBox) end
+	end
+
 	CraftCollapseAllButton:SetPoint("LEFT", CraftExpandTabLeft, "RIGHT", -8, 5)
 	CraftCollapseAllButton:SetNormalTexture("Interface\\AddOns\\OctoUI\\media\\textures\\PlusMinusButton")
 	CraftCollapseAllButton.SetNormalTexture = E.noop
@@ -117,8 +137,18 @@ local function LoadSkin()
 		end
 	end)
 
+	--Only create what the client has not already made -- see the long note on the same
+	--loop in Modules/Skins/Blizzard/TradeSkill.lua. CreateFrame with a name that is
+	--already taken silently makes a second frame and rebinds the global, orphaning the
+	--client's original as a permanently-shown button nothing can reach by name.
+	local previous = Craft8
 	for i = 9, 25 do
-		CreateFrame("Button", "Craft"..i, CraftFrame, "CraftButtonTemplate"):SetPoint("TOPLEFT", _G["Craft"..i - 1], "BOTTOMLEFT")
+		local button = _G["Craft"..i]
+		if not button then
+			button = CreateFrame("Button", "Craft"..i, CraftFrame, "CraftButtonTemplate")
+			button:SetPoint("TOPLEFT", previous, "BOTTOMLEFT")
+		end
+		previous = button
 	end
 
 	for i = 1, CRAFTS_DISPLAYED do
