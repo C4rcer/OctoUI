@@ -1384,3 +1384,11 @@ L["Disabling OctoUI removes this options window along with the rest of the UI. Y
 L["No changes waiting. What is ticked here is what is running."] = true
 L["%d change(s) waiting for a reload."] = true
 L["Apply every change on this page now."] = true
+
+--Modules/Misc/AuctionHouse.lua
+L["Auction Unit Prices"] = true;
+L["AUCTION_UNIT_PRICE_DESC"] = "On the auction house browse list, show each row's bid and buyout per unit as 'bid / buyout ea', draw the cheaper of each in green, and say so when an auction has no buyout. Compares within the page on screen only."
+
+--Modules/Tooltip/Tooltip.lua
+L["Auction Price"] = true;
+L["AUCTION_PRICE_DESC"] = "Show what the auction house is charging for an item next to what the vendor pays, so 'list it or vendor it' can be answered without walking to the auctioneer. Only covers items an auction house scan has actually seen, and the figure is the cheapest per unit before the auction house's cut."

@@ -80,6 +80,12 @@ E.Options.args.tooltip = {
 						E:GetModule("Tooltip_ItemPrice"):UpdateSettings()
 					end
 				},
+				auctionPrice = {
+					order = 7.1,
+					type = "toggle",
+					name = L["Auction Price"],
+					desc = L["AUCTION_PRICE_DESC"]
+				},
 				spellID = {
 					order = 8,
 					type = "toggle",

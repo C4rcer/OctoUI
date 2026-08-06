@@ -9,6 +9,7 @@ local unpack = unpack
 local getn, twipe, tinsert, tconcat = table.getn, table.wipe, table.insert, table.concat
 local floor = math.floor
 local find, format, match = string.find, string.format, string.match
+local time = time
 --WoW API / Variables
 local GetActionCount = GetActionCount
 local GetAuctionItemInfo = GetAuctionItemInfo
@@ -25,6 +26,7 @@ local GetInboxItem = GetInboxItem
 local GetInventoryItemCount = GetInventoryItemCount
 local GetInventoryItemLink = GetInventoryItemLink
 local GetItemCount = GetItemCount
+local GetItemInfo = GetItemInfo
 local GetItemInfoByName = GetItemInfoByName
 local GetLootRollItemInfo = GetLootRollItemInfo
 local GetLootRollItemLink = GetLootRollItemLink
@@ -283,13 +285,89 @@ function TT:SetItemRef(link)
 end
 
 function TT:SetPrice(tt, id, count)
-	if MerchantFrame:IsShown() then return end
 	if not count then return end
 
 	local price = LIP:GetSellValue(id)
 
-	if price and price > 0 then
+	--The merchant window already prints what it will pay, so the sale price line stays
+	--suppressed there. The auction comparison below is not: standing at a vendor with a
+	--full bag is exactly when "list it or vendor it" gets asked.
+	if price and price > 0 and not MerchantFrame:IsShown() then
 		tt:AddDoubleLine(SALE_PRICE_COLON, E:FormatMoney(count and price * count or price, "BLIZZARD", false), nil, nil, nil, 1, 1, 1)
+	end
+
+	self:SetAuctionPrice(tt, id, count, price)
+end
+
+local function AgeText(when)
+	if not when then return "" end
+
+	local seconds = time() - when
+	if seconds < 0 then seconds = 0 end
+
+	if seconds < 3600 then return format(L["%dm ago"], floor(seconds / 60)) end
+	if seconds < 86400 then return format(L["%dh ago"], floor(seconds / 3600)) end
+	return format(L["%dd ago"], floor(seconds / 86400))
+end
+
+--[[
+	What the auction house is paying for this, next to what the vendor is paying.
+
+	The question this answers is the one asked at a vendor with a full bag: is this worth
+	the walk to the auctioneer, or is it three copper and a wasted trip. Both halves have
+	to be on the same tooltip for that to be answerable at a glance.
+
+	It only knows items a scan has actually seen -- Modules/Misc/AuctionHouse.lua writes
+	E.global.auctionPrices -- so this line is absent far more often than it is present.
+	That is deliberate: an invented market price is worse than no market price. Scanning
+	an item at the auction house is what makes it appear here.
+
+	The figure is the CHEAPEST per unit seen, which is what a seller would have to
+	undercut, not an average -- and it is before the auction house's cut. The 1.2x
+	threshold leaves room for that rather than pretending to model it.
+]]
+function TT:SetAuctionPrice(tt, id, count, vendorPrice)
+	if not E.db.tooltip.auctionPrice then return end
+	if not (id and E.global and E.global.auctionPrices) then return end
+
+	local name = GetItemInfo(id)
+	if not name then return end
+
+	local record = E.global.auctionPrices[name]
+	if not record then return end
+
+	--Prefer the buyout: it is what the item can be turned into gold for now. Fall back to
+	--the bid only where nothing in that scan carried a buyout at all.
+	local unit, label = record.unitBuyout, L["Auction (cheapest buyout)"]
+	if not unit or unit <= 0 then
+		unit, label = record.unitBid, L["Auction (cheapest bid)"]
+	end
+	if not unit or unit <= 0 then return end
+
+	if count and count > 1 then
+		tt:AddDoubleLine(label, format(L["AUCTION_TOOLTIP_STACK"],
+			E:FormatMoney(unit, "SMART"), E:FormatMoney(unit * count, "SMART"), count),
+			nil, nil, nil, 1, 0.82, 0)
+	else
+		tt:AddDoubleLine(label, format(L["AUCTION_TOOLTIP_EACH"], E:FormatMoney(unit, "SMART")),
+			nil, nil, nil, 1, 0.82, 0)
+	end
+
+	if vendorPrice and vendorPrice > 0 then
+		local ratio = unit / vendorPrice
+		local verdict, r, g, b
+
+		if ratio >= 1.2 then
+			verdict, r, g, b = format(L["AUCTION_TOOLTIP_LIST_IT"], ratio), 0.2, 1, 0.2
+		elseif ratio > 1 then
+			verdict, r, g, b = format(L["AUCTION_TOOLTIP_MARGINAL"], ratio), 1, 0.82, 0
+		else
+			verdict, r, g, b = L["AUCTION_TOOLTIP_VENDOR_IT"], 1, 0.5, 0.1
+		end
+
+		tt:AddDoubleLine(AgeText(record.when), verdict, 0.6, 0.6, 0.6, r, g, b)
+	else
+		tt:AddDoubleLine(AgeText(record.when), "", 0.6, 0.6, 0.6)
 	end
 end
 

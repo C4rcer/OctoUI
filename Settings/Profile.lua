@@ -50,6 +50,9 @@ P["general"] = {
 	["reagentCounter"] = false,
 	["bagItemClick"] = true,
 
+	--Auction house browse list, open item 19
+	["auctionUnitPrice"] = true,
+
 	["fontSize"] = 12,
 	["font"] = "PT Sans Narrow",
 	["fontStyle"] = "NONE",
@@ -738,6 +741,8 @@ P["tooltip"] = {
 	["guildRanks"] = true,
 	["inspectInfo"] = true,
 	["itemPrice"] = true,
+	--Needs an auction house scan to have seen the item; see Modules/Misc/AuctionHouse.lua
+	["auctionPrice"] = true,
 	["itemCount"] = "BAGS_ONLY",
 	["spellID"] = true,
 	["itemLevel"] = true,

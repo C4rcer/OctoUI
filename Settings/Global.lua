@@ -22,6 +22,12 @@ G["blacklist"] = {
 	["players"] = {}
 }
 
+--Cheapest price per unit seen by an auction house scan, keyed by item name. Per account
+--for the same reason: the market is the same whoever is standing at the auctioneer.
+--One record per item, not a history -- a full price history with averages over time is
+--what Auctioneer is, and open item 19 says to treat that as its own decision.
+G["auctionPrices"] = {}
+
 G["classtimer"] = {}
 
 G["nameplates"] = {}

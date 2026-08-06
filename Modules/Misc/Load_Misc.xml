@@ -17,4 +17,5 @@
 	<Script file="ReagentCounter.lua"/>
 	<Script file="BagItemClick.lua"/>
 	<Script file="Blacklist.lua"/>
+	<Script file="AuctionHouse.lua"/>
 </Ui>

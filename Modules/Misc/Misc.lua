@@ -183,6 +183,7 @@ function M:Initialize()
 	--which reads as "half of Misc stopped working" and names no culprit. Any call from an
 	--existing file into a newly added one needs this until the next full restart.
 	if self.LoadBlacklist then self:LoadBlacklist() end
+	if self.LoadAuctionHouse then self:LoadAuctionHouse() end
 	self:LoadLoot()
 	self:LoadLootRoll()
 	self:LoadChatBubbles()

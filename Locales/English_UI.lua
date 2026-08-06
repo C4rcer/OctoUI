@@ -495,3 +495,52 @@ L["Removes them from the game's ignore list. The note is kept in case they end u
 --Modules/Bags/Bags.lua
 L["Hearthstone"] = true;
 L["No hearthstone found in your bags."] = true;
+
+--Modules/Misc/AuctionHouse.lua
+--Per-unit line under a browse row: %s is the bid per unit, %s the buyout per unit.
+L["AUCTION_UNIT_PRICE"] = "%s / %s ea"
+--Same row where the auction has no buyout at all. %s is the bid per unit, %s the marker.
+L["AUCTION_UNIT_PRICE_NO_BUYOUT"] = "%s ea, %s"
+L["no buyout"] = true;
+L["Auction house: AuctionFrameBrowse_Update is missing, using the event fallback for per-unit prices."] = true;
+L["Auction house: a browse row's item name matched neither auction index, so per-unit prices may be against the wrong row. Please report this."] = true;
+
+--Modules/Misc/AuctionHouse.lua -- the scan and its results window
+L["Scan"] = true;
+L["Cancel"] = true;
+L["Scanning %d/%d"] = true;
+L["Item"] = true;
+L["Qty"] = true;
+L["Seller"] = true;
+L["Bid ea"] = true;
+L["Buyout ea"] = true;
+L["Buyout"] = true;
+L["Total buyout"] = true;
+L["Page %d / %d"] = true;
+L["Not one of these auctions has a buyout."] = true;
+L["AUCTION_SCAN_TITLE"] = "Auction scan: %s -- %d auction(s)"
+L["AUCTION_SCAN_CHEAPEST"] = "Cheapest per unit: %s each, as a stack of %d for %s from %s."
+L["AUCTION_SCAN_DONE"] = "Scanned %s: %d auction(s) over %d page(s)."
+L["AUCTION_SCAN_TIMEOUT"] = "Auction scan timed out waiting for a page; stopped with %d auction(s)."
+L["AUCTION_SCAN_CANCELLED"] = "Auction scan stopped with %d auction(s) collected."
+L["AUCTION_SCAN_NEEDS_NAME"] = "Type an item name in the search box first -- a scan walks every page of one search, not the whole auction house."
+
+--Modules/Misc/AuctionHouse.lua -- the filter, and taking the browse list to a result
+L["Buyout only"] = true;
+L["Click a row to take the browse list to it."] = true;
+L["AUCTION_JUMP_FOUND"] = "Auction house taken to page %d, row %d from the top -- marked with >> in the list."
+L["AUCTION_JUMP_GONE"] = "That auction is no longer on the page it was scanned from -- it has most likely sold. Scan again for current prices."
+L["AUCTION_JUMP_NEEDS_AH"] = "Open the auction house first."
+L["AUCTION_JUMP_TIMEOUT"] = "Timed out asking the auction house for that page."
+
+--Modules/Tooltip/Tooltip.lua -- auction value against vendor value
+L["Auction (cheapest buyout)"] = true;
+L["Auction (cheapest bid)"] = true;
+L["%dm ago"] = true;
+L["%dh ago"] = true;
+L["%dd ago"] = true;
+L["AUCTION_TOOLTIP_EACH"] = "%s each"
+L["AUCTION_TOOLTIP_STACK"] = "%s each, %s for %d"
+L["AUCTION_TOOLTIP_LIST_IT"] = "%.1fx vendor -- worth listing"
+L["AUCTION_TOOLTIP_MARGINAL"] = "%.1fx vendor -- marginal"
+L["AUCTION_TOOLTIP_VENDOR_IT"] = "the vendor pays more -- do not list"

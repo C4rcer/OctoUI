@@ -301,6 +301,15 @@ E.Options.args.general = {
 					name = L["Bag Item Click"],
 					desc = L["Right click bag items to send them to the trade window or search or sell them at the auction house. Hold Shift for the default action."]
 				},
+				auctionUnitPrice = {
+					order = 12.66,
+					type = "toggle",
+					name = L["Auction Unit Prices"],
+					desc = L["AUCTION_UNIT_PRICE_DESC"],
+					--Cleared straight away when switched off, rather than at whatever point the
+					--list next happens to redraw. Guarded because AuctionHouse.lua is a new file.
+					set = function(info, value) E.db.general.auctionUnitPrice = value if E.Misc and E.Misc.UpdateAuctionBrowse then E.Misc.UpdateAuctionBrowse() end end
+				},
 				bottomPanel = {
 					order = 13,
 					type = "toggle",
