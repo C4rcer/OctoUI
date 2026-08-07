@@ -408,10 +408,11 @@ function E:ThreatModelReport(msg)
 end
 
 --Delegates: the interesting state is all locals of Modules/Bags/Sort.lua.
-function E:BagSortReport()
+--`msg` is forwarded so `/octoui-bags moves` can ask for the per-move verdicts.
+function E:BagSortReport(msg)
 	local B = E:GetModule("Bags", true)
 	if B and B.SortReport then
-		B:SortReport()
+		B:SortReport(msg)
 	else
 		E:Print("|cffff0000Bags module is not loaded.|r")
 	end

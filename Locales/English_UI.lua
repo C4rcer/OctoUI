@@ -563,3 +563,8 @@ L["MAIL_REPORT_ATTACHMENTS"] = "%d attachment(s) (hasItem=%s)"
 L["MAIL_REPORT_TAKE"] = "would take"
 L["MAIL_REPORT_SKIP_COD"] = "SKIPPED, cash on delivery %s"
 L["MAIL_REPORT_NOTHING"] = "nothing to take"
+
+--Modules/Bags/Sort.lua
+L["Sort stopped: a move could not be completed."] = true;
+L["Sort stopped by a Lua error: %s"] = true;
+L["Sort finished, but %d move(s) could not be completed. Run /octoui-bags to see which."] = true;
