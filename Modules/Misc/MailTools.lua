@@ -14,6 +14,7 @@ local GetContainerNumSlots = GetContainerNumSlots
 local GetInboxHeaderInfo = GetInboxHeaderInfo
 local GetInboxItem = GetInboxItem
 local GetInboxNumItems = GetInboxNumItems
+local GetMoney = GetMoney
 local GetTime = GetTime
 local TakeInboxItem = TakeInboxItem
 local TakeInboxMoney = TakeInboxMoney
@@ -90,6 +91,30 @@ local function FreeBagSlots()
 	return free
 end
 
+--What is still sitting in the inbox, right now.
+--
+--The summary used to count what was REQUESTED: money was added to the total on the line
+--before TakeInboxMoney and the item count incremented straight after TakeInboxItem. Both
+--are requests, not receipts. Close the mailbox mid-run -- which is a supported thing to do
+--and stops the run cleanly -- and the last request is counted but never lands. Reported on
+--2026-08-07: the summary claimed 1g 7s 80c, exactly two Felcloth sales, while one of them
+--was still in the box.
+--
+--Counting the difference between the start and the end sidesteps all of it. Money comes
+--from GetMoney, which is the player's actual purse and cannot be wrong; attachments are
+--recounted across the whole inbox, which is immune to the index shifting as letters are
+--consumed and removed.
+local function CountAttachments()
+	local total = 0
+	for i = 1, (GetInboxNumItems() or 0) do
+		for slot = 1, AttachmentSlots() do
+			if GetInboxItem(i, slot) then total = total + 1 end
+		end
+	end
+
+	return total
+end
+
 local takeAll = {}
 local takeButton, eventFrame
 
@@ -98,8 +123,16 @@ local function Summary()
 	--those as two letters would be a lie. Said as one line, because the interesting part is
 	--rarely the count -- "and 2 cash-on-delivery letters left alone" is the bit worth
 	--reading, and it is the bit a silent take-all would never tell anyone.
-	local text = format(L["MAIL_TAKEALL_DONE"], takeAll.items or 0,
-		E:FormatMoney(takeAll.money or 0, "SMART"))
+	--Both are measured, never accumulated from requests. Clamped at zero because mail
+	--arriving mid-run can legitimately push the attachment count back up, and "took -1
+	--attachments" helps nobody.
+	local gained = GetMoney() - (takeAll.startMoney or GetMoney())
+	if gained < 0 then gained = 0 end
+
+	local taken = (takeAll.startAttachments or 0) - CountAttachments()
+	if taken < 0 then taken = 0 end
+
+	local text = format(L["MAIL_TAKEALL_DONE"], taken, E:FormatMoney(gained, "SMART"))
 
 	if (takeAll.skippedCod or 0) > 0 then
 		text = text.." "..format(L["MAIL_TAKEALL_COD"], takeAll.skippedCod)
@@ -187,8 +220,6 @@ local function TakeAll_OnUpdate()
 	end
 
 	if kind == "money" then
-		local _, _, _, _, money = GetInboxHeaderInfo(index)
-		takeAll.money = (takeAll.money or 0) + (money or 0)
 		TakeInboxMoney(index)
 	else
 		--Checked before every attachment rather than once at the start, because the run
@@ -200,7 +231,6 @@ local function TakeAll_OnUpdate()
 			return
 		end
 		TakeInboxItem(index, slot)
-		takeAll.items = (takeAll.items or 0) + 1
 	end
 
 	takeAll.waiting = true
@@ -220,9 +250,9 @@ local function StartTakeAll()
 	takeAll.nextAt = 0
 	takeAll.lastKey = nil
 	takeAll.stalled = 0
-	takeAll.items = 0
-	takeAll.money = 0
 	takeAll.skippedCod = 0
+	takeAll.startMoney = GetMoney()
+	takeAll.startAttachments = CountAttachments()
 
 	if takeButton then takeButton:SetText(L["Stop"]) end
 	if CheckInbox then CheckInbox() end
