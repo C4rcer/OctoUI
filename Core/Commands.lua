@@ -368,34 +368,6 @@ function E:ThreatModelReport(msg)
 		return
 	end
 
-	if msg and lower(msg) == "calibrate" then
-		local on = M:ToggleThreatCalibration()
-		E:Print(format("Threat calibration %s.", on
-			and "|cff00ff00on|r - fight normally; every time aggro changes hands between you and your pet it will report what that implies for the pet's flat threat per cast"
-			or "|cffff9900off|r"))
-		return
-	end
-
-	if msg and lower(msg) == "samples" then
-		local samples = M:ThreatCalibrationSamples()
-		if getn(samples) == 0 then
-			E:Print("no calibration samples yet - run |cffffcc00/octoui-threatmodel calibrate|r and fight something your pet can hold.")
-			return
-		end
-
-		--Printed rather than averaged. The melee and ranged columns cannot both be right,
-		--and which one applies depends on where you were standing at that instant; the
-		--true value is whichever column agrees with itself across fights, and that is
-		--something to look at rather than something to compute a mean of.
-		E:Print(format("%d calibration sample(s) -- flat threat per cast:", getn(samples)))
-		for i = 1, getn(samples) do
-			local s = samples[i]
-			E:Print(format("  %d. %s after %d cast(s):  melee %.0f  |cff999999|r  ranged %.0f",
-				i, s.direction, s.casts, s.melee, s.ranged))
-		end
-		return
-	end
-
 	local rows, top = M:ThreatOn()
 	if getn(rows) == 0 then
 		E:Print("no threat recorded on the current target yet")

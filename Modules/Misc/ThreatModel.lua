@@ -9,7 +9,6 @@ local tinsert, getn = table.insert, table.getn
 --WoW API / Variables
 local GetTime = GetTime
 local UnitName, UnitClass, UnitExists = UnitName, UnitClass, UnitExists
-local UnitIsUnit, UnitIsDeadOrGhost = UnitIsUnit, UnitIsDeadOrGhost
 local GetNumRaidMembers, GetNumPartyMembers = GetNumRaidMembers, GetNumPartyMembers
 local CreateFrame = CreateFrame
 local GetShapeshiftForm = GetShapeshiftForm
@@ -199,7 +198,7 @@ end
 --Records what went in, separately from what came out.
 local function NoteRaw(actorGuid, field, amount)
 	if not raw[actorGuid] then
-		raw[actorGuid] = {damage = 0, healing = 0, flat = 0, flatCasts = 0}
+		raw[actorGuid] = {damage = 0, healing = 0, flat = 0}
 	end
 
 	raw[actorGuid][field] = raw[actorGuid][field] + amount
@@ -286,9 +285,6 @@ local function Record(targetGuid, actorGuid, spellId, amount, isHeal)
 	if rule and rule.flat then
 		Add(targetGuid, actorGuid, rule.flat * modifier, rule.ok)
 		NoteRaw(actorGuid, "flat", rule.flat * modifier)
-		--counted, because calibration divides the implied flat total by the number of
-		--casts and cannot recover that from the total alone
-		NoteRaw(actorGuid, "flatCasts", 1)
 	end
 end
 
@@ -349,108 +345,6 @@ local function OnEvent()
 	elseif event == "AUTO_ATTACK_SELF" or event == "AUTO_ATTACK_OTHER" then
 		Record(arg2, arg1, nil, arg3)
 	end
-end
-
---[[ calibration ]]--
---
---The one measurement available without server threat, taken automatically.
---
---Nothing on this client reports threat, so the only ruler is the moment aggro changes
---hands: the game moves a mob to whoever exceeds the current holder by a known margin --
---110% if they are in melee, 130% at range. One side of that comparison is now known
---exactly, because the player's own conversion has been measured at ratio 1.00. So a
---single flip solves for the other side, and the guessed flat value falls out of it.
---
---Both directions are useful and they are not the same sum:
---  pet loses aggro to the player -- petTrue = playerThreat / threshold
---  player loses aggro to the pet -- petTrue = playerThreat * threshold
---Either way it is the *pet's* true threat that emerges, because the player's is the
---figure being trusted.
---
---Watched rather than caught by hand. Doing this manually means slamming a slash command
---and hoping to hit the instant of the flip, which yields one noisy sample if it works at
---all; watching for it collects a clean one every time a fight happens to produce one.
-local calibrating, calibrationSamples = nil, {}
-local lastHolder, calibrateElapsed = nil, 0
-
---Who the current target is actually attacking. Only the two answers that matter.
---
---Off unless asked for, and worth knowing why: this polls unit tokens five times a second
---including through a target's death, and unit lookups racing an object teardown are the
---current suspect for the client freezing. It is a diagnostic tool rather than something
---to leave running, so it stays opt-in even once that is settled.
-local function AggroHolder()
-	if not UnitExists("target") or UnitIsDeadOrGhost("target") then return end
-	if not UnitExists("targettarget") then return end
-	if UnitIsUnit("targettarget", "player") then return "player" end
-	if UnitIsUnit("targettarget", "pet") then return "pet" end
-end
-
---Melee and ranged use different thresholds and the client will not say which applies, so
---both are recorded. Once samples accumulate, the true value is the column that agrees
---with itself across fights -- which is a better answer than picking one up front.
-local MELEE_THRESHOLD, RANGED_THRESHOLD = 1.1, 1.3
-
-local function Calibrate(previous, holder)
-	--only a swap between the player and the pet tells us anything
-	if not (previous and holder) or previous == holder then return end
-
-	local targetGuid = GuidOf("target")
-	local store = targetGuid and threat[targetGuid]
-	if not store then return end
-
-	local playerGuid, petGuid = GuidOf("player"), GuidOf("pet")
-	if not (playerGuid and petGuid) then return end
-
-	local playerThreat = store[playerGuid]
-	local petRaw = raw[petGuid]
-	if not (playerThreat and playerThreat > 0 and petRaw and petRaw.flatCasts > 0) then return end
-
-	--pet -> player means the player just exceeded the pet, so the pet was *below* by the
-	--threshold; player -> pet is the same comparison the other way up
-	local sample = {}
-	for _, entry in pairs({{"melee", MELEE_THRESHOLD}, {"ranged", RANGED_THRESHOLD}}) do
-		local label, threshold = entry[1], entry[2]
-		local petTrue = (holder == "player") and (playerThreat / threshold) or (playerThreat * threshold)
-		local flatTotal = petTrue - petRaw.damage
-		sample[label] = flatTotal / petRaw.flatCasts
-	end
-
-	sample.casts = petRaw.flatCasts
-	sample.direction = previous.." -> "..holder
-	tinsert(calibrationSamples, sample)
-
-	E:Print(format("|cff00ff00threat calibration|r %s after %d cast(s): flat per cast is |cffffff00%.0f|r if the new holder was in melee, |cffffff00%.0f|r if at range.",
-		sample.direction, sample.casts, sample.melee, sample.ranged))
-end
-
---Polled rather than evented: nothing fires when a mob changes its mind about who to hit.
-local function OnCalibrateUpdate()
-	if not calibrating then return end
-
-	calibrateElapsed = calibrateElapsed + (arg1 or 0)
-	if calibrateElapsed < 0.2 then return end
-	calibrateElapsed = 0
-
-	local holder = AggroHolder()
-	if holder and holder ~= lastHolder then
-		Calibrate(lastHolder, holder)
-		lastHolder = holder
-	elseif not holder then
-		--target lost or dead; the next fight starts a fresh comparison
-		lastHolder = nil
-	end
-end
-
-function M:ToggleThreatCalibration()
-	calibrating = not calibrating
-	lastHolder, calibrateElapsed = nil, 0
-
-	return calibrating and true or false
-end
-
-function M:ThreatCalibrationSamples()
-	return calibrationSamples
 end
 
 --[[ public ]]--
@@ -523,13 +417,6 @@ function M:InitializeThreatModel()
 	end
 
 	watcher:RegisterEvent("PLAYER_REGEN_DISABLED")
-
-	--Wrapped, not passed raw: a 1.12 script handler gets no self and no elapsed, only the
-	--globals `this` and `arg1`. The handler returns immediately unless calibration is on,
-	--so this costs nothing in normal play.
-	watcher:SetScript("OnUpdate", function()
-		OnCalibrateUpdate()
-	end)
 
 	--who counts as "us" changes with the group and with pets being summoned
 	watcher:RegisterEvent("PLAYER_ENTERING_WORLD")
