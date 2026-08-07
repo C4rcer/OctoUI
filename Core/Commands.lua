@@ -17,6 +17,7 @@ local GetScreenWidth, GetScreenHeight = GetScreenWidth, GetScreenHeight
 local GetPlayerBuff, GetPlayerBuffTexture = GetPlayerBuff, GetPlayerBuffTexture
 local GetTime = GetTime
 local GetNumRaidMembers, GetNumPartyMembers = GetNumRaidMembers, GetNumPartyMembers
+local UnitExists, UnitName = UnitExists, UnitName
 
 function E:EnableAddon(addon)
 	local _, _, _, _, _, reason, _ = GetAddOnInfo(addon)
@@ -419,7 +420,12 @@ end
 --at least once: the module never initialised, the frame is hidden, it is parked off
 --screen by the saved position, it is scaled or faded to nothing, or it is sized to
 --zero height. Reports all of them at once rather than one reload per guess.
-function E:ThreatReport()
+function E:ThreatReport(msg)
+	--Short form first: the long report cannot reliably be copied out of the game.
+	if msg and lower(msg) == "model" then
+		E:ThreatModelReport()
+		return
+	end
 	local frame = _G["OctoTWTMain"]
 
 	E:Print(format("module: %s, private toggle: %s, standalone TWThreat: %s",
@@ -503,6 +509,57 @@ function E:ThreatReport()
 	end
 
 	E:Print(format("group: %s, solo threat requests %s", solo and "solo" or "grouped", soloState))
+
+	E:ThreatModelReport()
+end
+
+--[[
+	The local model half, on its own.
+
+	Split out because the full report is too long to get out of the game in one piece: two
+	attempts to paste it on 2026-08-07 were cut off mid-word ("bar height 2", "-- ask"),
+	which is the chat or the clipboard capping the text rather than anything in the code --
+	a Lua error cannot truncate inside a single Print.
+
+	`/octoui-threat model` prints these four or five lines and nothing else, which is the
+	part that actually diagnoses an empty window.
+]]
+function E:ThreatModelReport()
+	local Misc = E:GetModule("Misc", true)
+	local TWTg = _G.TWT
+
+	if not (Misc and Misc.ThreatOn) then
+		E:Print("local model: |cffff0000not loaded|r")
+		return
+	end
+
+	if Misc.ThreatModelAvailable and not Misc:ThreatModelAvailable() then
+		E:Print("local model: |cffff0000unavailable|r - it reads nampower's combat events and this session has none.")
+		return
+	end
+
+	local rows = Misc:ThreatOn()
+	local count = rows and getn(rows) or 0
+	local target = UnitExists("target") and UnitName("target") or "none"
+
+	--This is the line that matters. Zero rows is the silent bail, and it means the model
+	--has nothing recorded against THIS target yet -- not that anything is broken.
+	E:Print(format("local model: target %s, %s row(s)%s",
+		target,
+		(count > 0) and format("|cff00ff00%d|r", count) or "|cffff99000|r",
+		(count == 0) and " |cff999999-- nothing recorded on this target, so the window is left alone|r" or ""))
+
+	for i = 1, count do
+		local row = rows[i]
+		E:Print(format("   %d. %-16s threat %.0f  share %.0f%%", i, tostring(row.name), row.threat or 0, (row.share or 0) * 100))
+	end
+
+	if TWTg and TWTg.ServerAnswering then
+		--The model is skipped entirely while the server is considered live, so a stray
+		--reply can suppress it for a few seconds and that is worth seeing.
+		E:Print(format("server answering: %s (the model only fills in when this is no)",
+			TWTg.ServerAnswering() and "|cff00ff00yes|r" or "|cffff9900no|r"))
+	end
 end
 
 --Puts the window back in the middle of the screen at a sane size, for when the saved

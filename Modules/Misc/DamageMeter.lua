@@ -5,6 +5,7 @@ local M = E:GetModule("Misc");
 --Lua functions
 local pairs, tonumber, type = pairs, tonumber, type
 local format, sort, find = string.format, table.sort, string.find
+local gsub = string.gsub
 local tinsert, tremove, getn = table.insert, table.remove, table.getn
 --WoW API / Variables
 local GetTime = GetTime
@@ -884,11 +885,23 @@ local function MeterDB()
 	return E.db.general.damageMeter or P.general.damageMeter
 end
 
+--Full figures with thousands separators, not "3.8k".
+--
+--Abbreviating threw away the number people actually want to read: 3800 and 3849 both
+--render as "3.8k", and a damage meter exists to show you the number. Big numbers are also
+--most of the point of one.
 local function Short(value)
-	if value >= 1000000 then return format("%.1fm", value / 1000000) end
-	if value >= 1000 then return format("%.1fk", value / 1000) end
+	local text = format("%d", value)
 
-	return format("%d", value)
+	--Insert a separator every three digits from the right. gsub's second return is the
+	--replacement count, which is what ends the loop -- Lua 5.0 has no other way to know
+	--a pattern stopped matching.
+	local count
+	repeat
+		text, count = gsub(text, "^(-?%d+)(%d%d%d)", "%1,%2")
+	until count == 0
+
+	return text
 end
 
 --Shift-drag has to keep working with the mouse over a row, and a row that enables the

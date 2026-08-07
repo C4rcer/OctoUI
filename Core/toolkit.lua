@@ -289,6 +289,35 @@ function E:CreateBackdrop(f, t, tex, ignoreUpdates, forcePixelMode, isUnitFrameE
 	if not IsWidget(f) then return end
 	if not t then t = "Default" end
 
+	--REUSE an existing backdrop instead of building a second one.
+	--
+	--Without this, calling CreateBackdrop twice on the same object creates a new frame and
+	--overwrites f.backdrop with it -- ORPHANING the first, which stays parented, stays
+	--drawn, and can never be reached, reused or destroyed again. 1.12 has no API to delete
+	--a frame, so every repeat call leaks one permanently.
+	--
+	--Measured with /oprobe objects on 2026-08-07, after a session of ordinary play: 12318
+	--unattributable frames, 12174 of them carrying 4-9 regions, ~8.3 `WHITE8X8` textures
+	--each -- which is E.media.blankTex, ours. Their anchors name what was re-skinned:
+	--DropDownList2Button1ColorSwatch, TalentFrameTalent9..18,
+	--TalentFrameScrollFrameScrollBarScrollUpButton. Every one is a Blizzard element that
+	--gets skinned again each time it is shown.
+	--
+	--122 call sites across the codebase; six of them guarded on f.backdrop themselves. The
+	--other 116 had no way to know they needed to. **E:CreateShadow, immediately below this
+	--function, has always had exactly this guard** -- backdrops simply never got it.
+	--
+	--The template is re-applied rather than returning early, so a caller re-skinning with a
+	--different template still gets the change; it just gets it on the frame that already
+	--exists. `f.backdrop` is deliberately set to `false` on the failure path further down,
+	--and an unset field falls through to an inherited truthy value, so this checks for a
+	--real frame rather than mere truthiness.
+	local existing = f.backdrop
+	if existing and type(existing) == "table" and existing.SetBackdrop then
+		E:SetTemplate(existing, t, tex, ignoreUpdates, forcePixelMode, isUnitFrameElement)
+		return
+	end
+
 	local parent = f.IsObjectType and f:IsObjectType("Texture") and f:GetParent() or f
 
 	--This client refuses some object types as a frame parent: an EditBox is the
