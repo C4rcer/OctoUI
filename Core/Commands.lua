@@ -269,6 +269,18 @@ end
 
 --Damage meter totals, before there is any window to read them in. `overall` unless
 --"current" is passed, so a fight can be checked against a whole session.
+--Guarded because MailTools.lua is a new file and 1.12 indexes the AddOns folder at
+--process start, so after a /reload this file is current while that one may not exist yet.
+function E:MailReport()
+	local Misc = E:GetModule("Misc", true)
+	if not (Misc and Misc.MailReport) then
+		E:Print("|cffff0000Mail tools are not loaded.|r")
+		return
+	end
+
+	Misc:MailReport()
+end
+
 function E:MeterReport(msg)
 	local M = E:GetModule("Misc", true)
 	if not (M and M.MeterData) then
@@ -984,6 +996,7 @@ function E:LoadCommands()
 	self:RegisterChatCommand("octoui-blacklist", "BlacklistCommand")
 	self:RegisterChatCommand("octoui-auras", "AuraReport")
 	self:RegisterChatCommand("octoui-dismount", "DismountReport")
+	self:RegisterChatCommand("octoui-mail", "MailReport")
 	self:RegisterChatCommand("octoui-threatreset", "ThreatReset")
 
 	if E:GetModule("ActionBars") and E.private.actionbar.enable then

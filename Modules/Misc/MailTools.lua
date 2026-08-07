@@ -5,7 +5,7 @@ local M = E:GetModule("Misc");
 --Lua functions
 local _G = _G
 local format = string.format
-local type = type
+local tostring, type = tostring, type
 --WoW API / Variables
 local CreateFrame = CreateFrame
 local CheckInbox = CheckInbox
@@ -58,10 +58,16 @@ local TakeInboxMoney = TakeInboxMoney
 	the player, not for a button. Sending mail is the other half of item 18 and is separate.
 ]]
 
---Provisional. The mail frame's geometry has never been read on this client, so this hangs
---off the close button -- which certainly exists, and sits on a title bar that holds nothing
---else but a centred title. `/oprobe kids MailFrame` settles it properly.
+--Bottom centre of the inbox pane, level with the Prev/Next row -- the widest gap on the
+--frame, since those two sit hard left and hard right of it.
+--
+--Two wrong versions before this one, both from anchoring to a frame instead of to what is
+--on screen. First the title bar beside the close button, which landed ON the close button.
+--Then BOTTOM-to-BOTTOM on InboxFrame, which put it about sixteen pixels right of centre,
+--because InboxFrame's extents are not the pane the eye sees. See PlaceButton below: it now
+--takes the midpoint of Prev and Next, which ARE the row.
 local BUTTON_WIDTH, BUTTON_HEIGHT = 76, 20
+local BUTTON_Y_FALLBACK = 14
 
 --A letter carries one attachment on vanilla and more on later Turtle patches, so the
 --attachment slot is looked up rather than assumed. Both forms of the call are compatible:
@@ -225,19 +231,29 @@ local function StartTakeAll()
 end
 
 local function BuildButton()
-	if takeButton or not _G.MailFrame then return end
+	if takeButton then return end
 
-	local b = CreateFrame("Button", "ElvUI_MailTakeAllButton", _G.MailFrame, "UIPanelButtonTemplate")
+	--Parented to the INBOX PANE, not to MailFrame. Parenting it to the frame left it on
+	--screen over the Send Mail tab, sitting across the postage box and the Send button --
+	--a take-all button has no meaning there, and hiding it by hand on every tab change is
+	--work the frame hierarchy already does. InboxFrame hides when the tab switches and its
+	--children go with it.
+	local parent = _G.InboxFrame or _G.MailFrame
+	if not parent then return end
+
+	--CreateFrame does not fail on a name already taken: it builds a second frame, rebinds
+	--the global to it and ORPHANS the first, which stays on screen and can no longer be
+	--reached by name. Reuse rather than risk it. See the gotchas list in HANDOFF.
+	local b = _G.ElvUI_MailTakeAllButton
+	if b then
+		b:SetParent(parent)
+	else
+		b = CreateFrame("Button", "ElvUI_MailTakeAllButton", parent, "UIPanelButtonTemplate")
+	end
+
 	E:Width(b, BUTTON_WIDTH)
 	E:Height(b, BUTTON_HEIGHT)
 	b:SetText(L["Take All"])
-
-	if _G.MailFrameCloseButton then
-		E:Point(b, "RIGHT", _G.MailFrameCloseButton, "LEFT", -2, 0)
-	else
-		E:Point(b, "TOPRIGHT", _G.MailFrame, "TOPRIGHT", -40, -12)
-	end
-
 	b:SetScript("OnClick", function() StartTakeAll() end)
 
 	local skins = E:GetModule("Skins", true)
@@ -245,6 +261,45 @@ local function BuildButton()
 
 	takeButton = b
 	M.MailTakeAllButton = b
+end
+
+--Centred between the Prev and Next buttons, and anchored to Prev so the vertical comes free.
+--
+--Centring on InboxFrame was the obvious thing and it was visibly wrong -- that frame's
+--centre sits about sixteen pixels right of the pane the eye sees, for reasons not worth
+--establishing. Prev and Next ARE the row, they sit hard left and hard right of it, and
+--their midpoint is what "centred" means to anyone looking at the window. Measuring the two
+--things being judged against removes the question of which frame counts as the pane.
+--
+--Raw SetPoint rather than E:Point: the offset is measured off frames already on screen, so
+--it is already in the coordinate space SetPoint expects and E:Scale would move it.
+local function PlaceButton()
+	if not takeButton or takeButton.placed then return end
+
+	local prev = _G.InboxPrevPageButton
+	local nextPage = _G.InboxNextPageButton
+
+	if prev and nextPage then
+		--GetCenter answers nil for a frame that is hidden or has never been laid out, so a
+		--failure here leaves `placed` false and the next MAIL_SHOW tries again.
+		local px = prev:GetCenter()
+		local nx = nextPage:GetCenter()
+
+		if px and nx then
+			takeButton:ClearAllPoints()
+			takeButton:SetPoint("CENTER", prev, "CENTER", ((px + nx) / 2) - px, 0)
+			takeButton.placed = true
+			return
+		end
+	end
+
+	--Nothing measurable yet. Roughly right and definitely visible, which is what makes a
+	--failed measurement reportable rather than silent.
+	local pane = _G.InboxFrame or _G.MailFrame
+	if pane then
+		takeButton:ClearAllPoints()
+		takeButton:SetPoint("BOTTOM", pane, "BOTTOM", 0, BUTTON_Y_FALLBACK)
+	end
 end
 
 local function UpdateButton()
@@ -255,6 +310,55 @@ local function UpdateButton()
 	else
 		takeButton:Hide()
 		StopTakeAll(nil)
+	end
+end
+
+--[[
+	The inbox as this module sees it, letter by letter.
+
+	This exists because the safety rule that matters most cannot be tested on this server:
+	the user cannot send themselves a cash-on-delivery letter, so "does Take All really skip
+	CoD" has no direct experiment. An untestable guard is a guard nobody can trust.
+
+	So the guard is made inspectable instead. This prints the exact fields the decision is
+	made on -- the CoD amount straight out of GetInboxHeaderInfo, and the verdict beside it
+	-- for every letter in the box. It answers the question the moment a CoD letter arrives
+	from anyone, and until then it at least proves the field is being read from the right
+	position in the return list, which is the failure that would actually happen.
+
+	It also reports the two client facts the implementation branches on, so they are checked
+	from inside the feature rather than assumed.
+]]
+function M:MailReport()
+	local num = GetInboxNumItems() or 0
+
+	E:Print(format(L["MAIL_REPORT_HEADER"], num, AttachmentSlots(),
+		type(_G.AutoLootMailItem) == "function" and L["present"] or L["absent"]))
+
+	if num == 0 then return end
+
+	for i = 1, num do
+		local _, _, sender, subject, money, codAmount, _, hasItem = GetInboxHeaderInfo(i)
+
+		local attachments = 0
+		for slot = 1, AttachmentSlots() do
+			if GetInboxItem(i, slot) then attachments = attachments + 1 end
+		end
+
+		local verdict
+		if codAmount and codAmount > 0 then
+			verdict = "|cffff8000"..format(L["MAIL_REPORT_SKIP_COD"], E:FormatMoney(codAmount, "SMART")).."|r"
+		elseif (money and money > 0) or attachments > 0 then
+			verdict = "|cff00ff00"..L["MAIL_REPORT_TAKE"].."|r"
+		else
+			verdict = "|cffa0a0a0"..L["MAIL_REPORT_NOTHING"].."|r"
+		end
+
+		E:Print(format("  %d. %s -- %s | %s %s | %s",
+			i, tostring(sender or "?"), tostring(subject or ""),
+			E:FormatMoney(money or 0, "SMART"),
+			format(L["MAIL_REPORT_ATTACHMENTS"], attachments, tostring(hasItem)),
+			verdict))
 	end
 end
 
@@ -279,6 +383,7 @@ function M:LoadMailTools()
 			StopTakeAll(nil)
 		else
 			BuildButton()
+			PlaceButton()
 			UpdateButton()
 		end
 	end)
@@ -287,8 +392,9 @@ function M:LoadMailTools()
 	M.StartMailTakeAll = StartTakeAll
 
 	--The mail frame is part of FrameXML rather than a load-on-demand addon, so it exists
-	--already and the button can be built now. MAIL_SHOW is the retry for anything that
-	--does not.
+	--already and the button can be built now. MAIL_SHOW is the retry, and is where the
+	--placement actually lands -- nothing has a rect until the frame has been shown once.
 	BuildButton()
+	PlaceButton()
 	UpdateButton()
 end

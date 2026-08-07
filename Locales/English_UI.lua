@@ -554,3 +554,12 @@ L["MAIL_TAKEALL_TIMEOUT"] = "Stopped: the server stopped answering."
 L["MAIL_TAKEALL_STALLED"] = "Stopped: the last action was refused without an error, which usually means there is nowhere to put the item."
 L["MAIL_TAKEALL_BAGS_FULL"] = "Stopped: no free bag space."
 L["MAIL_TAKEALL_CANCELLED"] = "Stopped."
+
+--Modules/Misc/MailTools.lua -- /octoui-mail, the inbox as the take-all sees it
+L["present"] = true;
+L["absent"] = true;
+L["MAIL_REPORT_HEADER"] = "Inbox: %d letter(s). Attachment slots per letter: %d. AutoLootMailItem is %s."
+L["MAIL_REPORT_ATTACHMENTS"] = "%d attachment(s) (hasItem=%s)"
+L["MAIL_REPORT_TAKE"] = "would take"
+L["MAIL_REPORT_SKIP_COD"] = "SKIPPED, cash on delivery %s"
+L["MAIL_REPORT_NOTHING"] = "nothing to take"
