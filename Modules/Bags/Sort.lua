@@ -906,8 +906,22 @@ end
 
 function B:CommandDecorator(func, groupsDefaults)
 	return function(groups)
+		--Aborting a running sort MUST restore what that sort switched off.
+		--
+		--This passed noUpdate = true, which skips RegisterUpdateDelayed -- and that is the
+		--only thing that calls UpdateAllSlots, RE-REGISTERS the bag frame's events, and runs
+		--RefreshSearch to clear the desaturation. StopStacking below hides the timer and
+		--wipes the move list, so this genuinely aborts the sort; leaving the frame with its
+		--events unregistered means it never hears BAG_UPDATE again and the slots stay grey
+		--and dead until the UI is rebuilt.
+		--
+		--That is the bug reported 2026-08-05 and finally caught live on 2026-08-07: bags
+		--grey, items unusable, sorting refusing, and **a full logout needed**. Pressing sort
+		--again did not recover it -- it came straight back here and stranded the frame a
+		--second time. Captured by /octoui-bags mid-failure: `sort timer running: 1, moves the
+		--last sort planned: 25`, a sort left part-finished with its timer still up.
 		if self.SortUpdateTimer:IsShown() then
-			B:StopStacking(L["Already Running.. Bailing Out!"], true)
+			B:StopStacking(L["Already Running.. Bailing Out!"])
 			return
 		end
 

@@ -27,6 +27,7 @@ local mod = E:GetModule("NamePlates")
 ]]
 
 local pairs, tonumber, type = pairs, tonumber, type
+local getn = table.getn
 local format, gsub, gfind, find = string.format, string.gsub, string.gfind, string.find
 local GetTime = GetTime
 local GetComboPoints, GetTalentInfo = GetComboPoints, GetTalentInfo
@@ -182,6 +183,24 @@ end
 --GUID as well, and GetTimeLeft prefers that key. Same table both ways, so they cannot
 --drift apart. A second mob of the same name overwrites the shared name key but keeps
 --its own GUID key, which is exactly the disambiguation we want.
+--Is this debuff already recorded FOR THIS MOB?
+--
+--Checks the GUID store whenever a GUID is known, and only falls back to the name store
+--when it is not. The guard used to look at the name alone, and the name store is shared by
+--every mob that has ever carried that name: `/octoui-dots` on 2026-08-07 showed one key for
+--'Gravelhide Basilisk' against FIVE GUID keys.
+--
+--So the second basilisk to be hit with a given effect was treated as already known, AddEffect
+--never ran, its own GUID store never received the effect, and no timer appeared. The player's
+--own casts were unaffected because they commit through AddPending/PersistPending, which has
+--no such guard -- which is exactly why DoTs behaved and a PROC like Shadow Vulnerability did
+--not. Reported as "shadow vulnerability timer didn't appear instantly".
+function lib:HasEffect(unit, unitlevel, effect, guid)
+	local store = (guid and lib.objects[guid]) or lib.objects[unit]
+
+	return store and store[unitlevel] and store[unitlevel][effect] and true or false
+end
+
 function lib:AddEffect(unit, unitlevel, effect, duration, caster, guid)
 	if not unit or not effect then return end
 	unitlevel = unitlevel or 0
@@ -203,6 +222,49 @@ function lib:AddEffect(unit, unitlevel, effect, duration, caster, guid)
 		if not lib.objects[guid] then lib.objects[guid] = {} end
 		if not lib.objects[guid][unitlevel] then lib.objects[guid][unitlevel] = {} end
 		lib.objects[guid][unitlevel][effect] = entry
+	end
+
+	lib:RefreshUnitFrames(unit)
+end
+
+--[[
+	Tell any unit frame showing this unit to redraw its auras.
+
+	Reported 2026-08-07: a DoT's timer did not appear on the target frame until something
+	else was cast at the mob. The cause is an ordering race that this library creates
+	deliberately. A cast is recorded as PENDING and only committed 0.1s later by
+	PersistPending -- that delay is load-bearing, and its own comment says why: "without
+	this every resisted DoT would start a countdown."
+
+	But UNIT_AURA fires when the debuff actually lands, which is INSIDE that window. The
+	aura element draws its icon, asks here for a duration, gets nothing because the commit
+	has not happened yet, and draws no timer. Nothing tells it to look again, so the icon
+	sits there untimed until the next UNIT_AURA -- i.e. until another debuff lands, which
+	is exactly the "cast another one and it appears" symptom.
+
+	So the display is refreshed when the duration commits rather than only when the aura
+	changes. The 0.1s delay stays.
+
+	UnitName on a unit TOKEN is the cheap form and is fine per event. The expensive one is
+	UnitName(guid), which is SuperWoW resolving a GUID against the object list -- see the
+	note in Modules/Misc/ThreatModel.lua about never putting that in a hot path.
+]]
+function lib:RefreshUnitFrames(unitName)
+	if not unitName then return end
+
+	local oUF = _G.ElvUF
+	if not (oUF and oUF.objects) then return end
+
+	for i = 1, getn(oUF.objects) do
+		local frame = oUF.objects[i]
+		--Skipped before UnitName is called, so frames with no aura display cost a table
+		--lookup rather than an API call.
+		if frame and frame.unit and (frame.Debuffs or frame.Auras) then
+			if UnitName(frame.unit) == unitName then
+				if frame.Debuffs and frame.Debuffs.ForceUpdate then frame.Debuffs:ForceUpdate() end
+				if frame.Auras and frame.Auras.ForceUpdate then frame.Auras:ForceUpdate() end
+			end
+		end
 	end
 end
 
@@ -357,8 +419,9 @@ lib:SetScript("OnEvent", function()
 		local unit, effect = cmatch(arg1, AURAADDEDOTHERHARMFUL)
 		if unit and effect then
 			local unitlevel = (UnitName("target") == unit and UnitLevel("target")) or 0
-			if not (lib.objects[unit] and lib.objects[unit][unitlevel] and lib.objects[unit][unitlevel][effect]) then
-				lib:AddEffect(unit, unitlevel, effect, nil, nil, lib:GuidForName(unit))
+			local guid = lib:GuidForName(unit)
+			if not lib:HasEffect(unit, unitlevel, effect, guid) then
+				lib:AddEffect(unit, unitlevel, effect, nil, nil, guid)
 			end
 		end
 
@@ -371,8 +434,9 @@ lib:SetScript("OnEvent", function()
 			local effect = mod:ScanAuraName("target", i, true)
 			if effect and effect ~= "" then
 				local unit, unitlevel = UnitName("target"), UnitLevel("target") or 0
-				if unit and not (lib.objects[unit] and lib.objects[unit][unitlevel] and lib.objects[unit][unitlevel][effect]) then
-					lib:AddEffect(unit, unitlevel, effect, nil, nil, lib:GuidForName(unit))
+				local guid = lib:GuidForName(unit)
+				if unit and not lib:HasEffect(unit, unitlevel, effect, guid) then
+					lib:AddEffect(unit, unitlevel, effect, nil, nil, guid)
 				end
 			end
 		end

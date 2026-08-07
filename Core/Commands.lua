@@ -18,6 +18,7 @@ local GetPlayerBuff, GetPlayerBuffTexture = GetPlayerBuff, GetPlayerBuffTexture
 local GetTime = GetTime
 local GetNumRaidMembers, GetNumPartyMembers = GetNumRaidMembers, GetNumPartyMembers
 local UnitExists, UnitName = UnitExists, UnitName
+local UnitAffectingCombat = UnitAffectingCombat
 
 function E:EnableAddon(addon)
 	local _, _, _, _, _, reason, _ = GetAddOnInfo(addon)
@@ -554,11 +555,44 @@ function E:ThreatModelReport()
 		E:Print(format("   %d. %-16s threat %.0f  share %.0f%%", i, tostring(row.name), row.threat or 0, (row.share or 0) * 100))
 	end
 
-	if TWTg and TWTg.ServerAnswering then
-		--The model is skipped entirely while the server is considered live, so a stray
-		--reply can suppress it for a few seconds and that is worth seeing.
-		E:Print(format("server answering: %s (the model only fills in when this is no)",
-			TWTg.ServerAnswering() and "|cff00ff00yes|r" or "|cffff9900no|r"))
+	--[[
+		Every gate between "the model has rows" and "the window draws them".
+
+		Added because the window was reported as intermittent -- "random as fuck" -- while
+		the model demonstrably had data. Four separate conditions guard the draw in
+		TWT.threatQuery's OnUpdate, and from the outside a failure of any one of them looks
+		identical: an empty window. Naming which one is false turns that into a fact.
+
+		The third is the sharp one. `if TWT.targetName == '' then ... return false end`
+		returns BEFORE buildLocalThreats is reached, so a blank target name skips the local
+		model entirely even though the model neither needs nor uses it.
+	]]
+	local function YesNo(value, goodIsTrue)
+		local good = goodIsTrue and value or not value
+		return (good and "|cff00ff00" or "|cffff9900")..(value and "yes" or "no").."|r"
+	end
+
+	E:Print("draw gates -- all four must pass before the window is filled:")
+
+	--Player OR pet, matching the gate itself: a warlock whose pet pulled is not flagged.
+	local playerCombat = (UnitAffectingCombat("player") or UnitAffectingCombat("pet")) and true or false
+	local targetCombat = UnitExists("target") and UnitAffectingCombat("target") and true or false
+	local nameSet = TWTg and TWTg.targetName and TWTg.targetName ~= "" or false
+	local serverLive = TWTg and TWTg.ServerAnswering and TWTg.ServerAnswering() or false
+
+	E:Print(format("   1. player or pet in combat %s%s", YesNo(playerCombat, true),
+		(not playerCombat) and " |cff999999<- neither is flagged|r" or ""))
+	E:Print(format("   2. target in combat        %s%s", YesNo(targetCombat, true),
+		targetCombat and "" or " |cff999999<- this flag is unreliable for NPCs on 1.12|r"))
+	E:Print(format("   3. TWT.targetName set      %s%s", YesNo(nameSet, true),
+		nameSet and "" or " |cff999999<- blank returns early and SKIPS the model|r"))
+	E:Print(format("   4. server silent           %s%s", YesNo(not serverLive, true),
+		serverLive and " |cff999999<- a reply is suppressing the model for up to 5s|r" or ""))
+
+	if playerCombat and targetCombat and nameSet and not serverLive then
+		E:Print("   |cff00ff00all gates pass -- if the window is still empty the fault is in the drawing, not the model|r")
+	else
+		E:Print("   |cffff9900at least one gate is closed, which is why nothing is being drawn|r")
 	end
 end
 

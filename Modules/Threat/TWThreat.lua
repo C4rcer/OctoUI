@@ -1742,13 +1742,27 @@ TWT.threatQuery:SetScript("OnUpdate", function()
         --and wrong for everything else: once solo threat gives up on a server that does not
         --answer, this loop did nothing at all -- including the local model, which is
         --precisely the situation it exists for. Gate the send, not the tick.
-        if UnitAffectingCombat('player') and UnitAffectingCombat('target') then
+        --The PET counts as us being in combat.
+        --
+        --This was `UnitAffectingCombat('player')` alone, and that is wrong for the exact
+        --case the local model exists to serve. A warlock or hunter who sends the pet in
+        --first is not flagged until they act themselves, and drops combat while the pet
+        --fights on -- so the window emptied mid-fight and refilled the moment anything was
+        --cast. From the outside that is indistinguishable from the feature being broken at
+        --random; underneath it is entirely deterministic. Reported 2026-08-07 as "it's
+        --random as fuck", and diagnosed from the user's own question: does the pet starting
+        --combat affect it. It did.
+        if (UnitAffectingCombat('player') or UnitAffectingCombat('pet')) and UnitAffectingCombat('target') then
 
             if TWT.targetName == '' then
                 OctoTWTDebug('threatQuery target = blank ')
                 -- try to re-get target
                 TWT.targetChanged()
-                return false
+                --Retry the name, then carry on to the local model rather than returning.
+                --The early return here skipped buildLocalThreats entirely, and the model
+                --neither needs nor uses targetName -- it works off the target's GUID. A
+                --blank title bar was silently costing the whole threat display.
+                TWT.targetName = TWT.unitNameForTitle(UnitName('target')) or ''
             end
 
             if TWT.ThreatWanted() then
