@@ -363,6 +363,26 @@ local function FindRightChatID()
 		end
 	end
 
+	--REMEMBERED, because this search is circular and loses by default.
+	--
+	--The right hand window is identified purely by currently overlapping the right panel.
+	--Anything that moves it off -- Blizzard's own FloatingChatFrame code resetting a docked
+	--frame, a resize, a reload landing before the panel is sized -- makes the search return
+	--nothing. PositionChat then treats it as undocked and stops positioning it, which moves
+	--it further away, which guarantees the next search fails too. Once lost it never comes
+	--back, and no amount of dragging it into place sticks. Reported 2026-08-08 as the right
+	--side "keeps disappearing and refuses to keep the window there".
+	--
+	--So a successful answer is saved and reused when the geometry cannot supply one. The
+	--saved id is only a fallback: an overlap found now always wins, so deliberately moving a
+	--different window onto the panel still re-assigns it.
+	local db = E.db and E.db.chat
+	if rightChatID then
+		if db then db.rightChatWindowID = rightChatID end
+	elseif db and db.rightChatWindowID and db.rightChatWindowID > 0 then
+		rightChatID = db.rightChatWindowID
+	end
+
 	return rightChatID
 end
 

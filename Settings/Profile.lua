@@ -648,6 +648,10 @@ P["auras"] = {
 
 --Chat
 P["chat"] = {
+	--Which ChatFrame sits on the right panel. 0 means "not established yet"; see
+	--FindRightChatID in Modules/Chat/Chat.lua for why this has to be remembered rather
+	--than worked out from where the frames happen to be.
+	["rightChatWindowID"] = 0,
 	["lockPositions"] = true,
 	["url"] = true,
 	["shortChannels"] = true,

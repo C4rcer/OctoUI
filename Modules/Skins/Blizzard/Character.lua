@@ -101,8 +101,17 @@ local function LoadSkin()
 		if cooldownOnly then return end
 
 		local textureName = GetInventoryItemTexture("player", this:GetID())
-		if textureName then
-			local rarity = GetInventoryItemQuality("player", this:GetID())
+		local rarity = textureName and GetInventoryItemQuality("player", this:GetID())
+
+		--A texture with NO quality is a real state, not a contradiction: the icon is known
+		--before the item's data has arrived, so a freshly received item is briefly one
+		--without the other. GetItemQualityColor has no tolerance for that and raises
+		--"Usage: GetItemQualityColor(index)" -- caught 2026-08-08 taking a quest reward,
+		--from CharacterSecondaryHandSlot:OnEvent.
+		--
+		--Negative is rejected as well. Vanilla uses -1 for "no quality" on some items and it
+		--is not a valid index either.
+		if rarity and rarity >= 0 then
 			this:SetBackdropBorderColor(GetItemQualityColor(rarity))
 		else
 			this:SetBackdropBorderColor(unpack(E.media.bordercolor))
