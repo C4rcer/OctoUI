@@ -71,6 +71,40 @@ TWT.windowWidth = 300
 TWT.minBars = 5
 TWT.maxBars = 11
 
+--Height follows the bars actually on screen rather than the visibleBars setting.
+--
+--The port sizes this window to barHeight * visibleBars whether or not anyone is on the
+--list, so an empty meter is a tall empty box. Combined with the CENTER anchor it used to
+--have, it also grew in both directions. Anchored by its bottom edge (see the mover setup at
+--the end of this file) and sized to content, it collapses to the header when the list is
+--empty and grows upward as people appear -- which is how the damage meter behaves.
+--
+--visibleBars becomes the CAP rather than a fixed size, so the resize grip still means
+--something: it sets how tall the window is allowed to get.
+function TWT.resizeToContent()
+    local main = _G['OctoTWTMain']
+    if not (main and OctoTWT_CONFIG) then return end
+
+    local shown = 0
+    for i = 1, TWT.maxBars do
+        local bar = _G['OctoTWThreat' .. i]
+        if bar and bar:IsShown() then shown = shown + 1 end
+    end
+
+    if shown > OctoTWT_CONFIG.visibleBars then shown = OctoTWT_CONFIG.visibleBars end
+
+    local target = OctoTWT_CONFIG.barHeight * shown + (OctoTWT_CONFIG.labelRow and 40 or 20)
+
+    --Only when it ACTUALLY changes. This runs on every render pass, and CreateMover hooks
+    --OnSizeChanged to re-anchor the frame to its mover -- so setting the same height over and
+    --over fired that hook continuously and cancelled any drag in progress. The window then
+    --behaved as though it were locked even with the padlock open. Reported 2026-08-08.
+    local current = main:GetHeight() or 0
+    if current > target + 0.5 or current < target - 0.5 then
+        main:SetHeight(target)
+    end
+end
+
 --Mirrors minValue/maxValue on OctoTWTMainSettingsFrameHeightSlider in the XML. Named
 --here so the clamp in TWT.init and the one in the slider handler cannot drift apart from
 --each other or from the widget they are protecting.
@@ -1616,6 +1650,10 @@ function TWT.updateUI(from)
 
     end
 
+    --Every path that shows or hides a bar ends here, so this is the one place the height
+    --has to follow.
+    TWT.resizeToContent()
+
     if OctoTWT_CONFIG.tankMode then
 
         _G['OctoTMEF1']:Hide()
@@ -2248,9 +2286,20 @@ function TWT.setColumnLabels()
     TWT.setMinMaxResize()
 end
 
+--Min and max width were both TWT.windowWidth -- identical, which pins horizontal dragging
+--shut by construction. The grip could only ever change the height, so a window that did not
+--happen to match the gap it sat in could not be made to fit. Reported 2026-08-08: flush on
+--one side with a gap on the other and no way to close it.
+--
+--A range is given instead. The bars already follow TWT.windowWidth (see the SetWidth calls
+--in the render loop) and that is refreshed from the frame's real width just above, so
+--widening the window carries through to the bars without anything else changing.
+TWT.minWidth = 190
+TWT.maxWidth = 1000
+
 function TWT.setMinMaxResize()
-    _G['OctoTWTMain']:SetMinResize(TWT.windowWidth, OctoTWT_CONFIG.barHeight * TWT.minBars + (OctoTWT_CONFIG.labelRow and 40 or 20))
-    _G['OctoTWTMain']:SetMaxResize(TWT.windowWidth, OctoTWT_CONFIG.barHeight * TWT.maxBars + (OctoTWT_CONFIG.labelRow and 40 or 20))
+    _G['OctoTWTMain']:SetMinResize(TWT.minWidth, OctoTWT_CONFIG.barHeight * TWT.minBars + (OctoTWT_CONFIG.labelRow and 40 or 20))
+    _G['OctoTWTMain']:SetMaxResize(TWT.maxWidth, OctoTWT_CONFIG.barHeight * TWT.maxBars + (OctoTWT_CONFIG.labelRow and 40 or 20))
 end
 
 function TWT.setBarLabels(perc, threat, tps)
@@ -2794,7 +2843,22 @@ function TM:Initialize()
     local frame = _G["OctoTWTMain"]
     if frame then
         frame:ClearAllPoints()
-        frame:SetPoint("CENTER", E.UIParent, "CENTER", 0, 200)
+
+        --Anchored by its BOTTOM edge, sitting on the bottom panel, for the same reason the
+        --damage meter is: CreateMover adopts whichever point it finds here as the one it
+        --anchors by, and a CENTER anchor makes the window expand in both directions as bars
+        --come and go. A bottom anchor pins the lower edge and grows the top upwards, so the
+        --window never creeps down over whatever it was lined up against.
+        --
+        --The panel is 22 tall anchored at -1, so its top edge is 21; anchoring to the panel
+        --rather than to a number means the two cannot drift apart. Falls back to the screen
+        --edge when the panel is switched off in the general options.
+        local panel = _G["ElvUI_BottomPanel"]
+        if panel then
+            frame:SetPoint("BOTTOMLEFT", panel, "TOPLEFT", 4, 0)
+        else
+            frame:SetPoint("BOTTOMLEFT", E.UIParent, "BOTTOMLEFT", 4, 21)
+        end
         E:CreateMover(frame, "ThreatMeterMover", L["Threat Meter"], nil, nil, nil, "ALL,GENERAL")
 
         --The window has a title bar and a padlock, so it looks draggable, but the port
