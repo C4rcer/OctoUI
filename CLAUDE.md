@@ -38,8 +38,37 @@ was deleted once over this.
 except where `Compatibility/` polyfills them. Event handlers read the globals `event`,
 `arg1..arg9` and `this` — they take no arguments.
 
-There is no Lua linter here. Syntax-check before deploying; a block-balance scan catches the
-common failure:
+### Use the LSP
+
+**Check every edited file through the language server before deploying it.** Use LSP
+diagnostics rather than reading the file back and eyeballing it, and use LSP navigation —
+definitions, references, symbols — instead of `grep` when the question is "where is this
+defined" or "what calls this". Grep is for text; the LSP is for code, and it does not
+mistake a name in a comment or a string for a real reference.
+
+This matters more here than in a typical project. Lua has no compile step, and this client
+silently swallows load errors: a file that fails to parse simply does not load, and the
+symptom shows up as a missing feature somewhere else entirely. Every regression of that shape
+this project has had would have been caught by a diagnostic before it ever reached the game.
+
+`lua-language-server` is installed (winget, `LuaLS.lua-language-server`). When no LSP tools are
+exposed to the session, run it in check mode instead — same diagnostics, from the shell:
+
+```bash
+"$LOCALAPPDATA/Microsoft/WinGet/Packages/LuaLS.lua-language-server_Microsoft.Winget.Source_8wekyb3d8bbwe/bin/lua-language-server.exe" --check "$(pwd -W)/Modules/Threat" --checklevel=Error --logpath="$TEMP/lls"
+```
+
+**`--check` takes a DIRECTORY.** Handed a single file path it prints
+`Diagnosis completed, no problems found` and exits clean **whatever is in the file** — verified
+2026-08-08 against a file with an unbalanced `end`, which it passed. Point it at the folder
+holding the edited file, or at the repo root. Treating that message as a pass on a file path is
+worse than not running it at all.
+
+`.luarc.json` configures it: Lua 5.1 runtime (the lowest it supports; 5.0-only rules like the
+absence of `#` are therefore *not* caught), `Libraries/` ignored, and `undefined-global` off
+because there is no WoW API definition set — add one and that check becomes worth enabling.
+
+Last-resort fallback, catching an unbalanced `end` and nothing else:
 
 ```bash
 python "$SCRATCH/luabal.py" Modules/Path/File.lua
