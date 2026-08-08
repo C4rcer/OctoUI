@@ -705,6 +705,45 @@ function E:DebuffTimerReport()
 	end
 
 	if not found then E:Print("  target has no debuffs") end
+
+	--THE RAW STORE, read without going through GetTimeLeft.
+	--
+	--GetTimeLeft DELETES an entry the moment it has expired, so the line above can only ever
+	--say "no timer" for the interesting case -- a debuff whose duration was wrong, ran out
+	--early, and left the icon sitting there untimed while the real debuff was still on the
+	--mob. By then there is nothing left to look at.
+	--
+	--This reads lib.objects directly and mutates nothing, so a duration that was recorded
+	--wrong can still be seen after it has lapsed: what was stored, when it started, and
+	--whether it has run out. What was STORED against what the table says it should be is the
+	--whole question.
+	if not (lib and lib.objects) then return end
+
+	local now = GetTime()
+	for _, key in ipairs({name, guid}) do
+		local store = key and lib.objects[key]
+		if store then
+			E:Print(format("  raw store under '%s':", tostring(key)))
+
+			for lvl, effects in pairs(store) do
+				for effect, entry in pairs(effects) do
+					if type(entry) == "table" and entry.duration then
+						local age = entry.start and (now - entry.start) or -1
+						local remaining = entry.start and ((entry.start + entry.duration) - now) or 0
+						local expected = (durations and durations[effect])
+							and lib:GetDuration(effect, nil, entry.caster == "player") or nil
+
+						E:Print(format("    [lvl %s] '%s': stored %.1fs, started %.1fs ago, %s | table says %s | caster %s",
+							tostring(lvl), tostring(effect),
+							entry.duration, age,
+							(remaining > 0) and format("%.1fs left", remaining) or "|cffff0000EXPIRED|r",
+							expected and format("%.1fs", expected) or "?",
+							tostring(entry.caster or "unknown")))
+					end
+				end
+			end
+		end
+	end
 end
 
 --Aura filter lists. The options GUI has no page for these -- E:SetToFilterConfig is called
