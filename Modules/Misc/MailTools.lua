@@ -118,6 +118,12 @@ end
 local takeAll = {}
 local takeButton, eventFrame
 
+--The mailbox in the only terms that say whether anything is actually happening. Used by the
+--stall detector in TakeAll_OnUpdate; see the note there for why an index cannot serve.
+local function Progress()
+	return format("%d|%d|%d", GetInboxNumItems() or 0, CountAttachments(), GetMoney())
+end
+
 local function Summary()
 	--Attachments and money, not letters: a letter carrying both is two actions and counting
 	--those as two letters would be a lie. Said as one line, because the interesting part is
@@ -207,15 +213,28 @@ local function TakeAll_OnUpdate()
 	--is being refused silently. Stop rather than spin: this client gives no error for a
 	--refused take, and a loop that cannot tell the difference is exactly the shape that
 	--froze the client in July.
-	local key = index.."|"..kind.."|"..(slot or 0)
-	if key == takeAll.lastKey then
+	--
+	--MEASURED ON PROGRESS, NOT ON THE IDENTITY OF THE NEXT ACTION.
+	--
+	--The old test compared `index|kind|slot`, and that string is IDENTICAL on every
+	--successful step of an ordinary run: the server deletes a letter the moment it is
+	--emptied, so the next letter slides down to index 1 and the next action is `1|item|1`
+	--all over again. The counter therefore incremented on SUCCESS, and every take-all
+	--stopped after exactly three attachments claiming it had stalled.
+	--
+	--Inbox size, attachment count and purse together move on any action that did anything:
+	--money raises the purse, a taken attachment lowers the count, an emptied letter lowers
+	--the size. All three unchanged across a completed round trip is a real silent refusal,
+	--whatever the indices happen to say.
+	local progress = Progress()
+	if progress == takeAll.lastProgress then
 		takeAll.stalled = (takeAll.stalled or 0) + 1
 		if takeAll.stalled >= 3 then
 			StopTakeAll(L["MAIL_TAKEALL_STALLED"])
 			return
 		end
 	else
-		takeAll.lastKey = key
+		takeAll.lastProgress = progress
 		takeAll.stalled = 0
 	end
 
@@ -248,7 +267,7 @@ local function StartTakeAll()
 	takeAll.active = true
 	takeAll.waiting = false
 	takeAll.nextAt = 0
-	takeAll.lastKey = nil
+	takeAll.lastProgress = nil
 	takeAll.stalled = 0
 	takeAll.skippedCod = 0
 	takeAll.startMoney = GetMoney()
