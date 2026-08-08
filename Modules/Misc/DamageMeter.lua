@@ -1093,7 +1093,14 @@ local function RenderRows(db, entries)
 	--Collapse to the rows actually in use rather than leaving dead space. The frame is
 	--anchored by its bottom edge, so this grows the top upwards and the window never
 	--reaches further down the screen than where it was placed.
-	E:Height(window, 22 + (shown * (db.height + 1)) + 2)
+	--
+	--The trailing 2 is padding UNDER the last row, so an empty meter must not carry it --
+	--otherwise the window keeps a sliver of dead space below the title bar and stops sitting
+	--flush against whatever it was lined up with. Empty is exactly the title bar, nothing more.
+	local height = 22
+	if shown > 0 then height = height + (shown * (db.height + 1)) + 2 end
+
+	E:Height(window, height)
 end
 
 --What the segment button and the title call the segment being shown.
@@ -1207,7 +1214,20 @@ function M:BuildMeterWindow()
 	--The position itself is where ShaguDPS sat, taken from its own saved config rather
 	--than guessed -- it stores the window centre, so this is that centre converted to
 	--the bottom-left corner. Only a default; the mover owns it once anything moves it.
-	E:Point(window, "BOTTOMLEFT", E.UIParent, "BOTTOMLEFT", 428, 30)
+	--Sit ON the bottom panel rather than a hand-picked distance up from the screen edge.
+	--The panel is 22 tall anchored at -1, so its top edge is 21; the old default of 30 left a
+	--9 pixel gap that collapsing the window could never close, because the gap was under the
+	--window rather than in it. Anchoring to the panel means the number cannot drift out of
+	--agreement with it either.
+	--
+	--Falls back to the old offset when the panel does not exist, which is the case while it
+	--is switched off in the general options.
+	local panel = _G["ElvUI_BottomPanel"]
+	if panel then
+		E:Point(window, "BOTTOMLEFT", panel, "TOPLEFT", 429, 0)
+	else
+		E:Point(window, "BOTTOMLEFT", E.UIParent, "BOTTOMLEFT", 428, 21)
+	end
 	window:SetFrameStrata("LOW")
 
 	window.title = window:CreateFontString(nil, "OVERLAY")
@@ -1215,10 +1235,36 @@ function M:BuildMeterWindow()
 	E:Point(window.title, "TOPLEFT", window, "TOPLEFT", 4, -5)
 	window.title:SetJustifyH("LEFT")
 
-	--Segment and mode toggles, and a reset that puts the window back on its anchor
+	--"R" on a damage meter means reset the DATA -- that is what it means on every meter
+	--anyone has used, and it was wired to reset the window POSITION instead. Reported
+	--2026-08-08 as "the R button didn't reset the data when clicked", which is exactly right.
+	--
+	--Position reset is still worth having and has nowhere else to live, so it moves to the
+	--right button. Both are named in a tooltip, because a lone "R" cannot say which is which.
 	window.reset = TitleButton("R", 16, "TOPRIGHT", window, "TOPRIGHT", -3)
+	window.reset:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 	window.reset:SetScript("OnClick", function()
-		M:ResetMeterPosition()
+		if arg1 == "RightButton" then
+			M:ResetMeterPosition()
+			return
+		end
+
+		M:ResetMeter()
+		detail = nil
+		M:UpdateMeterWindow()
+		E:Print(L["Damage Meter"]..": data reset.")
+	end)
+
+	window.reset:SetScript("OnEnter", function()
+		this:SetBackdropBorderColor(1, 1, 1)
+		GameTooltip:SetOwner(this, "ANCHOR_TOPRIGHT")
+		GameTooltip:AddLine(L["Damage Meter"])
+		GameTooltip:AddLine(L["METER_RESET_TOOLTIP"], 1, 1, 1)
+		GameTooltip:Show()
+	end)
+	window.reset:SetScript("OnLeave", function()
+		E:SetTemplate(this, "Transparent")
+		GameTooltip:Hide()
 	end)
 
 	window.mode = TitleButton(L["Damage"], 46, "TOPRIGHT", window.reset, "TOPLEFT", -2)

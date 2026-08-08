@@ -1284,6 +1284,7 @@ L["Take everything from a corpse on a normal right click, with no need to hold s
 
 --Damage meter
 L["Damage Meter"] = true
+L["METER_RESET_TOOLTIP"] = "Left-click: reset the data.  Right-click: put the window back on its anchor."
 L["Reads nampower's combat events rather than parsing the combat log, so it needs nampower installed. Shift and drag the window to move it, or use /moveui."] = true
 L["Bars"] = true
 L["How many rows the window shows. Takes a reload to change."] = true
