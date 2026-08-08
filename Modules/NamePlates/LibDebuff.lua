@@ -41,6 +41,12 @@ lib.objects = {}
 lib.pending = {}
 
 local lastspell
+--The entry written by SPELLCAST_CHANNEL_START, held so CHANNEL_STOP can end that exact
+--effect rather than whatever was written most recently.
+local channelEntry
+--The last spell known to have been channelled. Survives between channels on purpose; see
+--SPELLCAST_CHANNEL_START.
+local channelEffect
 local _, playerClass = UnitClass("player")
 
 local function Durations() return E.DebuffDurations and E.DebuffDurations["debuffs"] end
@@ -390,6 +396,24 @@ lib:RegisterEvent("CHAT_MSG_SPELL_FAILED_LOCALPLAYER")
 lib:RegisterEvent("CHAT_MSG_SPELL_SELF_DAMAGE")
 lib:RegisterEvent("PLAYER_TARGET_CHANGED")
 lib:RegisterEvent("SPELLCAST_STOP")
+--CHANNELS. A channelled effect is not a fixed-length debuff: it lasts exactly as long as the
+--channel and every tick refreshes it. Timing one off the duration table starts the countdown
+--at the FIRST TICK -- which is where the periodic-damage branch picks it up, with no caster
+--and so no haste -- and the timer then runs out while the channel is still going. Measured
+--2026-08-08: Drain Life recorded 5.0s and the debuff was still on the mob 5.4s later, so the
+--icon sat there untimed.
+--
+--This event carries the channel's real length in milliseconds, which is the only exact
+--figure available and already accounts for haste, talents and rank without a table lookup.
+--SuperWoW names the spell outright, which is the only reliable way to know WHAT is being
+--channelled. SPELLCAST_CHANNEL_START carries the exact length but calls every spell
+--"Channeling" (measured 2026-08-08), and inferring the name from the last cast fails the
+--moment nampower queues one -- which is most of the time in a real rotation.
+--    arg1 caster GUID, arg2 target GUID, arg3 START/CAST/CHANNEL/FAIL, arg4 spell ID
+lib:RegisterEvent("UNIT_CASTEVENT")
+lib:RegisterEvent("SPELLCAST_CHANNEL_START")
+lib:RegisterEvent("SPELLCAST_CHANNEL_UPDATE")
+lib:RegisterEvent("SPELLCAST_CHANNEL_STOP")
 lib:RegisterEvent("UNIT_AURA")
 
 if playerClass == "PALADIN" then
@@ -452,6 +476,80 @@ lib:SetScript("OnEvent", function()
 				lib:RevertLastAction()
 				return
 			end
+		end
+
+	elseif event == "SPELLCAST_CHANNEL_START" then
+		--arg1 is the channel length in milliseconds. arg2 is NOT the spell -- measured on
+		--this client 2026-08-08, it is the literal string "Channeling" every time:
+		--
+		--    SPELLCAST_CHANNEL_START  arg1=4700 (number), arg2=Channeling (string)
+		--
+		--4700 is already haste-adjusted, so it beats anything the duration table can offer.
+		--But the name has to come from somewhere else, in falling order of certainty:
+		--
+		--  the pending cast, when the cast hook saw it;
+		--  the last effect written, when it was ours and is a known channel;
+		--  the last spell channelled, which is what carries a RE-CHANNEL.
+		--
+		--That last one is the whole point. nampower queues casts, so a re-channel often does
+		--not reach the cast hooks at all -- CHANNEL_START fires regardless, and remembering
+		--the name is what lets it refresh the timer anyway. Without it the first channel was
+		--timed and every one after it sat untimed, which is the reported bug.
+		local ms = tonumber(arg1)
+		local durations = Durations()
+
+		--channelEffect is set by UNIT_CASTEVENT below and is the authoritative answer. The
+		--other two are fallbacks for a client without SuperWoW.
+		local effect = channelEffect
+		if not (effect and durations and durations[effect]) then
+			effect = lib.pending[3]
+		end
+		if not (effect and durations and durations[effect]) then
+			effect = lastspell and lastspell.effect or nil
+		end
+
+		if ms and ms > 0 and effect and durations and durations[effect] then
+			channelEffect = effect
+			local unit = UnitName("target")
+			if unit then
+				lib:AddEffect(unit, UnitLevel("target") or 0, effect, ms / 1000, "player",
+					lib:GuidForName(unit))
+
+				--AddEffect sets `lastspell` to the entry it just wrote, so this is the channel's
+				--own entry and nothing else. Held by reference rather than by name so that
+				--CHANNEL_STOP cannot zero some other effect that happened to be written in
+				--between -- a DoT tick lands often enough for that to be a real risk.
+				channelEntry = lastspell
+			end
+		end
+
+	elseif event == "UNIT_CASTEVENT" then
+		--Only the player's own channels. A GUID compare rather than a name compare because
+		--this fires for every unit in range and names are not unique.
+		if arg3 == "CHANNEL" and SpellInfo then
+			local _, playerGUID = UnitExists("player")
+			if playerGUID and arg1 == playerGUID then
+				local name = SpellInfo(arg4)
+				if name then channelEffect = name end
+			end
+		end
+
+	elseif event == "SPELLCAST_CHANNEL_UPDATE" then
+		--Fires when the channel is extended or clipped; arg1 is the NEW remaining time in
+		--milliseconds. Measured: arg1=3250 with no name, so it can only apply to the entry
+		--CHANNEL_START recorded.
+		local ms = tonumber(arg1)
+		if channelEntry and ms and ms > 0 then
+			channelEntry.start = GetTime()
+			channelEntry.duration = ms / 1000
+		end
+
+	elseif event == "SPELLCAST_CHANNEL_STOP" then
+		--Ends the debuff whether the channel finished or was cut short by moving or the mob
+		--dying, so the timer must not outlive it.
+		if channelEntry then
+			channelEntry.duration = 0
+			channelEntry = nil
 		end
 
 	elseif event == "SPELLCAST_STOP" then
