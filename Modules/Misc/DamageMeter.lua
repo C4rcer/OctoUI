@@ -5,7 +5,7 @@ local M = E:GetModule("Misc");
 --Lua functions
 local pairs, tonumber, type = pairs, tonumber, type
 local format, sort, find = string.format, table.sort, string.find
-local gsub = string.gsub
+local gsub, strsub, strlen = string.gsub, string.sub, string.len
 local tinsert, tremove, getn = table.insert, table.remove, table.getn
 --WoW API / Variables
 local GetTime = GetTime
@@ -981,6 +981,61 @@ local function CreateRow(index)
 	return row
 end
 
+--LONG NAMES RUN INTO THE BUTTONS.
+--
+--The title FontString is anchored TOPLEFT with no right bound, and the segment button is a
+--fixed 50 pixels with its label centred and unclipped. A fight named after a long mob
+--overflows both: "Deadwood Shaman" ran straight through the Damage button and rendered as
+--"Oeadwood ShamanDamage". Reported 2026-08-08.
+--
+--Measured with GetStringWidth rather than cut at a character count, so it stays correct if
+--the font or the size changes -- and so it trims exactly as far as it has to, no further.
+local function Fit(fontString, text, maxWidth)
+	fontString:SetText(text)
+	if maxWidth <= 0 or fontString:GetStringWidth() <= maxWidth then return end
+
+	local trimmed = text
+	while strlen(trimmed) > 1 do
+		trimmed = strsub(trimmed, 1, strlen(trimmed) - 1)
+		fontString:SetText(trimmed.."..")
+		if fontString:GetStringWidth() <= maxWidth then return end
+	end
+end
+
+--Trims `label` until the WHOLE composed line fits, then hands the fitted label back so the
+--caller can re-compose it with colour codes.
+--
+--Colours are applied afterwards on purpose: they do not render, so measuring them would
+--overstate the width, and trimming a string with an escape in it can cut the escape in half
+--and spill raw |cff into the title.
+local function FitLabel(fontString, compose, label, maxWidth)
+	fontString:SetText(compose(label))
+	if maxWidth <= 0 or fontString:GetStringWidth() <= maxWidth then return label end
+
+	local trimmed = label
+	while strlen(trimmed) > 1 do
+		trimmed = strsub(trimmed, 1, strlen(trimmed) - 1)
+		fontString:SetText(compose(trimmed..".."))
+		if fontString:GetStringWidth() <= maxWidth then return trimmed..".." end
+	end
+
+	return label
+end
+
+--How much room the title has before the first button. Read off the frames themselves rather
+--than summing the widths, so it stays right if a button is resized or the window is.
+local function TitleRoom()
+	if not (window and window.segment) then return 0 end
+
+	local left, right = window:GetLeft(), window.segment:GetLeft()
+	if not (left and right) then return 0 end
+
+	return right - left - 10
+end
+
+--The segment button is 50 wide; this leaves a little breathing room inside its border.
+local SEGMENT_TEXT_WIDTH = 46
+
 local function TitleButton(text, width, point, relativeTo, relativePoint, x)
 	local button = CreateFrame("Button", nil, window)
 	E:Width(button, width)
@@ -1080,8 +1135,12 @@ function M:UpdateMeterWindow()
 			})
 		end
 
+		local fitted = FitLabel(window.title,
+			function(name) return format("< %s  %s %s", name, modeName, Short(total)) end,
+			detail.name, TitleRoom())
+
 		window.title:SetText(format("|cff999999<|r %s  |cff999999%s %s|r",
-			detail.name, modeName, Short(total)))
+			fitted, modeName, Short(total)))
 		RenderRows(db, entries)
 
 		return
@@ -1102,8 +1161,12 @@ function M:UpdateMeterWindow()
 		})
 	end
 
+	local fittedSegment = FitLabel(window.title,
+		function(label) return format("%s  %s %.0fs", modeName, label, duration) end,
+		SegmentName(segment), TitleRoom())
+
 	window.title:SetText(format("%s  |cff999999%s %.0fs|r",
-		modeName, SegmentName(segment), duration))
+		modeName, fittedSegment, duration))
 	RenderRows(db, entries)
 end
 
@@ -1187,12 +1250,14 @@ function M:BuildMeterWindow()
 
 		cfg.segment = order[at + 1] or order[1]
 		detail = nil
-		this.text:SetText(SegmentName(cfg.segment))
+		Fit(this.text, SegmentName(cfg.segment), SEGMENT_TEXT_WIDTH)
 		M:UpdateMeterWindow()
 	end)
 
 	window.mode.text:SetText((db.mode == MODES.healing) and L["Healing"] or L["Damage"])
-	window.segment.text:SetText(SegmentName(db.segment))
+	--Fitted to the button, not just set on it: the segment label is a fight name, so it is
+	--the one piece of header text with no bound on its length.
+	Fit(window.segment.text, SegmentName(db.segment), SEGMENT_TEXT_WIDTH)
 
 	for i = 1, db.bars do
 		rows[i] = CreateRow(i)
