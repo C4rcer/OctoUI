@@ -997,6 +997,11 @@ function E:DismountReport()
 	E:Print(format("Auto dismount: enabled=%s, %d error string(s) recognised",
 		tostring(E.db.general.autoDismount), live))
 
+	--Only true for a druid who has actually taken the talent. The Moonkin icon is shared
+	--with an agility buff, so on anyone else this must stay false or that buff gets cancelled.
+	E:Print(format("  moonkin icon treated as a form: %s",
+		M.DismountMoonkinAdded and "yes (druid with the talent)" or "no"))
+
 	local missing = M.DismountMissingGlobals
 	if getn(missing) > 0 then
 		E:Print(format("  %d global(s) this client does not define (harmless, listed for the record):", getn(missing)))

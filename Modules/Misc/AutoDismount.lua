@@ -6,13 +6,17 @@ local M = E:GetModule("Misc");
 local _G = _G
 local pairs, type = pairs, type
 local getn, tinsert, tremove = table.getn, table.insert, table.remove
-local find, lower = string.find, string.lower
+local find, lower, format = string.find, string.lower, string.format
 --WoW API / Variables
 local CreateFrame = CreateFrame
 local CancelPlayerBuff = CancelPlayerBuff
 local GetPlayerBuffTexture = GetPlayerBuffTexture
 local SitOrStand = SitOrStand
 local UIParent = UIParent
+local GetTime = GetTime
+local UnitClass = UnitClass
+local UnitAffectingCombat = UnitAffectingCombat
+local GetTalentInfo = GetTalentInfo
 
 --[[
 	Ported from ShaguTweaks, mods/auto-dismount.lua
@@ -26,13 +30,32 @@ local UIParent = UIParent
 	Kept on a plain event frame rather than AceEvent, because the handler reads
 	the 1.12 arg1 global.
 
-	It dismounts and stops there, exactly as upstream does -- the second press is
-	the player's. Re-issuing the refused spell was built and removed: the cast goes
-	out, nothing refuses it, and nothing happens, which is what a silently discarded
-	cast looks like rather than a rejected one. This client appears not to accept a
-	cast that did not come from a real keypress. Upstream does not attempt it either,
-	and neither does any addon installed here. Do not rebuild it without first
-	establishing that an addon-issued cast can work at all on this client.
+	Upstream's design is kept unchanged and one thing is added on top: the action that
+	provoked the error is REMEMBERED, and replayed once the buff has actually dropped.
+	Same dismount, same triggers, but one press instead of two.
+
+	This header used to say re-issuing had been tried and that "this client appears not
+	to accept a cast that did not come from a real keypress". That is wrong, and it is
+	now measured rather than argued: /octoui-dismount reported `UseAction -- replayed`
+	with the action going through on 2026-08-08. 1.12 has no protected functions at all
+	-- the hardware-event requirement arrived in 2.0 -- and this addon's own AutoStance
+	has always cast from a UI_ERROR_MESSAGE handler. What the old attempt did was replay
+	while STILL MOUNTED: CancelPlayerBuff is a request, the player stays mounted for the
+	round trip, and the replayed cast was refused for precisely the same reason as the
+	first one. A cast discarded that way looks exactly like "it went out and nothing
+	happened". The replay below waits for the buff to be GONE, which is the one thing
+	the old attempt did not do.
+
+	WHY THE ACTION IS SENT FIRST rather than checking for a mount before sending it.
+	The check-first version was built first and is worse: it cannot tell an action that
+	was blocked BY THE MOUNT from one that was never going to work anyway, so pressing
+	an ability with no target threw the player off their mount for nothing. Letting the
+	client rule on the action first means the dismount is driven by its verdict -- "You
+	have no target." is not a mount error, so nothing is cancelled.
+
+	That ordering is also what lets forms be handled safely. Nothing known before the
+	fact distinguishes Claw, which is fine in cat form, from Healing Touch, which is
+	not; the error has already said the form was the obstacle.
 ]]
 
 --Mount tooltip texts, including the Turtle/OctoWoW riding-skill wording
@@ -57,11 +80,41 @@ local MOUNT_STRINGS = {
 	"根据您的骑行技能提高速度。", "根据骑术技能提高速度。", "又慢又稳......"
 }
 
---Shapeshift buffs, matched on icon texture rather than text
+--Shapeshift buffs, matched on icon texture rather than text.
+--
+--NOTE what is NOT in here: spell_nature_forceofnature, the Moonkin icon. An agility buff
+--shares that texture, so listing it unconditionally means cancelling that buff off any class
+--that happens to have it. pfUI guards this by only adding it for a druid who has actually
+--taken the talent (modules/autoshift.lua), and it was a latent bug here until the proactive
+--path below made it a live one: matching on an error is rare, but the proactive check runs on
+--every action the player takes, so a false positive would strip the buff again and again.
 local SHAPESHIFT_TEXTURES = {
 	"ability_racial_bearform", "ability_druid_catform", "ability_druid_travelform",
-	"spell_nature_forceofnature", "ability_druid_aquaticform", "spell_nature_spiritwolf"
+	"ability_druid_aquaticform", "spell_nature_spiritwolf"
 }
+
+--Talent points only read once the client has them, so this waits for an event rather than
+--asking at load. Unregisters itself either way: a non-druid never needs to look again.
+local function WatchForMoonkin()
+	local f = CreateFrame("Frame")
+	f:RegisterEvent("PLAYER_ENTERING_WORLD")
+	f:RegisterEvent("UNIT_NAME_UPDATE")
+	f:SetScript("OnEvent", function()
+		local _, class = UnitClass("player")
+
+		if class ~= "DRUID" then
+			f:UnregisterAllEvents()
+			return
+		end
+
+		local _, _, _, _, moonkin = GetTalentInfo(1, 16)
+		if moonkin and moonkin > 0 then
+			tinsert(SHAPESHIFT_TEXTURES, "spell_nature_forceofnature")
+			M.DismountMoonkinAdded = true
+			f:UnregisterAllEvents()
+		end
+	end)
+end
 
 --Error strings that mean "you are mounted" or "you are shapeshifted", held by GLOBAL NAME
 --rather than by value. Upstream listed the values directly, so any name this client does
@@ -135,6 +188,36 @@ local function BuffLooksLikeShapeshift(index)
 	return false
 end
 
+--REPLAYING THE BLOCKED ACTION: TRIED, MEASURED, DOES NOT WORK. Do not rebuild it.
+--
+--The goal was one press instead of two: remember the action that hit the "you are mounted"
+--error, cancel the buff, and replay the action once the dismount finished. Built and tested
+--on this client 2026-08-08, five variants, all of them dead.
+--
+--What was MEASURED, so nobody has to measure it again:
+--
+--  * An addon-issued cast DOES work here in general. Typed by hand,
+--    `/script CastSpellByName("Corruption")` casts normally. 1.12 has no protected
+--    functions -- the hardware-event requirement arrived in 2.0 -- so the old claim that
+--    this client "does not accept a cast that did not come from a real keypress" is wrong
+--    as stated.
+--
+--  * The SAME call, issued from the replay after a dismount, produces NOTHING. No cast, no
+--    error, no refusal -- /octoui-dismount reported `nothing heard` every time. Both routes
+--    were tried: UseAction on the original action slot, and CastSpellByName on the spell
+--    name resolved from that slot.
+--
+--  * It is not a timing guess that was simply wrong. Waits of 0.15s, 0.3s, 0.6s and 1.5s
+--    after the mount buff dropped all behaved identically, as did gating on
+--    UNIT_MODEL_CHANGED rather than a timer.
+--
+--So something in the post-dismount window discards Lua-issued actions specifically, and no
+--delay reaches past it. The mouse cursor shows the same transition plainly -- a hand while
+--mounted, a sword once genuinely on foot.
+--
+--pfUI's autoshift and ShaguTweaks' auto-dismount, both by the same author, dismount and stop
+--exactly as this does. Neither attempts a replay.
+
 function M:LoadAutoDismount()
 	local errors = M.DismountErrors
 
@@ -149,6 +232,8 @@ function M:LoadAutoDismount()
 		end
 	end
 
+	WatchForMoonkin()
+
 	local f = CreateFrame("Frame", "ElvUI_AutoDismount")
 	f:RegisterEvent("UI_ERROR_MESSAGE")
 	f:SetScript("OnEvent", function()
@@ -158,6 +243,13 @@ function M:LoadAutoDismount()
 		--Stand up
 		if arg1 == SPELL_FAILED_NOT_STANDING then
 			SitOrStand()
+			return
+		end
+
+		--Clicking an NPC mid-fight must not strip a druid's form. pfUI guards exactly this
+		--(modules/autoshift.lua) and we did not: the click is not worth leaving cat form for,
+		--and the player did not ask to.
+		if arg1 == ERR_CANT_INTERACT_SHAPESHIFTED and UnitAffectingCombat("player") then
 			return
 		end
 
