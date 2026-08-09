@@ -148,9 +148,37 @@ local TimeColors = {
 	[4] = "|cfffe0000"
 }
 
-function mod:SetAura(aura, texture, count, name, timeleft)
+function mod:SetAura(aura, texture, count, name, timeleft, caster)
 	aura.icon:SetTexture(texture)
 	aura.name = name
+	--Stashed for /octoui-dots. The store holding a caster and the icon receiving one are
+	--different questions -- GetTimeLeft picks an entry by name, level and GUID, and the raw
+	--store dump cannot say which of those entries the lookup landed on.
+	aura.caster = caster
+
+	--WHOSE DEBUFF THIS IS. With two of the same class in a group, every icon looks like
+	--yours and there is no way to tell which one to refresh.
+	--
+	--LibDebuff has always returned the caster as GetTimeLeft's third value and nothing read
+	--it. It is only worth trusting now: before UNIT_CASTEVENT was wired in, a cast swallowed
+	--by nampower's queue was recorded with no caster at all, so "not mine" was as likely to
+	--mean "missed the cast" as anything else.
+	--These icons are built with StyleFrame(aura, true) -- noBackdrop -- so there is no
+	--backdrop to colour and SetBackdropBorderColor does nothing at all. The border is four
+	--separate textures, and each one has to be told.
+	if aura.bordertop then
+		local r, g, b
+		if caster == "player" then
+			r, g, b = 0.2, 0.9, 0.2
+		else
+			r, g, b = unpack(E.media.bordercolor)
+		end
+
+		aura.bordertop:SetTexture(r, g, b)
+		aura.borderbottom:SetTexture(r, g, b)
+		aura.borderleft:SetTexture(r, g, b)
+		aura.borderright:SetTexture(r, g, b)
+	end
 
 	if count and count > 1 then
 		aura.count:SetText(count)
@@ -178,6 +206,7 @@ function mod:HideAuraIcons(auras)
 
 	for i = 1, getn(auras.icons) do
 		auras.icons[i].name = nil
+		auras.icons[i].caster = nil
 		auras.icons[i].expirationTime = nil
 		auras.icons[i]:Hide()
 	end
@@ -221,14 +250,14 @@ function mod:UpdateAuraSide(auras, unit, isDebuff)
 		end
 
 		if PassesFilter(trackFilter, name) then
-			local timeleft
+			local timeleft, caster
 			if lib and name then
 				--`unit` is the SuperWoW GUID whenever we have one, which is also what
 				--the combat log stores under when GUID mode is on
-				_, timeleft = lib:GetTimeLeft(unitname, unitlevel, name, unit)
+				_, timeleft, caster = lib:GetTimeLeft(unitname, unitlevel, name, unit)
 			end
 
-			self:SetAura(auras.icons[frameNum], texture, count, name, timeleft)
+			self:SetAura(auras.icons[frameNum], texture, count, name, timeleft, caster)
 			frameNum = frameNum + 1
 		end
 	end

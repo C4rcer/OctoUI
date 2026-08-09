@@ -526,11 +526,39 @@ lib:SetScript("OnEvent", function()
 	elseif event == "UNIT_CASTEVENT" then
 		--Only the player's own channels. A GUID compare rather than a name compare because
 		--this fires for every unit in range and names are not unique.
-		if arg3 == "CHANNEL" and SpellInfo then
+		if SpellInfo then
 			local _, playerGUID = UnitExists("player")
+
 			if playerGUID and arg1 == playerGUID then
 				local name = SpellInfo(arg4)
-				if name then channelEffect = name end
+
+				if arg3 == "CHANNEL" then
+					if name then channelEffect = name end
+
+				elseif arg3 == "CAST" then
+					--A COMPLETED CAST, which is the only reliable notice of a RECAST.
+					--
+					--The cast hooks miss these whenever nampower queues one, and the
+					--periodic-damage path cannot stand in: HasEffect blocks it while the
+					--effect is still tracked, so a refreshed DoT keeps the ORIGINAL timer,
+					--runs out early, blanks, and only reappears once the store has expired it
+					--and a tick re-adds it unhasted. Reported as "blank timer till a new dot
+					--is added, then the timer appears"; measured 2026-08-08 on Corruption and
+					--Curse of Agony.
+					--
+					--AddEffect rather than AddPending: this event fires on completion, so
+					--there is nothing left to resist. arg2 is the target's GUID, which is also
+					--the store's preferred key.
+					local durations = Durations()
+
+					if name and durations and durations[name] and arg2 then
+						local unit = UnitName(arg2)
+						if unit then
+							lib:AddEffect(unit, UnitLevel(arg2) or 0, name,
+								lib:GetDuration(name, nil, true), "player", arg2)
+						end
+					end
+				end
 			end
 		end
 

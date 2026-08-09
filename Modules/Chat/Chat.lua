@@ -459,7 +459,21 @@ function CH:PositionChat(override)
 			end
 		end
 
-		if chat:IsShown() and (id == self.RightChatWindowID) then
+		--NO IsShown TEST HERE, deliberately. Position is ours; visibility is the user's.
+		--
+		--This used to read `chat:IsShown() and id == self.RightChatWindowID`, so the moment
+		--the right hand window was hidden -- a stray click on the toggle strip, Blizzard
+		--restoring it late on login, anything -- it fell through to the final branch, which
+		--parents every frame it reaches to LeftChatPanel and stamps SetUserPlaced(true). The
+		--window was then on the left, recorded there in layout-cache, and no longer
+		--overlapping RightChatPanel, so FindRightChatID could not see it either. Showing it
+		--again brought it back in the wrong place, and dragging it right did not stick,
+		--because the next PositionChat moved it back. Reported repeatedly as the loot/combat
+		--window hiding itself and refusing to stay put.
+		--
+		--Anchoring and sizing a hidden frame is free and does not show it, so the window now
+		--keeps its side whether it is up or not.
+		if id == self.RightChatWindowID then
 			chat:ClearAllPoints()
 
 			if E.db.datatexts.rightChatPanel then

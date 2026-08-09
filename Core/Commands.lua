@@ -744,6 +744,99 @@ function E:DebuffTimerReport()
 			end
 		end
 	end
+
+	--WHAT THE NAMEPLATE ICONS ACTUALLY RESOLVED.
+	--
+	--The store holding a caster and an icon receiving one are different questions, and the
+	--raw dump above cannot tell them apart. GetTimeLeft selects an entry by GUID or name and
+	--then by level, falling back to level 0 -- so the same effect stored under two levels
+	--(0 from a combat-log sighting, the real level from a cast at a target) gives the reader
+	--whichever bucket its own keys happen to select. A timer that draws while the caster
+	--reads unknown is that fault and nothing else.
+	--
+	--`border` is whether the four border textures exist at all. StyleFrame creates them
+	--unconditionally, so MISSING means SetAura's colouring branch never ran and the frame
+	--was built by something other than CreateAuraIcon.
+	E:Print("nameplate icons:")
+
+	if not NP.CreatedPlates then
+		E:Print("  |cffff0000the NamePlates module has built no plates|r")
+		return
+	end
+
+	local platesShown = 0
+	for frame in pairs(NP.CreatedPlates) do
+		local plate = frame.UnitFrame
+		local debuffs = plate and plate.Debuffs
+		if debuffs and debuffs.icons then
+			local header
+			for i = 1, getn(debuffs.icons) do
+				local icon = debuffs.icons[i]
+				if icon and icon:IsShown() then
+					if not header then
+						header = true
+						platesShown = platesShown + 1
+						E:Print(format("  plate '%s' guid %s:",
+							tostring(plate.UnitName), tostring(plate.guid)))
+					end
+
+					E:Print(format("    %d. '%s' | caster %s | border %s", i,
+						tostring(icon.name), tostring(icon.caster or "|cffff0000unknown|r"),
+						icon.bordertop and "ok" or "|cffff0000MISSING|r"))
+				end
+			end
+		end
+	end
+
+	if platesShown == 0 then
+		E:Print("  no nameplate is showing a debuff icon right now")
+	end
+end
+
+--WHY THE LOOT/COMBAT WINDOW VANISHED.
+--
+--Three separate faults look identical from the outside and each needs a different fix: the
+--chat frame itself hidden, the panel faded out behind its toggle strip, or the frame parented
+--onto the wrong panel. Guessing between them has cost several rounds, and the state is lost
+--on every crash -- 1.12 writes SavedVariables only on a clean logout or reload -- so it has
+--to be readable while it is happening.
+function E:ChatPanelReport()
+	local CH = E:GetModule("Chat", true)
+
+	E:Print(format("chat module: %s, lockPositions %s",
+		(E.private.chat.enable == true) and "enabled" or "|cffff0000disabled|r",
+		tostring(E.db.chat.lockPositions)))
+
+	--Live and saved disagreeing is the FindRightChatID search having failed this session and
+	--fallen back on the remembered id, which is the fallback working as intended.
+	E:Print(format("right window id: live %s, saved %s",
+		tostring(CH and CH.RightChatWindowID), tostring(E.db.chat.rightChatWindowID)))
+
+	--Set by the toggle strip at the panel's bottom corner. Once true the panel AND its own
+	--toggle button sit at alpha 0, so there is nothing left on screen to click back.
+	E:Print(format("panel faded: right %s, left %s",
+		tostring(E.db.RightChatPanelFaded), tostring(E.db.LeftChatPanelFaded)))
+
+	local panel = _G["RightChatPanel"]
+	if panel then
+		E:Print(format("RightChatPanel: shown %s, alpha %.2f",
+			tostring(panel:IsShown()), panel:GetAlpha() or 0))
+	else
+		E:Print("RightChatPanel: |cffff0000MISSING|r")
+	end
+
+	for i = 1, (NUM_CHAT_WINDOWS or 7) do
+		local chat = _G[format("ChatFrame%d", i)]
+		if chat then
+			local parent = chat:GetParent()
+			local tabText = _G[format("ChatFrame%dTabText", i)]
+
+			E:Print(format("  ChatFrame%d '%s': shown %s, docked %s, parent %s", i,
+				(tabText and tabText:GetText()) or "?",
+				tostring(chat:IsShown()), tostring(chat.isDocked),
+				(parent and parent:GetName()) or "?"))
+		end
+	end
 end
 
 --Aura filter lists. The options GUI has no page for these -- E:SetToFilterConfig is called
@@ -1095,6 +1188,7 @@ function E:LoadCommands()
 	self:RegisterChatCommand("farmmode", "FarmMode")
 	self:RegisterChatCommand("enableblizzard", "EnableBlizzardAddOns")
 	self:RegisterChatCommand("octoui-dots", "DebuffTimerReport")
+	self:RegisterChatCommand("octoui-chat", "ChatPanelReport")
 	self:RegisterChatCommand("octoui-threat", "ThreatReport")
 	self:RegisterChatCommand("octoui-bags", "BagSortReport")
 	self:RegisterChatCommand("octoui-queue", "QueueReport")
