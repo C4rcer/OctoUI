@@ -568,3 +568,6 @@ L["MAIL_REPORT_NOTHING"] = "nothing to take"
 L["Sort stopped: a move could not be completed."] = true;
 L["Sort stopped by a Lua error: %s"] = true;
 L["Sort finished, but %d move(s) could not be completed. Run /octoui-bags to see which."] = true;
+
+--Modules/Chat/Chat.lua
+L["Undocked the right chat window; the dock was hiding it on every login."] = true;

@@ -63,7 +63,7 @@ button.isDebuff - indicates if the button holds a debuff (boolean)
 local ns = oUF
 local oUF = ns.oUF
 
-local tinsert, getn = table.insert, table.getn
+local tinsert, getn, tsort = table.insert, table.getn, table.sort
 local floor, min, mod = math.floor, math.min, math.mod
 
 local CreateFrame = CreateFrame
@@ -91,15 +91,52 @@ local HIDDEN = 0
 --
 --Resolved on demand rather than cached: this file loads long before the NamePlates
 --module exists.
-local function TrackedDebuff(unit, index)
+--ONE SCAN PER DEBUFF PER PASS.
+--
+--lib:UnitDebuff resolves the spell name through a tooltip scan, which is the expensive call
+--in this file. Both consumers below want it for the same debuff in the same update -- the
+--ordering pass to find out whose it is, and the icon update to get its timer -- so the
+--result is held for the length of one filterIcons call and handed to whichever asks second.
+--Without this, ordering would double the scan count on every aura update.
+--
+--Cleared at the top of filterIcons rather than keyed by time: auras change between passes
+--and a stale entry would show the wrong timer, which is worse than scanning again.
+local scanCache = {}
+
+local function ClearScanCache()
+	for index in pairs(scanCache) do
+		scanCache[index] = nil
+	end
+end
+
+local function ScanDebuff(unit, index)
+	local cached = scanCache[index]
+	if cached then return cached end
+
 	local engine = _G.ElvUI and _G.ElvUI[1]
 	local module = engine and engine.GetModule and engine:GetModule("NamePlates", true)
 	local lib = module and module.LibDebuff
-	if not (lib and lib.UnitDebuff) then return end
+	if not (lib and lib.UnitDebuff) then return nil end
 
-	local _, _, _, _, _, duration, timeleft = lib:UnitDebuff(unit, index)
-	if duration and timeleft and timeleft > 0 then
-		return duration, GetTime() + timeleft
+	--Mirrors the modern UnitAura shape: effect, rank, texture, stacks, dtype, duration,
+	--timeleft, caster. pcall's status sits in front, so the effect is second and the caster
+	--ninth. Wrapped because this runs on every aura update, and a fault here should cost one
+	--icon rather than the whole aura display.
+	local ok, effect, _, _, _, _, duration, timeleft, caster = pcall(lib.UnitDebuff, lib, unit, index)
+	if not ok then return nil end
+
+	cached = {effect = effect, duration = duration, timeleft = timeleft, caster = caster}
+	scanCache[index] = cached
+
+	return cached
+end
+
+local function TrackedDebuff(unit, index)
+	local scan = ScanDebuff(unit, index)
+	if not scan then return end
+
+	if scan.duration and scan.timeleft and scan.timeleft > 0 then
+		return scan.duration, GetTime() + scan.timeleft
 	end
 end
 
@@ -323,13 +360,126 @@ local function SetPosition(element, from, to)
 	end
 end
 
+--[[
+	WHICH AURAS SURVIVE THE SLOT LIMIT.
+
+	The loop below used to walk aura indices 1, 2, 3... and stop the moment it had filled its
+	slots, so the frame showed the first N auras in the CLIENT'S index order and nothing else
+	was considered. Put more debuffs on a mob than there are slots and whichever of the
+	player's own sat at a higher index were never drawn at all -- reported as DoTs vanishing
+	once enough debuffs are up. Sorting afterwards cannot fix that: an aura that lost the race
+	never became a button to sort.
+
+	So when, and ONLY when, there are more auras than slots, the indices are ranked first and
+	the player's own go to the front. Ranking costs a tooltip scan per aura to resolve a name
+	for LibDebuff, which is why it is skipped entirely while everything fits -- the common
+	case pays nothing, and the cost only appears in the case the player is complaining about.
+
+	Ownership comes from LibDebuff's caster, the same source the nameplate timers use. It is
+	only available for DEBUFFS on a unit, because this client's UnitAura returns texture,
+	count and dispel type and no caster at all. Buffs, and everything on the player frame,
+	therefore keep index order -- see the note in TrackedDebuff above.
+]]
+local MAX_SCAN = 40
+
+--Returns the spell name when the player cast this debuff, and nil otherwise. The NAME is
+--what the ordering below needs, not merely a yes/no; see PriorityOrder.
+local function PlayerAuraName(unit, index)
+	local scan = ScanDebuff(unit, index)
+	if not (scan and scan.caster == "player") then return nil end
+
+	return scan.effect or ""
+end
+
+local function PriorityOrder(unit, filter, isDebuff, limit)
+	--NEVER THE PLAYER. updateIcon addresses player auras through GetPlayerBuff(index - 1),
+	--a different index space from UnitAura's, and mixing the two is what made the aura
+	--blacklist hide the wrong icon once already. There is also no caster for anything on the
+	--player, so there is nothing to rank by even if the indices lined up.
+	if unit == "player" then return nil end
+
+	--Only debuffs carry a caster on this client, so a buff row cannot be ranked either.
+	if not isDebuff then return nil end
+
+	local present = 0
+	for index = 1, MAX_SCAN do
+		if not UnitAura(unit, index, filter) then break end
+		present = present + 1
+	end
+
+	--NO "everything fits" SHORTCUT, deliberately. Ordering matters even when nothing is
+	--dropped: the client's aura list is contiguous, so a debuff expiring at index 1 renumbers
+	--every debuff after it and the icons all slide one place left. Ranking on every pass is
+	--what keeps ours in the same spot while other people's come and go, which is the whole
+	--request. The scan is shared with TrackedDebuff, so this costs no extra tooltip work.
+	if present == 0 then return nil end
+
+	local mine, theirs, name = {}, {}, {}
+	for index = 1, present do
+		local effect = PlayerAuraName(unit, index)
+		if effect then
+			name[index] = effect
+			tinsert(mine, index)
+		else
+			tinsert(theirs, index)
+		end
+	end
+
+	--[[
+		SORTED BY SPELL NAME, which is the only key here that does not move.
+
+		The obvious key is aura index, and it is wrong: the client renumbers its aura list
+		whenever anything is added or removed, so somebody else's debuff falling off renum-
+		bers ours and the icons swap places under the cursor.
+
+		The next idea is application order, computed from duration minus time left. That
+		appends a new DoT to the right of the group, which is exactly what was asked for --
+		but a REFRESH resets the start time, so re-applying Corruption would fling it from
+		the left of the group to the right. For a warlock refreshing constantly that is the
+		worst possible behaviour, and it is the behaviour being complained about.
+
+		A name is stable across refreshes, across other people's auras coming and going, and
+		across the client renumbering. Corruption is always left of Curse of Agony. The cost
+		is that a newly applied DoT inserts alphabetically rather than on the right-hand end,
+		so it lands in a fixed place instead of the newest place. Say if you would rather
+		have application order and accept the refresh jump; it is one comparator.
+	]]
+	tsort(mine, function(a, b)
+		if name[a] == name[b] then return a < b end
+		return name[a] < name[b]
+	end)
+
+	--Ours first, then everyone else's in the client's own order -- so their debuffs are the
+	--ones that shuffle to make room, which is the point.
+	for i = 1, getn(theirs) do
+		tinsert(mine, theirs[i])
+	end
+
+	return mine
+end
+
 local function filterIcons(element, unit, filter, limit, isDebuff, offset, dontHide)
 	if not offset then offset = 0 end
+
+	--Both passes below read the same debuffs; see ScanDebuff.
+	ClearScanCache()
+
+	local order = PriorityOrder(unit, filter, isDebuff, limit)
 	local index = 1
 	local visible = 0
 	local hidden = 0
 	while visible < limit do
-		local result = updateIcon(element, unit, index, offset, filter, isDebuff, visible)
+		--`order` is nil whenever everything fits, and the walk is then exactly what it was.
+		local auraIndex
+		if order then
+			auraIndex = order[index]
+		else
+			auraIndex = index
+		end
+
+		if not auraIndex then break end
+
+		local result = updateIcon(element, unit, auraIndex, offset, filter, isDebuff, visible)
 		if not result then
 			break
 		elseif result == VISIBLE then

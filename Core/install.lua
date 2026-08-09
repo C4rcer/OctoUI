@@ -79,7 +79,21 @@ local function FCF_ResetChatWindows()
 
 	ChatFrame1.init = 0
 	FCF_DockFrame(ChatFrame1, 1)
-	FCF_DockFrame(ChatFrame2, 2)
+
+	--ChatFrame2 IS DELIBERATELY NOT DOCKED, and this line used to dock it at position 2 --
+	--twenty lines after FCF_UnDockFrame(ChatFrame2) above, which it silently undid.
+	--
+	--A docked frame belongs to the tab group, and Blizzard's dock update shows the SELECTED
+	--docked frame and hides every other one. ChatFrame1 is always the selected tab, so
+	--ChatFrame2 was hidden every single time that ran -- at login, and on anything that
+	--re-lays out UIParent, which includes alt-tabbing back in. Captured 2026-08-09:
+	--
+	--    ChatFrame1:Show() called by FloatingChatFrame.lua:1071
+	--    ChatFrame2:Hide() called by FloatingChatFrame.lua:1077
+	--
+	--That is the loot/combat window "hiding itself", and it was ours. It lives on the RIGHT
+	--PANEL, which is a separate panel and not a dock region, so it must stay undocked for
+	--the right panel to be able to show it at all.
 end
 
 local function FCF_StopDragging(chatFrame)

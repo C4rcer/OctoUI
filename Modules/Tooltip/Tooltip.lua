@@ -75,6 +75,26 @@ local classification = {
 	rare = format("|cffAF5050 %s|r", ITEM_QUALITY3_DESC)
 }
 
+--THE ID LINE, in one place.
+--
+--Nineteen call sites used to inline `format("|cFFCA3C3C%s|r %d", ID, id)`, and format RAISES
+--on a nil id rather than skipping the line -- so the whole spellID feature took down whatever
+--was drawing the tooltip whenever a link did not parse. Reported 2026-08-09 on inspecting a
+--player: Turtle's transmog UI calls SetHyperlink with a bare `item:12345`, which the `(%d+):`
+--pattern cannot match because there is no colon AFTER the digits, and the error came back out
+--through InspectPaperDollFrame.
+--
+--An id we cannot parse should cost the ID line and nothing else.
+local function AddID(tt, id)
+	id = tonumber(id)
+	if not (tt and id) then return end
+
+	--The ONLY remaining inline format of this line, deliberately. A blanket replace of the
+	--old expression rewrote this body into a call to itself and every tooltip recursed until
+	--the stack blew; keep this the one place the string is built.
+	tt:AddLine(format("|cFFCA3C3C%s|r %d", ID, id))
+end
+
 function TT:GameTooltip_SetDefaultAnchor(tt, parent)
 	if E.private.tooltip.enable ~= true then return end
 	if tt:GetAnchorType() ~= "ANCHOR_NONE" then return end
@@ -278,7 +298,7 @@ function TT:SetItemRef(link)
 	if find(link, "^item:") then
 		if E.db.tooltip.spellID then
 			local id = tonumber(match(link, "(%d+)"))
-			ItemRefTooltip:AddLine(format("|cFFCA3C3C%s|r %d", ID, id))
+			AddID(ItemRefTooltip, id)
 		end
 	end
 	ItemRefTooltip:Show()
@@ -400,7 +420,7 @@ function TT:SetAction(tt, buttonID)
 	end
 
 	if E.db.tooltip.spellID then
-		tt:AddLine(format("|cFFCA3C3C%s|r %d", ID, id))
+		AddID(tt, id)
 	end
 	tt:Show()
 end
@@ -417,7 +437,7 @@ function TT:SetAuctionItem(tt, type, index)
 	end
 
 	if E.db.tooltip.spellID then
-		tt:AddLine(format("|cFFCA3C3C%s|r %d", ID, id))
+		AddID(tt, id)
 	end
 	tt:Show()
 end
@@ -434,7 +454,7 @@ function TT:SetAuctionSellItem(tt)
 	end
 
 	if E.db.tooltip.spellID then
-		tt:AddLine(format("|cFFCA3C3C%s|r %d", ID, id))
+		AddID(tt, id)
 	end
 	tt:Show()
 end
@@ -450,7 +470,7 @@ function TT:SetBagItem(tt, bag, slot)
 		self:SetPrice(tt, id, count)
 	end
 	if E.db.tooltip.spellID then
-		tt:AddLine(format("|cFFCA3C3C%s|r %d", ID, id))
+		AddID(tt, id)
 	end
 	tt:Show()
 end
@@ -470,7 +490,7 @@ function TT:SetCraftItem(tt, skill, slot)
 		self:SetPrice(tt, id, count)
 	end
 	if E.db.tooltip.spellID then
-		tt:AddLine(format("|cFFCA3C3C%s|r %d", ID, id))
+		AddID(tt, id)
 	end
 	tt:Show()
 end
@@ -482,7 +502,7 @@ function TT:SetCraftSpell(tt, id)
 	local id = tonumber(match(link, "enchant:(%d+)"))
 
 	if E.db.tooltip.spellID then
-		tt:AddLine(format("|cFFCA3C3C%s|r %d", ID, id))
+		AddID(tt, id)
 	end
 	tt:Show()
 end
@@ -490,10 +510,14 @@ end
 function TT:SetHyperlink(tt, link, count)
 	if not link then return end
 
-	local id = tonumber(match(link, "(%d+):"))
-	if not id then
-		id = tonumber(match(link, "enchant:(%d+)"))
-	end
+	--`(%d+):` needs a colon AFTER the digits, so it only matches a full link like
+	--`item:12345:0:0:0` and fails on the bare `item:12345` that Turtle's transmog UI passes
+	--in. Ask for the id by its prefix first, the way SetInboxItem and SetCraftSpell already
+	--do, and keep the old pattern last so nothing that used to resolve stops resolving.
+	local id = tonumber(match(link, "item:(%d+)"))
+		or tonumber(match(link, "spell:(%d+)"))
+		or tonumber(match(link, "enchant:(%d+)"))
+		or tonumber(match(link, "(%d+):"))
 
 	if E.db.tooltip.itemPrice then
 		count = tonumber(count)
@@ -509,7 +533,7 @@ function TT:SetHyperlink(tt, link, count)
 
 	if tt:GetName() == "GameTooltip" then
 		if E.db.tooltip.spellID then
-			tt:AddLine(format("|cFFCA3C3C%s|r %d", ID, id))
+			AddID(tt, id)
 		end
 	end
 
@@ -528,7 +552,7 @@ function TT:SetInboxItem(tt, index, attachmentIndex)
 	end
 
 	if E.db.tooltip.spellID then
-		tt:AddLine(format("|cFFCA3C3C%s|r %d", ID, id))
+		AddID(tt, id)
 	end
 	tt:Show()
 end
@@ -551,7 +575,7 @@ function TT:SetInventoryItem(tt, unit, slot)
 	end
 
 	if E.db.tooltip.spellID then
-		tt:AddLine(format("|cFFCA3C3C%s|r %d", ID, id))
+		AddID(tt, id)
 	end
 	tt:Show()
 end
@@ -567,7 +591,7 @@ function TT:SetLootItem(tt, slot)
 		self:SetPrice(tt, id, count)
 	end
 	if E.db.tooltip.spellID then
-		tt:AddLine(format("|cFFCA3C3C%s|r %d", ID, id))
+		AddID(tt, id)
 	end
 	tt:Show()
 end
@@ -583,7 +607,7 @@ function TT:SetLootRollItem(tt, rollID)
 		self:SetPrice(tt, id, count)
 	end
 	if E.db.tooltip.spellID then
-		tt:AddLine(format("|cFFCA3C3C%s|r %d", ID, id))
+		AddID(tt, id)
 	end
 	tt:Show()
 end
@@ -599,7 +623,7 @@ function TT:SetMerchantItem(tt, slot)
 		self:SetPrice(tt, id, count)
 	end
 	if E.db.tooltip.spellID then
-		tt:AddLine(format("|cFFCA3C3C%s|r %d", ID, id))
+		AddID(tt, id)
 	end
 	tt:Show()
 end
@@ -615,7 +639,7 @@ function TT:SetQuestItem(tt, type, slot)
 		self:SetPrice(tt, id, count)
 	end
 	if E.db.tooltip.spellID then
-		tt:AddLine(format("|cFFCA3C3C%s|r %d", ID, id))
+		AddID(tt, id)
 	end
 	tt:Show()
 end
@@ -631,7 +655,7 @@ function TT:SetQuestLogItem(tt, type, index)
 		self:SetPrice(tt, id, count)
 	end
 	if E.db.tooltip.spellID then
-		tt:AddLine(format("|cFFCA3C3C%s|r %d", ID, id))
+		AddID(tt, id)
 	end
 	tt:Show()
 end
@@ -648,7 +672,7 @@ function TT:SetSendMailItem(tt, index)
 	end
 
 	if E.db.tooltip.spellID then
-		tt:AddLine(format("|cFFCA3C3C%s|r %d", ID, id))
+		AddID(tt, id)
 	end
 	tt:Show()
 end
@@ -665,7 +689,7 @@ function TT:SetTradePlayerItem(tt, index)
 	end
 
 	if E.db.tooltip.spellID then
-		tt:AddLine(format("|cFFCA3C3C%s|r %d", ID, id))
+		AddID(tt, id)
 	end
 	tt:Show()
 end
@@ -687,7 +711,7 @@ function TT:SetTradeSkillItem(tt, skill, slot)
 	end
 
 	if E.db.tooltip.spellID then
-		tt:AddLine(format("|cFFCA3C3C%s|r %d", ID, id))
+		AddID(tt, id)
 	end
 	tt:Show()
 end
@@ -704,7 +728,7 @@ function TT:SetTradeTargetItem(tt, index)
 	end
 
 	if E.db.tooltip.spellID then
-		tt:AddLine(format("|cFFCA3C3C%s|r %d", ID, id))
+		AddID(tt, id)
 	end
 	tt:Show()
 end

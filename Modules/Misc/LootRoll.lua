@@ -26,6 +26,28 @@ local cancelled_rolls = {}
 local FRAME_WIDTH, FRAME_HEIGHT = 328, 28
 M.RollBars = {}
 
+--HOW MUCH BIGGER THAN THE ORIGINAL. One number, applied with SetScale on the whole roll
+--bar, so the icon, the roll buttons, the timer bar and every fontstring grow together.
+--Rescaling the pieces individually would mean touching nine sizes and six anchor offsets
+--and getting the fonts wrong anyway, since they are templated rather than set here.
+local ROLL_SCALE = 2
+
+--ITS OWN ANCHOR, rather than hanging off AlertFrameHolder.
+--
+--Loot rolls used to share the alert frames' holder, which sits at the top of the screen and
+--carries the achievement and alert popups with it -- so there was no way to move the rolls
+--to the middle without dragging those there too. This is a separate frame with a separate
+--mover, defaulting to the centre of the screen.
+--
+--A NEW mover has no saved position, so this default applies immediately. That is only true
+--the first time: from now on E.db.movers owns it, and changing the SetPoint below will do
+--nothing until the mover is reset. Anchored CENTER because the bars hang downward from it,
+--so the top edge is the one that should stay put.
+local LootRollHolder = CreateFrame("Frame", "LootRollHolder", E.UIParent)
+LootRollHolder:SetWidth(FRAME_WIDTH * ROLL_SCALE)
+LootRollHolder:SetHeight(FRAME_HEIGHT * ROLL_SCALE)
+LootRollHolder:SetPoint("CENTER", E.UIParent, "CENTER", 0, 0)
+
 local locale = GetLocale()
 local rollpairs = locale == "deDE" and {
 	["(.*) würfelt nicht für: (.+|r)$"] = "pass",
@@ -159,6 +181,9 @@ end
 function M:CreateRollFrame()
 	local frame = CreateFrame("Frame", nil, E.UIParent)
 	E:Size(frame, FRAME_WIDTH, FRAME_HEIGHT)
+	--Scales the whole widget tree -- icon, buttons, timer bar, fonts -- in one call, so the
+	--layout below stays in the original units and does not have to be re-derived.
+	frame:SetScale(ROLL_SCALE)
 	E:SetTemplate(frame, "Default")
 	frame:SetScript("OnEvent", function() OnEvent(frame) end)
 	frame:RegisterEvent("CANCEL_LOOT_ROLL")
@@ -236,10 +261,12 @@ local function GetFrame()
 	end
 
 	local f = M:CreateRollFrame()
+	--The first bar hangs off the holder; every later one off the bar before it.
+	local anchor = next(M.RollBars) and M.RollBars[getn(M.RollBars)] or LootRollHolder
 	if pos == "TOP" then
-		E:Point(f, "TOP", next(M.RollBars) and M.RollBars[getn(M.RollBars)] or AlertFrameHolder, "BOTTOM", 0, -4)
+		E:Point(f, "TOP", anchor, "BOTTOM", 0, -4)
 	else
-		E:Point(f, "BOTTOM", next(M.RollBars) and M.RollBars[getn(M.RollBars)] or AlertFrameHolder, "TOP", 0, 4)
+		E:Point(f, "BOTTOM", anchor, "TOP", 0, 4)
 	end
 
 	tinsert(M.RollBars, f)
@@ -332,4 +359,10 @@ function M:LoadLootRoll()
 	self:RegisterEvent("CHAT_MSG_LOOT")
 	UIParent:UnregisterEvent("START_LOOT_ROLL")
 	UIParent:UnregisterEvent("CANCEL_LOOT_ROLL")
+
+	--Registered here rather than at file scope: CreateMover reads the frame's current point
+	--as the mover's default, so it has to run after the SetPoint above and after E.db is
+	--loaded. Rolls are no longer tied to the alert frames, so this can be dragged anywhere
+	--without taking the achievement popups along with it.
+	E:CreateMover(LootRollHolder, "LootRollMover", L["Loot Roll"])
 end

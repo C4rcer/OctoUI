@@ -434,6 +434,27 @@ function CH:PositionChat(override)
 
 	self.RightChatWindowID = FindRightChatID()
 
+	--REPAIR A DOCKED RIGHT-HAND WINDOW, once per session.
+	--
+	--install.lua used to dock ChatFrame2, and dock membership persists in chat-cache.txt --
+	--so fixing the installer does nothing for a profile that has already been through it.
+	--A docked frame that is not the selected tab is hidden by Blizzard's dock update on
+	--every login and every UIParent re-layout, which is why it came back after each alt-tab.
+	--
+	--Once per session, not every call: after this the user is free to close the window from
+	--its tab menu, and FCF_Close undocks it, so the guard below cannot fire again and fight
+	--that choice.
+	if not self.dockRepaired and self.RightChatWindowID then
+		self.dockRepaired = true
+
+		local rightChat = _G[format("ChatFrame%d", self.RightChatWindowID)]
+		if rightChat and rightChat.isDocked and type(FCF_UnDockFrame) == "function" then
+			FCF_UnDockFrame(rightChat)
+			rightChat:Show()
+			E:Print(L["Undocked the right chat window; the dock was hiding it on every login."])
+		end
+	end
+
 	if not self.db.lockPositions or E.private.chat.enable ~= true then return end
 
 	local chat, tab, id, isDocked

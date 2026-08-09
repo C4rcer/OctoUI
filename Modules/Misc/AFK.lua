@@ -94,7 +94,12 @@ end
 
 function AFK:SetAFK(status)
 	if status and not self.isAFK then
-		if InspectFrame then
+		--Hidden because its 3D model keeps rendering over the AFK screen. Remember that we
+		--were the one to hide it, so the exit branch can put it back: this Hide had no
+		--counterpart, so a single AFK left the inspect pane hidden for the rest of the
+		--session and every later inspect opened a window with no contents in it.
+		if InspectFrame and InspectPaperDollFrame and InspectPaperDollFrame:IsShown() then
+			self.inspectPaperDollHidden = true
 			InspectPaperDollFrame:Hide()
 		end
 
@@ -136,6 +141,16 @@ function AFK:SetAFK(status)
 	elseif not status and self.isAFK then
 		self.AFKMode:Hide()
 		UIParent:Show()
+
+		--Only if we hid it. Showing it unconditionally would re-open a pane the user had
+		--closed themselves before going AFK; its parent being hidden makes this a no-op
+		--when the inspect window is shut, which is the harmless case.
+		if self.inspectPaperDollHidden then
+			self.inspectPaperDollHidden = nil
+			if InspectPaperDollFrame then
+				InspectPaperDollFrame:Show()
+			end
+		end
 
 		E.global.afkEnabled = nil
 		SetCVar("cameraYawMoveSpeed", E.global.afkCameraSpeedYaw)

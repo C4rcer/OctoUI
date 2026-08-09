@@ -411,6 +411,55 @@ function M:MailReport()
 	end
 end
 
+--[[
+	THE MINIMAP MAIL ICON, which nothing else ever turns off.
+
+	MiniMapMailFrame is driven by UPDATE_PENDING_MAIL. Captured with /oprobe on 2026-08-09,
+	that event arrived exactly three times across a fifteen hour session -- once per login,
+	immediately after PLAYER_ENTERING_WORLD, and never again. So the icon shows the state as
+	it was at login, and a relog is the only thing that clears it. That is the whole bug.
+
+	HasNewMail() is deliberately not consulted: it reads the same server-side flag that is not
+	being cleared, so it would agree with the stuck icon. The INBOX is authoritative while the
+	mailbox is open -- zero items means there is no mail, whatever the flag says.
+
+	This only ever HIDES. Showing the icon stays Blizzard's business on UPDATE_PENDING_MAIL;
+	an addon forcing it visible would resurrect it for mail that is not there.
+]]
+local lastInboxCount
+
+local function RefreshMailIcon()
+	--Not `not lastInboxCount`: nil means the inbox has never been read this session, which is
+	--not the same as it being empty and must not hide anything.
+	if lastInboxCount ~= 0 then return end
+
+	if MiniMapMailFrame and MiniMapMailFrame:IsShown() then
+		MiniMapMailFrame:Hide()
+	end
+end
+
+--ASK THE SERVER AGAIN once the mailbox is shut.
+--
+--Hiding the icon locally fixes what is on screen but not what the client believes, so the
+--next thing to consult the mail flag disagrees with the minimap. CheckInbox() is the request
+--the client itself uses to poll for mail: the server answers with MAIL_INBOX_UPDATE, and
+--with the real state rather than the one it has been sitting on since login.
+--
+--DELAYED, because the take and the close race. Sending the request in the same frame as
+--MAIL_CLOSED asks the server about an inbox it has not finished emptying, and it answers
+--with the item still in it -- which is the stuck icon all over again, just with an extra
+--round trip. A second is far longer than the round trip and far shorter than anyone notices.
+--
+--No loop: the reply lands on MAIL_INBOX_UPDATE below, which reads the count and does not
+--send anything further.
+local CHECK_DELAY = 1
+
+local function PulseInboxCheck()
+	if type(CheckInbox) == "function" then
+		CheckInbox()
+	end
+end
+
 function M:LoadMailTools()
 	if eventFrame then return end
 
@@ -420,6 +469,12 @@ function M:LoadMailTools()
 	eventFrame:RegisterEvent("MAIL_INBOX_UPDATE")
 	eventFrame:SetScript("OnEvent", function()
 		if event == "MAIL_INBOX_UPDATE" then
+			--Read while the mailbox is open, which is the only time the inbox is valid.
+			--Taking the last letter fires this with zero items, and that is the moment the
+			--icon should go.
+			lastInboxCount = GetInboxNumItems() or 0
+			RefreshMailIcon()
+
 			--The server has answered. Release the step and let the interval decide when the
 			--next one goes out.
 			if takeAll.active and takeAll.waiting then
@@ -427,6 +482,14 @@ function M:LoadMailTools()
 				takeAll.nextAt = GetTime() + (E.db.general.mailTakeAllInterval or 0.3)
 			end
 		elseif event == "MAIL_CLOSED" then
+			--Again on close, from the remembered count rather than a fresh read: the inbox
+			--is no longer valid here, and the final update can arrive after the last take.
+			RefreshMailIcon()
+
+			--And ask the server to tell us the truth, so the client's own flag catches up
+			--rather than only the icon.
+			E:Delay(CHECK_DELAY, PulseInboxCheck)
+
 			--Walking away from the mailbox ends the run. Further calls would fail anyway,
 			--and the letters already emptied are still emptied.
 			StopTakeAll(nil)
