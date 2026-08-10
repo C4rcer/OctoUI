@@ -40,6 +40,26 @@ mod.LibDebuff = lib
 lib.objects = {}
 lib.pending = {}
 
+--[[
+	EFFECTS SOMEBODY ELSE HAS ALSO CAST ON A MOB, keyed by GUID then effect name.
+
+	The store below holds one entry per (mob, level, effect) and has no room for a caster
+	dimension -- and it could not use one anyway, because the display side cannot tell two
+	icons apart: UnitDebuff returns texture, stacks and dispel type, and a tooltip scan gives
+	a name that is identical for both. With two warlocks on one mob there are two Curse of
+	Agony icons and nothing on this client distinguishes them.
+
+	So ownership is not always decidable, and the honest thing is to say so rather than pick.
+	UNIT_CASTEVENT fires for every unit in range with the caster's GUID, so we can at least
+	know WHEN it is undecidable: if anyone else has cast the same tracked effect at this mob,
+	the effect is contested and GetTimeLeft stops reporting "player" for it.
+
+	The consumer sees a nil caster, which reads as "not known to be mine" -- so the border
+	falls back to its dispel-type colour instead of claiming someone else's DoT is yours.
+	Reported 2026-08-09: every warlock's Agony drew green.
+]]
+lib.contested = {}
+
 local lastspell
 --The entry written by SPELLCAST_CHANNEL_START, held so CHANNEL_STOP can end that exact
 --effect rather than whatever was written most recently.
@@ -367,7 +387,16 @@ function lib:GetTimeLeft(unitname, unitlevel, effect, guid)
 		return
 	end
 
-	return entry.duration, entry.start + entry.duration - GetTime(), entry.caster
+	--The timer is still ours to report -- it is the same spell with the same duration either
+	--way -- but the OWNERSHIP is not, once anyone else has cast this effect here. Reported
+	--as nil rather than "player" so a caller drawing a "this one is mine" border stops
+	--drawing it rather than drawing it on both.
+	local caster = entry.caster
+	if caster == "player" and guid and lib.contested[guid] and lib.contested[guid][effect] then
+		caster = nil
+	end
+
+	return entry.duration, entry.start + entry.duration - GetTime(), caster
 end
 
 --Same shape as the modern UnitAura, for callers that do not keep their own cache:
@@ -377,7 +406,17 @@ function lib:UnitDebuff(unit, id)
 	if not texture then return end
 
 	local effect = mod:ScanAuraName(unit, id, true) or ""
-	local duration, timeleft, caster = lib:GetTimeLeft(UnitName(unit), UnitLevel(unit), effect)
+
+	--WITH THE GUID. This asked by name and level only, and the name store is shared by every
+	--mob that has ever carried that name -- it accumulates, and GetTimeLeft prefers the GUID
+	--precisely to avoid it. So a caster read through here came from whichever mob of that
+	--name last wrote the effect, not from this one. Same class as the bug HANDOFF 12c fixed
+	--in HasEffect, missed at this call site.
+	--
+	--SuperWoW returns the GUID as UnitExists' second value; without it this degrades to the
+	--old name lookup rather than failing.
+	local _, guid = UnitExists(unit)
+	local duration, timeleft, caster = lib:GetTimeLeft(UnitName(unit), UnitLevel(unit), effect, guid)
 
 	return effect, nil, texture, stacks, dtype, duration, timeleft, caster
 end
@@ -528,6 +567,19 @@ lib:SetScript("OnEvent", function()
 		--this fires for every unit in range and names are not unique.
 		if SpellInfo then
 			local _, playerGUID = UnitExists("player")
+
+			--SOMEONE ELSE casting a tracked effect at a mob. arg1 is the caster's GUID and
+			--arg2 the target's, so this is the one moment the client tells us an effect on
+			--that mob is not exclusively ours. See lib.contested at the top of the file.
+			if playerGUID and arg1 ~= playerGUID and arg3 == "CAST" and arg2 then
+				local name = SpellInfo(arg4)
+				local durations = Durations()
+
+				if name and durations and durations[name] then
+					if not lib.contested[arg2] then lib.contested[arg2] = {} end
+					lib.contested[arg2][name] = true
+				end
+			end
 
 			if playerGUID and arg1 == playerGUID then
 				local name = SpellInfo(arg4)
