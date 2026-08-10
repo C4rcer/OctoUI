@@ -272,6 +272,21 @@ local function updateIcon(element, unit, index, offset, filter, isDebuff, visibl
 		button.expiration = expiration
 		button.dtype = dispelType
 
+		--WHOSE DEBUFF THIS IS, for PostUpdateAura's border colour and for SortAurasByCaster,
+		--which has always read this field and never had it set by anything -- so its
+		--"player first" branch could not fire. Free here: PriorityOrder has already scanned
+		--this debuff in the same pass and the result is cached.
+		--
+		--Only debuffs on another unit can answer it. This client's UnitAura returns texture,
+		--count and dispel type and no caster, so buffs and everything on the player frame
+		--stay nil rather than guess.
+		if isDebuff and unit ~= "player" then
+			local scan = ScanDebuff(unit, index)
+			button.isPlayer = (scan and scan.caster == "player") or false
+		else
+			button.isPlayer = nil
+		end
+
 		--The player is the one unit the client will quote a live remaining time for, and
 		--GetPlayerBuffTimeLeft wants the GetPlayerBuff id, not this loop's display index.
 		--Stashed so the timer can re-read it instead of counting down a snapshot: a buff

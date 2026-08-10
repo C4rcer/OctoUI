@@ -415,8 +415,19 @@ function UF:PostUpdateAura(unit, button)
 	end
 
 	if button.isDebuff then
-		local color = (button.dtype and DebuffTypeColor[button.dtype]) or DebuffTypeColor.none
-		button:SetBackdropBorderColor(color.r * 0.6, color.g * 0.6, color.b * 0.6)
+		if button.isPlayer then
+			--OURS, in the same green the nameplate aura element uses -- see SetAura in
+			--Modules/NamePlates/Elements/Auras.lua. Deliberately overrides the dispel-type
+			--colour: with a screen full of debuffs, which ones are yours to refresh is the
+			--question being asked of this border, and the school is not.
+			--
+			--Only ever set for debuffs on another unit; LibDebuff is the only caster source
+			--on this client and it has nothing for buffs or for the player frame.
+			button:SetBackdropBorderColor(0.2, 0.9, 0.2)
+		else
+			local color = (button.dtype and DebuffTypeColor[button.dtype]) or DebuffTypeColor.none
+			button:SetBackdropBorderColor(color.r * 0.6, color.g * 0.6, color.b * 0.6)
+		end
 	end
 
 	local size = button:GetParent().size
