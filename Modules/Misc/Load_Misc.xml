@@ -11,6 +11,7 @@
 	<Script file="RaidMarker.lua"/>
 	<Script file="AutoStance.lua"/>
 	<Script file="AutoDismount.lua"/>
+	<Script file="MountGear.lua"/>
 	<Script file="EnergyTick.lua"/>
 	<Script file="CombatFeedback.lua"/>
 	<Script file="MacroTweaks.lua"/>

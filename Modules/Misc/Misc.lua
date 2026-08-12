@@ -197,6 +197,8 @@ function M:Initialize()
 	--Ported from ShaguTweaks, see each file for attribution
 	self:LoadAutoStance()
 	self:LoadAutoDismount()
+	--Reads AutoDismount's mount check, so it is loaded after it.
+	if self.LoadMountGear then self:LoadMountGear() end
 	self:LoadEnergyTick()
 	self:LoadCombatFeedback()
 

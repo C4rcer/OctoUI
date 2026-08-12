@@ -596,3 +596,27 @@ L["Pass"] = true;
 L["AUTOROLL_ITEM_ID"] = "Item #%d"
 L["AUTOROLL_ROLLED"] = "Rolled %s on %s."
 L["AUTOROLL_REMOVED"] = "Won %s -- taken off the loot roll list."
+
+--Modules/Misc/MountGear.lua -- riding gear that goes on with the mount
+L["Mount Gear"] = true;
+L["Puts riding gear on with the mount and your own gear back when it goes. Leave a box empty to leave that slot alone. Shift-click an item into a box, or type an item id or name."] = true;
+L["Off by default, because this moves your equipment around on its own."] = true;
+L["Gear cannot be swapped in combat. A change that lands mid-fight is held until the fight ends."] = true;
+L["The item to wear in this slot while mounted."] = true;
+L["Trinket 1"] = true;
+L["Trinket 2"] = true;
+L["Boots"] = true;
+L["Gloves"] = true;
+L["MOUNTGEAR_ITEM_ID"] = "Item #%d"
+L["MOUNTGEAR_ALREADY_ON"] = "already worn"
+L["MOUNTGEAR_EQUIPPED"] = "put on"
+L["MOUNTGEAR_RESTORED"] = "put back"
+L["MOUNTGEAR_REMOVED"] = "taken off"
+L["MOUNTGEAR_CHANGED_BY_HAND"] = "you changed this slot yourself, left alone"
+L["MOUNTGEAR_NOT_IN_BAGS"] = "not in your bags"
+L["MOUNTGEAR_OLD_NOT_IN_BAGS"] = "your own item is not in your bags, still owed back"
+L["MOUNTGEAR_NO_SPACE"] = "no free bag space"
+L["MOUNTGEAR_CURSOR_BUSY"] = "the cursor was already holding something"
+L["MOUNTGEAR_CURSOR_STUCK"] = "the swap left an item on the cursor"
+L["MOUNTGEAR_LOCKED"] = "that bag slot was locked"
+L["MOUNTGEAR_NO_PICKUP"] = "the client did not pick the item up"

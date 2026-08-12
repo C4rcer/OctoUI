@@ -15,6 +15,7 @@ local GetAddOnInfo = GetAddOnInfo
 local IsAddOnLoaded = IsAddOnLoaded
 local GetScreenWidth, GetScreenHeight = GetScreenWidth, GetScreenHeight
 local GetPlayerBuff, GetPlayerBuffTexture = GetPlayerBuff, GetPlayerBuffTexture
+local GetInventorySlotInfo, GetInventoryItemLink = GetInventorySlotInfo, GetInventoryItemLink
 local GetTime = GetTime
 local GetNumRaidMembers, GetNumPartyMembers = GetNumRaidMembers, GetNumPartyMembers
 local UnitExists, UnitName = UnitExists, UnitName
@@ -1109,6 +1110,81 @@ function E:AutoRollCommand(msg)
 	E:Print(AUTOROLL_USAGE)
 end
 
+--The mount gear report. Nothing here can be seen from the outside: whether the mount was
+--recognised, what was displaced, and what is waiting on the end of a fight are all internal
+--state, and every one of them has its own way of looking like "it did not work".
+function E:MountGearReport(msg)
+	local M = E:GetModule("Misc")
+
+	if not M.GetMountGearSettings then
+		E:Print("Mount gear is not loaded yet. Exit WoW.exe fully and start it again -- a /reload cannot pick up a file that was not there at login.")
+		return
+	end
+
+	local action, rest = match(msg or "", "^%s*(%S*)%s*(.-)%s*$")
+	action = lower(action or "")
+
+	local db = M:GetMountGearSettings()
+
+	if action == "on" or action == "off" then
+		db.enable = (action == "on")
+		E:Print(format("Mount gear is %s.", action == "on" and "on" or "off"))
+		return
+	end
+
+	--Setting a slot by name, for when typing beats opening the options tree.
+	if action ~= "" and action ~= "list" then
+		for _, def in ipairs(M:GetMountGearSlots()) do
+			if action == def.alias then
+				local entry = M:SetMountGearItem(def.key, rest)
+				if entry then
+					E:Print(format("%s while mounted: %s", def.label, M:MountGearLabel(entry)))
+				else
+					E:Print(format("%s: left alone while mounted.", def.label))
+				end
+				return
+			end
+		end
+
+		E:Print("Usage: /octoui-mountgear [on / off / trinket1 / trinket2 / boots / gloves] <item link, item id or name>")
+		return
+	end
+
+	E:Print(format("Mount gear -- %s. Mounted: %s. In combat: %s.",
+		db.enable and "on" or "OFF",
+		M:MountGearIsMounted() and "yes" or "no",
+		UnitAffectingCombat("player") and "yes" or "no"))
+
+	for _, def in ipairs(M:GetMountGearSlots()) do
+		local entry = db.slots[def.key]
+		local saved = db.saved[def.key]
+		local slotID = GetInventorySlotInfo(def.key)
+		local worn = GetInventoryItemLink("player", slotID)
+
+		E:Print(format("  %s -- riding: %s |cff888888(worn: %s)|r%s",
+			def.label,
+			entry and M:MountGearLabel(entry) or "not set",
+			worn or "empty",
+			saved and format(" |cffffff00owes back: %s|r", saved.empty and "an empty slot" or (M:MountGearLabel(saved) or saved.link or "?")) or ""))
+	end
+
+	local results, pending = M:GetMountGearResults()
+	if pending then
+		E:Print(format("Waiting for combat to end, then: %s.", pending == "equip" and "put riding gear on" or "put your own gear back"))
+	end
+
+	--The last pass, whichever way it went. A swap that could not happen says why here rather
+	--than nowhere.
+	for _, result in ipairs(results) do
+		E:Print(format("  last pass -- %s: %s%s|r",
+			result.slot,
+			result.ok and "|cff44ff44" or "|cffff3333",
+			result.detail or "?"))
+	end
+
+	E:Print("Usage: /octoui-mountgear [on / off / trinket1 / trinket2 / boots / gloves] <item link, item id or name>")
+end
+
 function E:FilterCommand(msg)
 	local filters = E.global.unitframe.aurafilters
 	if not filters then
@@ -1351,6 +1427,7 @@ function E:LoadCommands()
 	self:RegisterChatCommand("octoui-filter", "FilterCommand")
 	self:RegisterChatCommand("octoui-blacklist", "BlacklistCommand")
 	self:RegisterChatCommand("octoui-roll", "AutoRollCommand")
+	self:RegisterChatCommand("octoui-mountgear", "MountGearReport")
 	self:RegisterChatCommand("octoui-auras", "AuraReport")
 	self:RegisterChatCommand("octoui-dismount", "DismountReport")
 	self:RegisterChatCommand("octoui-mail", "MailReport")
