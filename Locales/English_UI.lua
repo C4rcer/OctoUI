@@ -586,6 +586,8 @@ L["Nothing on the list. Every roll is left to you until you add something."] = t
 L["Takes this off the list. Rolls for it go back to being yours to make."] = true;
 L["Roll"] = true;
 L["Remove"] = true;
+L["Silence the confirmation"] = true;
+L["A bind-on-pickup roll raises a confirmation dialog, and the sound it makes is the clunk you hear. This swallows that one sound, for automatic rolls only."] = true;
 --Fallbacks for the client's own NEED / GREED / PASS, which are not safe to read straight
 --into the options tree. See the note above E:SafeString in Core/core.lua.
 L["Need"] = true;

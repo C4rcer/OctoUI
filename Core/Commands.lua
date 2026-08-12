@@ -956,7 +956,7 @@ function E:BlacklistCommand(msg)
 end
 
 local rollActions = {need = true, greed = true, pass = true}
-local AUTOROLL_USAGE = "Usage: /octoui-roll [need / greed / pass / remove / keep / once / on / off / clear] <item link, item id or name>"
+local AUTOROLL_USAGE = "Usage: /octoui-roll [need / greed / pass / remove / keep / once / quiet / on / off / clear] <item link, item id or name>"
 
 --Editing the loot roll rules. A slash command as well as the options page because the
 --moment you decide you always want an item is the moment it just dropped -- and a
@@ -1003,6 +1003,14 @@ function E:AutoRollCommand(msg)
 		E:Print(format("Watching: %s. ConfirmLootRoll is %s.",
 			concat(M:GetAutoRollWinEvents(), ", "),
 			type(ConfirmLootRoll) == "function" and "present" or "absent -- a bind-on-pickup roll will still need its popup answered by hand"))
+
+		--Names the sound that was actually taken away. "nothing yet" after a roll that still
+		--clunked means the client is making that noise itself, not Lua, and no addon can
+		--reach it.
+		local silenced = M:GetAutoRollSilenced()
+		E:Print(format("Confirmation sound: %s, last swallowed %s.",
+			db.silence and "silenced" or "left alone",
+			silenced or "nothing yet"))
 
 		E:Print(AUTOROLL_USAGE)
 		return
@@ -1060,6 +1068,19 @@ function E:AutoRollCommand(msg)
 
 		E:Print(format("%s -- %s", M:AutoRollLabel(rule),
 			rule.autoRemove and "removed once you win it" or "kept on the list however often it drops"))
+		M:ScheduleAutoRollRefresh()
+		return
+	end
+
+	if action == "quiet" then
+		local db = M:GetAutoRollSettings()
+		if rest == "" then
+			db.silence = not db.silence
+		else
+			db.silence = (lower(rest) == "on")
+		end
+
+		E:Print(format("The roll confirmation sound is %s.", db.silence and "silenced" or "left alone"))
 		M:ScheduleAutoRollRefresh()
 		return
 	end

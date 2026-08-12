@@ -83,6 +83,12 @@ local autoRollFrame
 local winPatterns = {}
 local winSources = {}
 
+--Declared here rather than beside the sound hook further down, because AutoRollOnStart
+--sets silenceRoll and a local declared after that function would not be the one it writes
+--to -- the assignment would quietly land on a global and the hook would never see it.
+local silenceRoll
+local lastSilenced
+
 local function Store()
 	local db = E.db.general
 	if not db.autoRollRules then
@@ -92,6 +98,7 @@ local function Store()
 	local rules = db.autoRollRules
 	if rules.enable == nil then rules.enable = true end
 	if rules.autoRemove == nil then rules.autoRemove = true end
+	if rules.silence == nil then rules.silence = true end
 	if not ACTION_ROLLTYPE[rules.newAction] then rules.newAction = "need" end
 	if not rules.rules then rules.rules = {} end
 
@@ -325,7 +332,9 @@ function M:AutoRollOnStart(rollID, duration)
 		recentRolls[rule.key] = now + window
 	end
 
+	silenceRoll = now
 	RollOnLoot(rollID, rolltype)
+	silenceRoll = nil
 
 	--The roll bar has nothing left to ask once this has answered it. Guarded and repeated
 	--on LootRoll's side: whichever of the two handlers runs second is the one that finds a
@@ -362,6 +371,59 @@ function M:HideRollPopup(rollID)
 			dialog:Hide()
 		end
 	end
+end
+
+--[[
+	The noise a roll makes.
+
+	A bind-on-pickup roll raises Blizzard's CONFIRM_LOOT_ROLL dialog, and a static popup
+	plays igMainMenuOpen from its OnShow -- the port of that file does the same at
+	Core/StaticPopups.lua:496, which is the best evidence available here for what the
+	original does. So the clunk is the dialog arriving, and hiding it a frame later cannot
+	unring it: the sound is already out by then.
+
+	Silenced by swallowing the PlaySound belonging to our own roll and nothing else. Two
+	narrow windows only -- the RollOnLoot call itself, and the client's dispatch of a
+	confirmation for a rollID we sent -- and at most one sound per roll, so a sound that
+	merely lands in the same instant still plays.
+
+	Whatever gets swallowed is recorded and reported by /octoui-roll. If that ever reads
+	"nothing", the noise comes from the client rather than from Lua and no addon can take
+	it away.
+]]
+local function ShouldSilence()
+	if not Store().silence then return false end
+
+	--Time-bounded rather than a plain flag: an error inside RollOnLoot would leave a bare
+	--flag set and mute the entire UI for the session.
+	if silenceRoll and (GetTime() - silenceRoll) < 1 then return true end
+
+	--`event` and `arg1` are the client's event globals, still current while the
+	--confirmation is being dispatched -- which is where the dialog, and its sound, come
+	--from. Marked on the pending roll so this can only ever swallow one sound per roll,
+	--rather than staying armed on a stale `event` once dispatch has finished.
+	if event == "CONFIRM_LOOT_ROLL" and arg1 then
+		local pending = pendingRolls[arg1]
+		if pending and not pending.silenced then
+			pending.silenced = true
+			return true
+		end
+	end
+
+	return false
+end
+
+local function PlaySoundHook(sound, channel)
+	if ShouldSilence() then
+		lastSilenced = sound
+		return
+	end
+
+	return E.hooks.PlaySound(sound, channel)
+end
+
+function M:GetAutoRollSilenced()
+	return lastSilenced
 end
 
 --[[
@@ -505,7 +567,7 @@ function M:ScheduleAutoRollRefresh()
 	end)
 end
 
-local staticArgs = {intro = true, enable = true, autoRemove = true, newAction = true, add = true}
+local staticArgs = {intro = true, enable = true, autoRemove = true, silence = true, newAction = true, add = true}
 
 function M:RefreshAutoRollOptions()
 	local general = E.Options and E.Options.args and E.Options.args.general
@@ -609,6 +671,14 @@ local function BuildOptions()
 				get = function() return Store().autoRemove and true or false end,
 				set = function(_, value) Store().autoRemove = value and true or false end
 			},
+			silence = {
+				order = 3.5,
+				type = "toggle",
+				name = L["Silence the confirmation"],
+				desc = L["A bind-on-pickup roll raises a confirmation dialog, and the sound it makes is the clunk you hear. This swallows that one sound, for automatic rolls only."],
+				get = function() return Store().silence and true or false end,
+				set = function(_, value) Store().silence = value and true or false end
+			},
 			newAction = {
 				order = 4,
 				type = "select",
@@ -642,6 +712,14 @@ function M:LoadAutoRoll()
 	Store()
 	BuildWinPatterns()
 	BuildOptions()
+
+	--Installed once and gated by the option from inside, rather than hooked and unhooked as
+	--the option moves: two comparisons per UI sound is cheaper than that bookkeeping, and a
+	--hook that is never removed cannot be removed at the wrong moment either. On E rather
+	--than on Misc because Misc does not embed AceHook and E does.
+	if not E.hooks.PlaySound then
+		E:RawHook("PlaySound", PlaySoundHook, true)
+	end
 
 	autoRollFrame = CreateFrame("Frame")
 	autoRollFrame:RegisterEvent("START_LOOT_ROLL")
