@@ -187,6 +187,7 @@ function M:Initialize()
 	if self.LoadMailTools then self:LoadMailTools() end
 	self:LoadLoot()
 	self:LoadLootRoll()
+	if self.LoadAutoRoll then self:LoadAutoRoll() end
 	self:LoadChatBubbles()
 
 	--Needs nampower's structured combat events; bails quietly without them

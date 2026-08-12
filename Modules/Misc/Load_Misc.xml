@@ -7,6 +7,7 @@
 	<Script file="DamageMeter.lua"/>
 	<Script file="ThreatModel.lua"/>
 	<Script file="LootRoll.lua"/>
+	<Script file="AutoRoll.lua"/>
 	<Script file="RaidMarker.lua"/>
 	<Script file="AutoStance.lua"/>
 	<Script file="AutoDismount.lua"/>

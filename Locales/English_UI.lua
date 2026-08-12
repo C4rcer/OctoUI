@@ -571,3 +571,26 @@ L["Sort finished, but %d move(s) could not be completed. Run /octoui-bags to see
 
 --Modules/Chat/Chat.lua
 L["Undocked the right chat window; the dock was hiding it on every login."] = true;
+
+--Modules/Misc/AutoRoll.lua -- per-item loot roll rules
+L["Loot Rolls"] = true;
+L["Rolls need, greed or pass for you on the items named here. Anything not on the list is left alone. Paste an item link, an item id, or type a name."] = true;
+L["Turns every rule below off at once without losing the list."] = true;
+L["Remove after winning"] = true;
+L["What new entries start with. Each entry keeps its own setting afterwards."] = true;
+L["Takes this off the list once the item reaches you. Turn it off for something that drops again and again, like a reputation turn-in."] = true;
+L["What new entries start with."] = true;
+L["Add item"] = true;
+L["An item link, an item id, or a name. Shift-clicking an item into the box is the safest of the three."] = true;
+L["Nothing on the list. Every roll is left to you until you add something."] = true;
+L["Takes this off the list. Rolls for it go back to being yours to make."] = true;
+L["Roll"] = true;
+L["Remove"] = true;
+--Fallbacks for the client's own NEED / GREED / PASS, which are not safe to read straight
+--into the options tree. See the note above E:SafeString in Core/core.lua.
+L["Need"] = true;
+L["Greed"] = true;
+L["Pass"] = true;
+L["AUTOROLL_ITEM_ID"] = "Item #%d"
+L["AUTOROLL_ROLLED"] = "Rolled %s on %s."
+L["AUTOROLL_REMOVED"] = "Won %s -- taken off the loot roll list."

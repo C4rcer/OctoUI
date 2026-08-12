@@ -8,6 +8,7 @@ local pairs, unpack, ipairs, next, tonumber = pairs, unpack, ipairs, next, tonum
 local tinsert = table.insert
 --WoW API / Variables
 local CursorOnUpdate = CursorOnUpdate
+local GetTime = GetTime
 local DressUpItemLink = DressUpItemLink
 local GetLootRollItemInfo = GetLootRollItemInfo
 local GetLootRollItemLink = GetLootRollItemLink
@@ -83,8 +84,38 @@ local rollpairs = locale == "deDE" and {
 	["(.*) has selected Need for: (.+)"] = "need",
 }
 
+--[[
+	Retiring a bar, which is also what frees it for the next roll.
+
+	GetFrame reuses a bar only when its rollID is nil, so anything that hides one without
+	clearing that leaks it: the bar is invisible, still counted in M.RollBars, and never
+	used again. Every path that finishes with a bar goes through here for that reason.
+]]
+local function RetireFrame(f)
+	if not f then return end
+
+	f.rollID = nil
+	f.time = nil
+	f.expires = nil
+	f:Hide()
+end
+
+--Called from AutoRoll as well, which knows a rollID but not which bar carries it.
+function M:RetireRollBar(rollID)
+	if not rollID then return end
+
+	for _, f in ipairs(M.RollBars) do
+		if f.rollID == rollID then RetireFrame(f) end
+	end
+end
+
+--The bar goes when the roll is cast. There is nothing left for it to ask, which is what
+--the default UI does too -- and without this nothing retires a bar you rolled on, so they
+--stack up one per drop for the rest of the run.
 local function ClickRoll(frame)
-	RollOnLoot(frame.parent.rollID, frame.rolltype)
+	local parent = frame.parent
+	RollOnLoot(parent.rollID, frame.rolltype)
+	RetireFrame(parent)
 end
 
 local function HideTip() GameTooltip:Hide() end
@@ -142,21 +173,28 @@ local function OnEvent(frame)
 	cancelled_rolls[rollID] = true
 	if frame.rollID ~= rollID then return end
 
-	frame.rollID = nil
-	frame.time = nil
-	frame:Hide()
+	RetireFrame(frame)
 end
 
 local function StatusUpdate(frame)
-	if not frame.parent.rollID then return end
-	local t = GetLootRollTimeLeft(frame.parent.rollID)
-	local perc = t / frame.parent.time
+	local parent = frame.parent
+	if not parent.rollID then return end
+
+	local t = GetLootRollTimeLeft(parent.rollID)
+
+	--Retired on the wall clock as well, because neither of the two things that used to end
+	--a bar can be relied on here: CANCEL_LOOT_ROLL is the server's to send, and the huge
+	--return value tested below is a later-client habit this one may not share. A roll
+	--cannot outlive its own length, and that length came from the event itself, so this
+	--needs nothing from the client to be right. The margin keeps it behind the real end.
+	if t > 1000000000 or (parent.expires and GetTime() > parent.expires) then
+		RetireFrame(parent)
+		return
+	end
+
+	local perc = t / parent.time
 	E:Point(frame.spark, "CENTER", frame, "LEFT", perc * frame:GetWidth(), 0)
 	frame:SetValue(t)
-
-	if t > 1000000000 then
-		frame:GetParent():Hide()
-	end
 end
 
 local function CreateRollButton(parent, ntex, ptex, htex, rolltype, tiptext, point, relativeFrame, relativePoint, ofsx, ofsy)
@@ -280,6 +318,13 @@ function M:START_LOOT_ROLL()
 	local f = GetFrame()
 	f.rollID = arg1
 	f.time = arg2
+
+	--arg2 is the roll's length. Every 1.12 client seen gives it in milliseconds, but a
+	--value that small could only be seconds, so both read the same rather than one being
+	--assumed. Five seconds of margin so this never beats the roll's real end.
+	local duration = tonumber(arg2) or 0
+	if duration > 1000 then duration = duration / 1000 end
+	f.expires = GetTime() + duration + 5
 	for i in pairs(f.rolls) do f.rolls[i] = nil end
 	f.need:SetText(0)
 	f.greed:SetText(0)
@@ -310,8 +355,23 @@ function M:START_LOOT_ROLL()
 	E:Point(f, "CENTER", WorldFrame, "CENTER")
 	f:Show()
 
-	if E.db.general.autoRoll and UnitLevel("player") == MAX_PLAYER_LEVEL and quality == 2 and not bindOnPickUp then
+	--A per-item rule from AutoRoll.lua wins over the blanket greed. Both handlers see this
+	--same event and either may run first, so this asks whether a rule MATCHES rather than
+	--whether one has already rolled -- otherwise the order would decide, and a green named
+	--as a need would sometimes be greeded instead. Guarded because AutoRoll.lua is a newer
+	--file: after a /reload this one is current while that one may not exist yet.
+	local ruled = M.GetAutoRollRule and M:GetAutoRollRule(arg1)
+	if E.db.general.autoRoll and not ruled and UnitLevel("player") == MAX_PLAYER_LEVEL and quality == 2 and not bindOnPickUp then
 		RollOnLoot(arg1, 2)
+		RetireFrame(f)
+		return
+	end
+
+	--Retired here as well as from AutoRoll for the same ordering reason: whichever of the
+	--two handlers runs second is the one that finds a bar to hide. AutoRoll running first
+	--finds no bar at all, since this is what builds it.
+	if ruled then
+		RetireFrame(f)
 	end
 end
 

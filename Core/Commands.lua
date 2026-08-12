@@ -4,7 +4,7 @@ local E, L, V, P, G = unpack(ElvUI); --Import: Engine, Locales, PrivateDB, Profi
 --Lua functions
 local _G = _G
 local tonumber, type, pairs, ipairs = tonumber, type, pairs, ipairs
-local getn = table.getn
+local getn, concat = table.getn, table.concat
 local format, len, lower, match = string.format, string.len, string.lower, string.match
 --WoW API / Variables
 local UIFrameFadeOut, UIFrameFadeIn = UIFrameFadeOut, UIFrameFadeIn
@@ -955,6 +955,139 @@ function E:BlacklistCommand(msg)
 	E:Print("Usage: /octoui-blacklist [note / add / remove / list] <name> <reason>")
 end
 
+local rollActions = {need = true, greed = true, pass = true}
+local AUTOROLL_USAGE = "Usage: /octoui-roll [need / greed / pass / remove / keep / once / on / off / clear] <item link, item id or name>"
+
+--Editing the loot roll rules. A slash command as well as the options page because the
+--moment you decide you always want an item is the moment it just dropped -- and a
+--shift-clicked link into the chat box is both faster and less error-prone than typing the
+--name of a server item into a text field.
+function E:AutoRollCommand(msg)
+	local M = E:GetModule("Misc")
+
+	--AutoRoll.lua is a new file and 1.12 indexes the AddOns folder at process start, so
+	--after a /reload this file can be current while that one does not exist yet.
+	if not M.AddAutoRollRule then
+		E:Print("Loot roll rules are not loaded yet. Exit WoW.exe fully and start it again -- a /reload cannot pick up a file that was not there at login.")
+		return
+	end
+
+	--Slashes, not pipes, in user-facing text: `|` is the chat escape character and eats
+	--the character after it. See the note in E:FilterCommand.
+	local action, rest = match(msg or "", "^%s*(%S*)%s*(.-)%s*$")
+	action = lower(action or "")
+
+	if action == "" or action == "list" then
+		local db = M:GetAutoRollSettings()
+		local list = M:GetAutoRollRules()
+
+		E:Print(format("Loot roll rules -- %s, %d item(s). New entries roll %s and are %s.",
+			db.enable and "on" or "OFF",
+			getn(list),
+			db.newAction,
+			db.autoRemove and "removed once you win" or "kept after you win"))
+
+		for _, rule in ipairs(list) do
+			E:Print(format("  %s -- %s |cff888888(%s)|r",
+				M:AutoRollLabel(rule),
+				rule.action,
+				rule.autoRemove and "removed once you win" or "kept"))
+		end
+
+		--The half of this that cannot be verified from the filesystem. Win detection is
+		--built from whichever loot strings the client actually defines, so this says which
+		--were found rather than leaving auto-remove to fail silently.
+		local sources = M:GetAutoRollWinSources()
+		E:Print(format("Win detection: %s.",
+			getn(sources) > 0 and concat(sources, ", ") or "NONE FOUND, so auto-remove cannot fire"))
+		E:Print(format("Watching: %s. ConfirmLootRoll is %s.",
+			concat(M:GetAutoRollWinEvents(), ", "),
+			type(ConfirmLootRoll) == "function" and "present" or "absent -- a bind-on-pickup roll will still need its popup answered by hand"))
+
+		E:Print(AUTOROLL_USAGE)
+		return
+	end
+
+	if rollActions[action] then
+		if rest == "" then
+			E:Print(format("Usage: /octoui-roll %s <item link, item id or name>", action))
+			return
+		end
+
+		local rule = M:AddAutoRollRule(rest, action)
+		if not rule then
+			E:Print("Could not read an item out of that. Shift-click the item into the chat box, or give its id.")
+			return
+		end
+
+		E:Print(format("%s -- %s |cff888888(%s)|r",
+			M:AutoRollLabel(rule),
+			rule.action,
+			rule.autoRemove and "removed once you win" or "kept"))
+		M:ScheduleAutoRollRefresh()
+		return
+	end
+
+	if action == "remove" or action == "delete" then
+		if rest == "" then
+			E:Print("Usage: /octoui-roll remove <item link, item id or name>")
+			return
+		end
+
+		local rule = M:RemoveAutoRollRule(rest)
+		if not rule then
+			E:Print("Nothing on the list matches that. An item added by name has to be removed by name, and one added by id by id.")
+			return
+		end
+
+		E:Print(format("Removed %s. Rolls for it are yours again.", M:AutoRollLabel(rule)))
+		M:ScheduleAutoRollRefresh()
+		return
+	end
+
+	--The reputation-item case: it drops all night and has to stay on the list.
+	if action == "keep" or action == "once" then
+		if rest == "" then
+			E:Print(format("Usage: /octoui-roll %s <item link, item id or name>", action))
+			return
+		end
+
+		local rule = M:SetAutoRollRemove(rest, action == "once")
+		if not rule then
+			E:Print("Nothing on the list matches that.")
+			return
+		end
+
+		E:Print(format("%s -- %s", M:AutoRollLabel(rule),
+			rule.autoRemove and "removed once you win it" or "kept on the list however often it drops"))
+		M:ScheduleAutoRollRefresh()
+		return
+	end
+
+	if action == "on" or action == "off" then
+		M:GetAutoRollSettings().enable = (action == "on")
+		E:Print(format("Loot roll rules are %s. The list is untouched.", action == "on" and "on" or "off"))
+		M:ScheduleAutoRollRefresh()
+		return
+	end
+
+	if action == "clear" then
+		if lower(rest) ~= "confirm" then
+			E:Print("That empties the whole list. Type   /octoui-roll clear confirm   if you mean it.")
+			return
+		end
+
+		local db = M:GetAutoRollSettings()
+		local count = getn(M:GetAutoRollRules())
+		db.rules = {}
+		E:Print(format("Cleared %d loot roll rule(s).", count))
+		M:ScheduleAutoRollRefresh()
+		return
+	end
+
+	E:Print(AUTOROLL_USAGE)
+end
+
 function E:FilterCommand(msg)
 	local filters = E.global.unitframe.aurafilters
 	if not filters then
@@ -1196,6 +1329,7 @@ function E:LoadCommands()
 	self:RegisterChatCommand("octoui-threatmodel", "ThreatModelReport")
 	self:RegisterChatCommand("octoui-filter", "FilterCommand")
 	self:RegisterChatCommand("octoui-blacklist", "BlacklistCommand")
+	self:RegisterChatCommand("octoui-roll", "AutoRollCommand")
 	self:RegisterChatCommand("octoui-auras", "AuraReport")
 	self:RegisterChatCommand("octoui-dismount", "DismountReport")
 	self:RegisterChatCommand("octoui-mail", "MailReport")
