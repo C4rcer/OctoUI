@@ -1237,11 +1237,56 @@ end
 
 --The CC watch report. Whether a spell is recognised, whether the cast was seen as yours and
 --why a row went away are all invisible from the list itself.
-function E:CCWatchReport()
+function E:CCWatchReport(msg)
 	local M = E:GetModule("Misc")
 
 	if not M.GetCCWatch then
 		E:Print("CC Watch is not loaded yet. Exit WoW.exe fully and start it again -- a /reload cannot pick up a file that was not there at login.")
+		return
+	end
+
+	local action, rest = match(msg or "", "^%s*(%S*)%s*(.-)%s*$")
+	action = lower(action or "")
+
+	--Spell names are case sensitive and multi-word, so `rest` is taken exactly as typed.
+	if action == "add" or action == "remove" then
+		if rest == "" then
+			E:Print(format("Usage: /octoui-cc %s <spell name, exactly as the game writes it>", action))
+			return
+		end
+
+		if action == "add" then
+			M:AddCCSpell(rest)
+			E:Print(format("Watching %s. It needs a debuff duration entry too, or there is no timer to show -- /octoui-dots reports missing ones.", rest))
+		else
+			M:RemoveCCSpell(rest)
+			E:Print(format("No longer watching %s.", rest))
+		end
+		return
+	end
+
+	--A row for your current target, put there by hand. Splits the two halves of "nothing
+	--appears": if this shows a row then the display works and anything wrong is in what
+	--reaches the cast handler, and if it does not then nothing upstream would have been
+	--visible anyway. It also gives you something stationary to aim /moveui at, which a real
+	--fear does not -- that row lasts exactly as long as the mob does.
+	if action == "test" then
+		local _, guid = UnitExists("target")
+		if not guid then
+			_, guid = UnitExists("player")
+		end
+
+		if not guid then
+			E:Print("No GUID available. Those come from SuperWoW, and without it nothing here can work.")
+			return
+		end
+
+		local ok, why = M:AddCCWatch(guid, "Fear", nil, nil, "Interface\\Icons\\Spell_Shadow_Possession")
+		if ok then
+			E:Print(format("Test row added for %s. It stays until you right-click it. Use /moveui if you cannot see it.", UnitName(guid) or guid))
+		else
+			E:Print(format("Could not add a test row: %s.", why or "?"))
+		end
 		return
 	end
 
@@ -1257,16 +1302,36 @@ function E:CCWatchReport()
 		type(SpellInfo) == "function" and "present" or "|cffff0000MISSING -- nothing can be recognised|r"))
 	E:Print(format("  yours: player %s, pet %s", tostring(playerGUID), tostring(petGUID)))
 
+	--The three ways "nothing appears" can happen, told apart.
+	local castEvents, ownCasts, seenCasts = M:GetCCWatchStats()
+	E:Print(format("  cast events seen: %d, of them yours: %d", castEvents, ownCasts))
+
+	if castEvents == 0 then
+		E:Print("  |cffff0000UNIT_CASTEVENT has never fired.|r Nothing here can work without it -- that event is SuperWoW's, so this is a SuperWoW problem rather than an OctoUI one.")
+	elseif ownCasts == 0 then
+		E:Print("  |cffff0000Casts are arriving but none read as yours.|r The player GUID above is what they are compared against.")
+	end
+
+	if getn(seenCasts) > 0 then
+		local recent = ""
+		for i = 1, getn(seenCasts) do
+			recent = (i == 1) and seenCasts[i] or (recent..", "..seenCasts[i])
+		end
+		E:Print(format("  your recent casts: %s", recent))
+	end
+
 	local count = 0
 	for guid, entry in pairs(watch) do
 		count = count + 1
 		local left = entry.start + entry.duration - GetTime()
-		E:Print(format("  %s on %s -- %.1f of %.0f left |cff888888(id %s)|r",
+		E:Print(format("  %s on %s -- %s |cff888888(id %s, %s)|r",
 			entry.spell,
 			UnitName(guid) or guid,
-			left > 0 and left or 0,
-			entry.duration,
-			tostring(entry.spellID)))
+			entry.loose and format("|cffff3333LOOSE (%s)|r%s", entry.loose,
+					entry.scanned and (" |cff888888["..entry.scanned.."]|r") or "")
+				or format("%.1f of %.0f left", left > 0 and left or 0, entry.duration),
+			tostring(entry.spellID),
+			UnitExists(guid) and "visible" or "not visible, kept"))
 	end
 
 	if count == 0 then
@@ -1277,13 +1342,31 @@ function E:CCWatchReport()
 		E:Print(format("  last row removed: %s", lastRemoved))
 	end
 
-	local names = ""
-	local n = 0
+	--Built-ins and your own together, since what matters is what is actually watched.
+	local names, n = "", 0
 	for spell in pairs(M:GetCCSpells()) do
-		n = n + 1
-		names = (n == 1) and spell or (names..", "..spell)
+		if M:IsWatchedSpell(spell) then
+			n = n + 1
+			names = (n == 1) and spell or (names..", "..spell)
+		end
 	end
-	E:Print(format("  recognised (%d): %s", n, names))
+	for spell in pairs(db.extra) do
+		if M:IsWatchedSpell(spell) then
+			n = n + 1
+			names = (n == 1) and (spell.."*") or (names..", "..spell.."*")
+		end
+	end
+	E:Print(format("  watching (%d, * = added by you): %s", n, names))
+
+	local off = ""
+	for spell in pairs(db.hidden) do
+		off = (off == "") and spell or (off..", "..spell)
+	end
+	if off ~= "" then
+		E:Print(format("  switched off: %s", off))
+	end
+
+	E:Print("Usage: /octoui-cc [test / add <spell> / remove <spell>]")
 end
 
 function E:FilterCommand(msg)

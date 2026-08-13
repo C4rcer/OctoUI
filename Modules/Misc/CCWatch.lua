@@ -4,13 +4,14 @@ local M = E:GetModule("Misc");
 --Cache global variables
 --Lua functions
 local pairs, ipairs, type, tonumber, next = pairs, ipairs, type, tonumber, next
-local getn, tinsert, sort = table.getn, table.insert, table.sort
-local format, lower = string.format, string.lower
+local getn, tinsert, tremove, sort = table.getn, table.insert, table.remove, table.sort
+local format, lower, find, tostring = string.format, string.lower, string.find, tostring
 --WoW API / Variables
 local CreateFrame = CreateFrame
 local GetTime = GetTime
 local UnitName = UnitName
 local UnitExists = UnitExists
+local UnitIsDead = UnitIsDead
 local UnitDebuff = UnitDebuff
 local TargetUnit = TargetUnit
 
@@ -38,10 +39,23 @@ local TargetUnit = TargetUnit
 	BREAKING EARLY IS THE NORMAL CASE. A feared mob that takes a tick of damage is loose long
 	before its timer says so, and a list that keeps counting down is worse than no list. The
 	debuff is checked against the mob itself -- by spell id, which SuperWoW returns as
-	UnitDebuff's fourth value -- and the row goes the moment it is no longer there. That
+	UnitDebuff's fourth value -- and the row turns red the moment it is no longer there. That
 	check is skipped while the client cannot see the mob, because "no data" and "no debuff"
-	look identical and dropping the row on the first is exactly wrong: a feared mob running
+	look identical and reading the first as "it broke" is exactly wrong: a feared mob running
 	out of range is when you most want to know how long is left.
+
+	A ROW ONLY LEAVES WHEN THE MOB DIES. Removing it when the control lapsed was the first
+	design and it was backwards: the row vanished at the precise moment its one job -- being
+	something to click and re-cast on -- mattered most. Losing control changes how the row
+	LOOKS, never whether it is there.
+
+	WHICH MEANS DEATH HAS TO BE READ CAREFULLY. UnitIsDead answers for a GUID, but only while
+	the client can see the mob at all, and a feared mob is very often out of range. So a row
+	goes on a POSITIVE answer only; merely not being visible keeps it. Cursive-Raid learned
+	the same thing from the other side and says so in core.lua -- its first attempt evicted
+	mobs that were still standing there, and it now keeps anything carrying its own curses.
+	A long stale timeout is the only backstop, for the case where the mob is gone and the
+	client never says so.
 ]]
 
 --Single-target crowd control, by the name this locale calls it. AoE fears are deliberately
@@ -67,7 +81,9 @@ local CC_SPELLS = {
 	["Repentance"] = true,
 	["Blind"] = true,
 	["Sleep"] = true,
-	["Gouge"] = true
+	["Gouge"] = true,
+	["Death Coil"] = true,
+	["Mind Control"] = true
 }
 
 local ROW_WIDTH, ROW_HEIGHT = 190, 20
@@ -75,6 +91,11 @@ local MAX_ROWS = 6
 local UPDATE_INTERVAL = 0.05
 --The break check walks a mob's debuffs, so it runs a fifth as often as the bars redraw.
 local SCAN_INTERVAL = 0.25
+
+--The backstop for a mob that is gone without the client ever saying it died: five minutes
+--since it was last visible. Cursive uses the same figure for the same reason, having first
+--tried thirty seconds and found it dropped mobs that were still standing in front of you.
+local UNSEEN_TIMEOUT = 300
 
 local watch = {}
 local rows = {}
@@ -85,6 +106,38 @@ local lastRemoved
 --clearing" without touching the rows every frame.
 local shownRows = 0
 
+--[[
+	What the cast handler has actually seen.
+
+	"Nothing appears" has three completely different causes and they look identical from the
+	outside: the event never fires at all (no SuperWoW, so nothing here can work), it fires
+	but no cast is being read as yours, or casts are read as yours and the spell simply is
+	not on the CC list. These three counters separate them in one line of /octoui-cc, and
+	the last few spell names say which spell to add if it is the third.
+
+	Same shape as AutoDismount's record of error strings it did not recognise, for the same
+	reason: a list that is silent about what it rejected cannot be debugged from a chair.
+]]
+local castEvents, ownCasts = 0, 0
+local seenCasts = {}
+
+local function NoteCast(name, matched)
+	local label = (name or "?")..(matched and "" or " |cff888888(not CC)|r")
+
+	for i = 1, getn(seenCasts) do
+		if seenCasts[i] == label then return end
+	end
+
+	tinsert(seenCasts, 1, label)
+	while getn(seenCasts) > 8 do
+		tremove(seenCasts)
+	end
+end
+
+function M:GetCCWatchStats()
+	return castEvents, ownCasts, seenCasts
+end
+
 local function Store()
 	local db = E.db.general
 	if not db.ccWatch then
@@ -94,8 +147,45 @@ local function Store()
 	local cc = db.ccWatch
 	if cc.enable == nil then cc.enable = true end
 	if not tonumber(cc.maxRows) then cc.maxRows = 4 end
+	--Spells added and removed by hand. A fixed list has now been wrong twice, and no list
+	--written here can know which spells this realm added or which of them you care about.
+	if not cc.extra then cc.extra = {} end
+	if not cc.hidden then cc.hidden = {} end
 
 	return cc
+end
+
+--The list as it actually stands: what ships here, plus yours, minus anything you have
+--switched off.
+function M:IsWatchedSpell(name)
+	if not name then return false end
+
+	local db = Store()
+	if db.hidden[name] then return false end
+
+	return (CC_SPELLS[name] or db.extra[name]) and true or false
+end
+
+function M:AddCCSpell(name)
+	if not name or name == "" then return nil end
+
+	local db = Store()
+	db.hidden[name] = nil
+	--Only recorded as an addition when it is not already built in, so the list of "yours"
+	--stays a list of what you actually changed.
+	if not CC_SPELLS[name] then db.extra[name] = true end
+
+	return name
+end
+
+function M:RemoveCCSpell(name)
+	if not name or name == "" then return nil end
+
+	local db = Store()
+	db.extra[name] = nil
+	if CC_SPELLS[name] then db.hidden[name] = true end
+
+	return name
 end
 
 local function LibDebuff()
@@ -110,18 +200,39 @@ function M:AddCCWatch(guid, spellName, rank, spellID, texture)
 	local lib = LibDebuff()
 	--Unhasted: casting speed shortens damage over time on this realm, not crowd control.
 	local duration = lib and lib:GetDuration(spellName, rank, false) or 0
-	if duration <= 0 then return end
+	--Returned rather than swallowed so /octoui-cc test can say WHICH of the two it was: no
+	--LibDebuff at all, or a spell the duration table has no entry for.
+	if duration <= 0 then
+		return false, lib and "no duration in the table" or "LibDebuff not loaded"
+	end
 
-	watch[guid] = {
-		guid = guid,
-		spell = spellName,
-		spellID = spellID,
-		texture = texture,
-		start = GetTime(),
-		duration = duration
-	}
+	local now = GetTime()
+	local entry = watch[guid]
+
+	if entry then
+		--Re-cast on something already listed. The row keeps its place in the order rather
+		--than jumping to the end, because the click that put it back under control was aimed
+		--at where it currently is.
+		entry.spell, entry.spellID, entry.texture = spellName, spellID, texture
+		entry.start, entry.duration = now, duration
+		entry.loose = nil
+	else
+		watch[guid] = {
+			guid = guid,
+			spell = spellName,
+			spellID = spellID,
+			texture = texture,
+			start = now,
+			duration = duration,
+			--Fixed at first sight and never touched again: it is what orders the list, and
+			--rows that reorder themselves cannot be clicked without looking.
+			added = now,
+			lastSeen = now
+		}
+	end
 
 	M:UpdateCCWatch()
+	return true
 end
 
 function M:RemoveCCWatch(guid, why)
@@ -143,29 +254,111 @@ function M:GetCCWatchSettings()
 	return Store()
 end
 
---Is our crowd control still on this mob?
---
---Answered by spell id against the mob's own debuffs, which needs neither a target nor a
---tooltip scan. Two honest "do not know" cases return true rather than dropping the row: a
---client that cannot see the mob has no debuffs to report, and a client without SuperWoW
---gives no ids to compare.
-local function StillControlled(entry)
-	if not entry.spellID then return true end
-	if not UnitExists(entry.guid) then return true end
+--[[
+	Is our crowd control still on this mob?
 
+	ONLY ANSWERABLE FOR THE UNIT YOU HAVE SELECTED. This client is sent aura data for your
+	target and your group, and for nothing else -- a GUID gets you a name, a health value and
+	a targeting call, but not a debuff list. SuperWoW does not change that, which is why
+	Cursive-Raid carries a tooltip scanner and an armour-difference trick for Expose Armor
+	rather than simply reading the debuff off the mob.
+
+	The first version of this scanned regardless, and every mob went red the moment you
+	looked away: no aura data reads identically to no debuff. Reported 2026-08-13 with the
+	fear plainly still holding.
+
+	So the scan runs only while the mob IS the target, and every other case trusts the
+	timer. That makes an early break invisible until you look at the mob -- which is the
+	honest position, since the client genuinely has not been told.
+
+	What was on the mob when this concludes "broken" is recorded for /octoui-cc, because
+	the other way to get here is our cast id and the debuff's id not matching, and the two
+	need telling apart.
+]]
+--Returns whether the control is still on, AND whether that answer is worth anything. The
+--second value is the whole point: "not there" and "cannot see" were one answer in the first
+--version, and that is what turned every untargeted mob red.
+local function ControlState(entry)
+	if not entry.spellID then return true, false end
+
+	local _, targetGUID = UnitExists("target")
+	if targetGUID ~= entry.guid then return true, false end
+
+	local seen, ids = 0, ""
 	for i = 1, 16 do
 		local texture, _, _, id = UnitDebuff(entry.guid, i)
 		if not texture then break end
-		if id == entry.spellID then return true end
+
+		if id == entry.spellID then return true, true end
+
+		seen = seen + 1
+		ids = (seen == 1) and tostring(id) or (ids..","..tostring(id))
 	end
 
-	return false
+	entry.scanned = format("%d debuff(s) on it, ids %s, ours %s", seen,
+		seen > 0 and ids or "none", tostring(entry.spellID))
+
+	return false, true
+end
+
+--[[
+	Losing control without looking at the mob.
+
+	Targeting it is the only way to READ its debuffs, but it is not the only way to know it
+	is loose. Two things a controlled mob cannot do:
+
+	CAST. UNIT_CASTEVENT carries the caster's GUID, so a watched GUID appearing there is
+	exact -- no name matching, no ambiguity, and it works for a mob never targeted.
+
+	SWING. The combat log names the attacker at the start of the line. That is a name rather
+	than a GUID, so it is only trusted when exactly one watched mob carries that name; two
+	Infinite Whelps on the list and neither is blamed for what might be the other's swing.
+	Getting this wrong is what produced the false LOOSE in the first place, so where it
+	cannot be sure it says nothing.
+]]
+function M:NoteMobActed(guid, why)
+	local entry = guid and watch[guid]
+	if not entry or entry.loose then return end
+
+	entry.loose = why
+	M:UpdateCCWatch()
+end
+
+local function NoteMobActedByName(msg)
+	if not msg then return end
+
+	local match, matches
+	for _, entry in pairs(watch) do
+		if not entry.loose then
+			local name = UnitName(entry.guid)
+			--Anchored, and followed by a space or an apostrophe, so "Infinite Whelp hits"
+			--and "Infinite Whelp's Fireball" both count while "You hit Infinite Whelp"
+			--does not.
+			if name and (find(msg, "^"..name.." ") or find(msg, "^"..name.."'")) then
+				matches = (matches or 0) + 1
+				match = entry
+			end
+		end
+	end
+
+	if matches == 1 then
+		match.loose = "acted"
+		M:UpdateCCWatch()
+	end
 end
 
 --[[ the display ]]--
 local function RowOnClick()
 	local guid = this.guid
 	if not guid then return end
+
+	--Right-click drops the row by hand. The only automatic removal is death, so this is the
+	--way out for a mob that is genuinely finished with and the client never said so.
+	if arg1 == "RightButton" then
+		M:RemoveCCWatch(guid, "dismissed")
+		M:UpdateCCWatch()
+		return
+	end
 
 	--The whole reason for the list: one click puts the mob you feared back under the cursor
 	--so it can be re-cast on, without hunting for it or tabbing through everything else.
@@ -212,6 +405,7 @@ local function CreateRow(index)
 	E:Point(timer, "RIGHT", status, "RIGHT", -3, 0)
 	row.timer = timer
 
+	row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 	row:SetScript("OnClick", RowOnClick)
 	row:Hide()
 
@@ -219,15 +413,17 @@ local function CreateRow(index)
 	return row
 end
 
---Newest first: the thing you just feared is the thing you are about to have to think about,
---and a list that reorders itself as timers pass is a list you cannot click by muscle memory.
+--Ordered by when each mob first joined the list and never re-ordered afterwards. Sorting by
+--time remaining or by whether control has lapsed would move a row at the exact moment it
+--becomes the one you are reaching for -- and since a row now stays until the mob dies, the
+--position of everything above it is stable for as long as the fight lasts.
 local function SortedEntries()
 	local list = {}
 	for _, entry in pairs(watch) do
 		tinsert(list, entry)
 	end
 
-	sort(list, function(a, b) return a.start > b.start end)
+	sort(list, function(a, b) return (a.added or a.start) < (b.added or b.start) end)
 	return list
 end
 
@@ -242,11 +438,29 @@ function M:UpdateCCWatch()
 	local now = GetTime()
 	local shown = 0
 
+	--A list that is empty most of the time cannot be positioned: /moveui draws its mover, but
+	--that is a small grey rectangle among twenty others and says nothing about what will
+	--appear there or how big it will be. One sample row while config mode is up solves that,
+	--and costs nothing the rest of the time.
+	local preview = E.configMode and getn(list) == 0
+
 	for index = 1, MAX_ROWS do
 		local entry = list[index]
 		local row = rows[index]
 
-		if entry and index <= limit and db.enable then
+		if preview and index == 1 then
+			row = row or CreateRow(1)
+
+			row.guid = nil
+			row.icon:SetTexture("Interface\\Icons\\Spell_Shadow_Possession")
+			row.name:SetText(L["CC Watch"])
+			row.timer:SetText("20")
+			row.status:SetValue(1)
+			row.status:SetStatusBarColor(0.2, 0.7, 0.2)
+
+			row:Show()
+			shown = shown + 1
+		elseif entry and index <= limit and db.enable then
 			row = row or CreateRow(index)
 
 			local left = entry.start + entry.duration - now
@@ -255,14 +469,23 @@ function M:UpdateCCWatch()
 			row.guid = entry.guid
 			row.icon:SetTexture(entry.texture)
 			row.name:SetText(UnitName(entry.guid) or entry.spell)
-			row.timer:SetText(format("%.0f", left))
-			row.status:SetValue(entry.duration > 0 and (left / entry.duration) or 0)
 
-			--Green while it is comfortably yours, amber once re-casting is the next thing
-			--you should be doing. The threshold is a cast plus a moment to react.
-			if left <= 3 then
+			--Three states, and the bar is full for the one that matters most: a mob that is
+			--loose should be the loudest thing on the list, not a bar that has shrunk to
+			--nothing and reads as finished-with.
+			if entry.loose then
+				row.timer:SetText(L["CC_LOOSE"])
+				row.status:SetValue(1)
+				row.status:SetStatusBarColor(0.8, 0.15, 0.15)
+			elseif left <= 3 then
+				--Amber once re-casting is the next thing you should be doing: a cast, plus a
+				--moment to react to it.
+				row.timer:SetText(format("%.0f", left))
+				row.status:SetValue(entry.duration > 0 and (left / entry.duration) or 0)
 				row.status:SetStatusBarColor(0.9, 0.7, 0.1)
 			else
+				row.timer:SetText(format("%.0f", left))
+				row.status:SetValue(entry.duration > 0 and (left / entry.duration) or 0)
 				row.status:SetStatusBarColor(0.2, 0.7, 0.2)
 			end
 
@@ -285,9 +508,12 @@ local function OnUpdate()
 	this.lastUpdate = 0
 
 	--Nothing controlled is the state this runs in almost all the time, so it costs one
-	--table lookup and returns. The one pass after the last row goes is what clears them.
+	--table lookup and returns. The one pass after the last row goes is what clears them --
+	--and the one after config mode opens is what draws the sample row, which is why the
+	--comparison is against what SHOULD be on screen rather than against zero.
 	if not next(watch) then
-		if shownRows > 0 then
+		local wanted = E.configMode and 1 or 0
+		if shownRows ~= wanted then
 			shownRows = M:UpdateCCWatch() or 0
 		end
 		return
@@ -298,11 +524,29 @@ local function OnUpdate()
 	if scan then lastScan = now end
 
 	for guid, entry in pairs(watch) do
-		--Assigning nil to the key pairs() is on is the one mutation the iterator allows.
-		if now >= entry.start + entry.duration then
-			M:RemoveCCWatch(guid, "ran out")
-		elseif scan and not StillControlled(entry) then
-			M:RemoveCCWatch(guid, "broke early")
+		--Assigning nil to the key pairs() is on is the one mutation the iterator allows, so
+		--removing the current entry here needs no second pass.
+		local visible = UnitExists(guid)
+		if visible then entry.lastSeen = now end
+
+		--DEATH IS THE ONLY THING THAT TAKES A ROW AWAY, and only when the client says so
+		--rather than merely failing to answer. Everything else changes how the row looks.
+		if visible and UnitIsDead(guid) then
+			M:RemoveCCWatch(guid, "died")
+		elseif (now - (entry.lastSeen or now)) > UNSEEN_TIMEOUT then
+			M:RemoveCCWatch(guid, "gone, not seen for five minutes")
+		elseif not entry.loose then
+			if now >= entry.start + entry.duration then
+				entry.loose = "ran out"
+			elseif scan then
+				local on, known = ControlState(entry)
+				if known and not on then entry.loose = "broke early" end
+			end
+		elseif scan and entry.loose ~= "ran out" and now < entry.start + entry.duration then
+			--A false alarm can be taken back, but only by looking straight at the mob: the
+			--signals that set it are inferences and the debuff itself is not.
+			local on, known = ControlState(entry)
+			if known and on then entry.loose = nil end
 		end
 	end
 
@@ -312,9 +556,19 @@ end
 --[[ events ]]--
 local function OnEvent()
 	if event ~= "UNIT_CASTEVENT" then
-		--PLAYER_REGEN_DISABLED and friends only clear the slate between pulls.
+		--A combat log line. Only worth parsing while something is actually being watched,
+		--which is almost never -- these events are the noisiest in the game.
+		if next(watch) then NoteMobActedByName(arg1) end
 		return
 	end
+
+	--Counted before any test at all, so a zero here says the event itself never arrives --
+	--which is the one failure no amount of looking at this module would explain.
+	castEvents = castEvents + 1
+
+	--A controlled mob cannot cast. Checked before anything else, because this fires for the
+	--mob whether or not it is our own cast being reported.
+	if arg1 then M:NoteMobActed(arg1, "started casting") end
 
 	if not Store().enable then return end
 	if type(SpellInfo) ~= "function" then return end
@@ -326,8 +580,13 @@ local function OnEvent()
 	local _, petGUID = UnitExists("pet")
 	if not (arg1 == playerGUID or (petGUID and arg1 == petGUID)) then return end
 
+	ownCasts = ownCasts + 1
+
 	local name, rank, texture = SpellInfo(arg4)
-	if not (name and CC_SPELLS[name]) then return end
+	local matched = M:IsWatchedSpell(name)
+	NoteCast(name, matched)
+
+	if not matched then return end
 
 	M:AddCCWatch(arg2, name, rank, arg4, texture)
 end
@@ -370,10 +629,28 @@ local function BuildOptions()
 					M:UpdateCCWatch()
 				end
 			},
-			move = {
+			addSpell = {
 				order = 4,
+				type = "input",
+				width = "full",
+				name = L["Watch another spell"],
+				desc = L["The spell's name exactly as the game writes it. It also needs an entry in the debuff duration table, or there is no timer to show."],
+				get = function() return "" end,
+				set = function(_, value) M:AddCCSpell(value) end
+			},
+			dropSpell = {
+				order = 5,
+				type = "input",
+				width = "full",
+				name = L["Stop watching a spell"],
+				desc = L["Removes it from the list, whether it was one of yours or one of the built-in ones."],
+				get = function() return "" end,
+				set = function(_, value) M:RemoveCCSpell(value) end
+			},
+			move = {
+				order = 6,
 				type = "description",
-				name = L["Use /moveui to position the list."]
+				name = L["Use /moveui to position the list. /octoui-cc lists every spell currently watched."]
 			}
 		}
 	}
@@ -395,6 +672,18 @@ function M:LoadCCWatch()
 	--AceEvent keeps one callback per event per object.
 	local events = CreateFrame("Frame")
 	events:RegisterEvent("UNIT_CASTEVENT")
+
+	--A mob swinging at something is loose, and the combat log is the only place that shows
+	--up for a mob you are not targeting. See NoteMobActedByName.
+	events:RegisterEvent("CHAT_MSG_COMBAT_CREATURE_VS_SELF_HITS")
+	events:RegisterEvent("CHAT_MSG_COMBAT_CREATURE_VS_SELF_MISSES")
+	events:RegisterEvent("CHAT_MSG_COMBAT_CREATURE_VS_PARTY_HITS")
+	events:RegisterEvent("CHAT_MSG_COMBAT_CREATURE_VS_PARTY_MISSES")
+	events:RegisterEvent("CHAT_MSG_COMBAT_CREATURE_VS_CREATURE_HITS")
+	events:RegisterEvent("CHAT_MSG_COMBAT_CREATURE_VS_CREATURE_MISSES")
+	events:RegisterEvent("CHAT_MSG_SPELL_CREATURE_VS_SELF_DAMAGE")
+	events:RegisterEvent("CHAT_MSG_SPELL_CREATURE_VS_PARTY_DAMAGE")
+
 	events:SetScript("OnEvent", OnEvent)
 
 	BuildOptions()
