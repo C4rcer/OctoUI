@@ -27,7 +27,7 @@ local mod = E:GetModule("NamePlates")
 ]]
 
 local pairs, tonumber, type = pairs, tonumber, type
-local getn = table.getn
+local getn, tinsert, tremove = table.getn, table.insert, table.remove
 local format, gsub, gfind, find = string.format, string.gsub, string.gfind, string.find
 local GetTime = GetTime
 local GetComboPoints, GetTalentInfo = GetComboPoints, GetTalentInfo
@@ -57,8 +57,126 @@ lib.pending = {}
 	The consumer sees a nil caster, which reads as "not known to be mine" -- so the border
 	falls back to its dispel-type colour instead of claiming someone else's DoT is yours.
 	Reported 2026-08-09: every warlock's Agony drew green.
+
+	THAT VETO WAS TOO STRONG, and reported as such 2026-08-12: with a second warlock on the
+	mob it took the player's own DoT away from them entirely, which is the opposite of the
+	problem it was written for. Two corrections, both of them Cursive-Raid's design:
+
+	  * A cast of YOUR OWN is definitive and outranks the veto while it is still running.
+	    Cursive keeps playerOwnedCasts[targetGuid][spell] from UNIT_CASTEVENT and nobody
+	    else's cast clears it; lib.owncasts below is the same record. You dotted this mob,
+	    so one of these icons is certainly yours.
+
+	  * The veto EXPIRES. It used to be `true` forever -- one foreign Agony and that mob's
+	    Agony could never read as yours again for the rest of the session, long after their
+	    DoT had gone. It now holds the time their cast can no longer be up by.
+
+	What cannot be fixed is the attribution itself: with two Agony icons and nothing on this
+	client to tell them apart, either both read as yours or neither does. Claiming both is
+	the error worth making, because the alternative loses the timer the player actually
+	needs.
 ]]
 lib.contested = {}
+
+--[[
+	YOUR OWN CASTS, per mob and effect, held until the moment they can no longer be up.
+
+	This is Cursive-Raid's playerOwnedCasts. Written from AddEffect rather than from the
+	event handler so that every route to "the player cast this" feeds it -- UNIT_CASTEVENT,
+	the pending-cast commit, a channel and a paladin's judgement all go through there, and a
+	record kept in one of those places only would be a record that disagrees with itself.
+]]
+lib.owncasts = {}
+
+function lib:NoteOwnCast(guid, effect, duration)
+	if not guid or not effect then return end
+
+	if not lib.owncasts[guid] then lib.owncasts[guid] = {} end
+	lib.owncasts[guid][effect] = GetTime() + (duration or 0)
+end
+
+--True while a cast of the player's own could still be on this mob. Expired entries are
+--dropped as they are found, so nothing has to sweep the table.
+function lib:OwnCastLive(guid, effect)
+	local store = guid and effect and lib.owncasts[guid]
+	local expires = store and store[effect]
+	if not expires then return false end
+
+	if expires < GetTime() then
+		store[effect] = nil
+		return false
+	end
+
+	return true
+end
+
+--[[
+	WHICH ICON IS YOURS, when the mob carries two of the same debuff.
+
+	Reported 2026-08-12: with a second warlock on the mob, both Agony icons drew green.
+	Both resolve to one store entry -- same name, same texture, same dispel type -- so
+	whatever that entry says gets said twice.
+
+	Two things narrow it down.
+
+	SuperWoW gives UnitDebuff a FOURTH RETURN, the spell id, which this addon has never
+	read. Cursive-Raid reads it everywhere. Ranks are separate ids, so when the other
+	warlock is not casting the identical rank the icons are told apart exactly: an icon
+	whose id is not the id we cast is definitely not ours.
+
+	When the ids match there is nothing left to distinguish them, so the claim goes to the
+	first icon that asks and the rest are refused. One green border is wrong half the time;
+	two are wrong always, and the timer under the green one is right either way.
+
+	Claims expire on their own at the end of the frame -- GetTime does not advance within
+	one -- so no caller has to remember to reset anything, and re-asking for the SAME icon
+	inside one frame is answered consistently. `tag` separates consumers because nameplates
+	and unit frames number their icons differently.
+]]
+lib.ownspell = {}
+local claims = {}
+
+function lib:NoteOwnSpell(guid, effect, spellID)
+	if not (guid and effect and spellID) then return end
+
+	if not lib.ownspell[guid] then lib.ownspell[guid] = {} end
+	lib.ownspell[guid][effect] = spellID
+end
+
+function lib:ClaimOwn(tag, guid, effect, index, spellID)
+	if not (guid and effect) then return true end
+
+	local mine = lib.ownspell[guid] and lib.ownspell[guid][effect]
+	if mine and spellID and mine ~= spellID then return false end
+
+	local key = tag..guid..effect
+	local now = GetTime()
+	local held = claims[key]
+
+	if held and held.t == now then
+		return held.index == index
+	end
+
+	held = held or {}
+	held.t, held.index = now, index
+	claims[key] = held
+
+	return true
+end
+
+--Someone else's cast, still recent enough to be up. Same self-cleaning shape.
+function lib:Contested(guid, effect)
+	local store = guid and effect and lib.contested[guid]
+	local expires = store and store[effect]
+	if not expires then return false end
+
+	if expires < GetTime() then
+		store[effect] = nil
+		return false
+	end
+
+	return true
+end
 
 local lastspell
 --The entry written by SPELLCAST_CHANNEL_START, held so CHANNEL_STOP can end that exact
@@ -227,15 +345,27 @@ function lib:HasEffect(unit, unitlevel, effect, guid)
 	return store and store[unitlevel] and store[unitlevel][effect] and true or false
 end
 
+--A GUID ON ITS OWN IS ENOUGH. It did not used to be: no name meant no record at all, and
+--UnitName(guid) is SuperWoW resolving a GUID against the client's object list, which answers
+--only for a mob currently in range. Dot something, turn away or run on, and your own cast was
+--dropped on the floor -- the timer never existed rather than being wrong.
+--
+--Cursive-Raid never has this problem because it keys everything by target GUID and asks for
+--a name only when it draws one. The GUID is the better key anyway: it is exact where a name
+--is shared by every mob of that type. So a name is now optional, and its absence costs only
+--the name-keyed alias and the frame refresh -- neither of which means anything for a mob no
+--unit frame is showing.
 function lib:AddEffect(unit, unitlevel, effect, duration, caster, guid)
-	if not unit or not effect then return end
+	if not effect then return end
+	if not unit and not guid then return end
 	unitlevel = unitlevel or 0
 
-	if not lib.objects[unit] then lib.objects[unit] = {} end
-	if not lib.objects[unit][unitlevel] then lib.objects[unit][unitlevel] = {} end
-	if not lib.objects[unit][unitlevel][effect] then lib.objects[unit][unitlevel][effect] = {} end
+	local store = unit or guid
+	if not lib.objects[store] then lib.objects[store] = {} end
+	if not lib.objects[store][unitlevel] then lib.objects[store][unitlevel] = {} end
+	if not lib.objects[store][unitlevel][effect] then lib.objects[store][unitlevel][effect] = {} end
 
-	local entry = lib.objects[unit][unitlevel][effect]
+	local entry = lib.objects[store][unitlevel][effect]
 	lastspell = entry
 
 	entry.effect = effect
@@ -244,13 +374,21 @@ function lib:AddEffect(unit, unitlevel, effect, duration, caster, guid)
 	entry.duration = duration or lib:GetDuration(effect, nil, caster == "player")
 	entry.caster = caster
 
-	if guid then
+	--Every route to "the player cast this" passes through here, so this is the one place
+	--the own-cast record has to be written. See lib.owncasts.
+	if caster == "player" and guid then
+		lib:NoteOwnCast(guid, effect, entry.duration)
+	end
+
+	--Filed under the GUID as well whenever both are known, so the two keys share one table
+	--and cannot drift apart.
+	if guid and guid ~= store then
 		if not lib.objects[guid] then lib.objects[guid] = {} end
 		if not lib.objects[guid][unitlevel] then lib.objects[guid][unitlevel] = {} end
 		lib.objects[guid][unitlevel][effect] = entry
 	end
 
-	lib:RefreshUnitFrames(unit)
+	if unit then lib:RefreshUnitFrames(unit) end
 end
 
 --[[
@@ -291,6 +429,36 @@ function lib:RefreshUnitFrames(unitName)
 				if frame.Auras and frame.Auras.ForceUpdate then frame.Auras:ForceUpdate() end
 			end
 		end
+	end
+end
+
+--[[
+	Own casts the duration table has never heard of.
+
+	A spell with no entry cannot be timed, and until now that failed in silence: the icon
+	appeared with no countdown and nothing anywhere said why. The table is generated from
+	spell NAMES, so anything this realm added or renamed simply is not in it -- which is the
+	one failure mode a player cannot diagnose from the outside.
+
+	Most of what lands here is expected and harmless: every direct-damage spell you cast has
+	no duration either. The point is that a DoT of yours showing up in this list is the
+	answer, in one line, to "why is my dot not timed". Newest first, capped, deduplicated,
+	and read back by /octoui-dots. Same shape as AutoDismount's record of error strings it
+	did not recognise, and for the same reason.
+]]
+lib.untracked = {}
+
+function lib:NoteUntracked(name)
+	if not name then return end
+
+	local list = lib.untracked
+	for i = 1, getn(list) do
+		if list[i] == name then return end
+	end
+
+	tinsert(list, 1, name)
+	while getn(list) > 12 do
+		tremove(list)
 	end
 end
 
@@ -391,8 +559,11 @@ function lib:GetTimeLeft(unitname, unitlevel, effect, guid)
 	--way -- but the OWNERSHIP is not, once anyone else has cast this effect here. Reported
 	--as nil rather than "player" so a caller drawing a "this one is mine" border stops
 	--drawing it rather than drawing it on both.
+	--A cast of the player's own that could still be running outranks the veto: they dotted
+	--this mob, so one of these icons is certainly theirs, and taking the timer away from
+	--them because a second warlock turned up helps nobody.
 	local caster = entry.caster
-	if caster == "player" and guid and lib.contested[guid] and lib.contested[guid][effect] then
+	if caster == "player" and guid and lib:Contested(guid, effect) and not lib:OwnCastLive(guid, effect) then
 		caster = nil
 	end
 
@@ -402,7 +573,9 @@ end
 --Same shape as the modern UnitAura, for callers that do not keep their own cache:
 --name, rank, texture, stacks, dtype, duration, timeleft, caster
 function lib:UnitDebuff(unit, id)
-	local texture, stacks, dtype = UnitDebuff(unit, id)
+	--The fourth return is SuperWoW's spell id, and nil without it. Used only to tell two
+	--icons of the same effect apart; everything below works the same either way.
+	local texture, stacks, dtype, spellID = UnitDebuff(unit, id)
 	if not texture then return end
 
 	local effect = mod:ScanAuraName(unit, id, true) or ""
@@ -417,6 +590,12 @@ function lib:UnitDebuff(unit, id)
 	--old name lookup rather than failing.
 	local _, guid = UnitExists(unit)
 	local duration, timeleft, caster = lib:GetTimeLeft(UnitName(unit), UnitLevel(unit), effect, guid)
+
+	--One green border per debuff, not one per icon carrying that name. Tagged "uf" because
+	--unit frames sort and filter their icons, so their index numbering is not the nameplate's.
+	if caster == "player" and not lib:ClaimOwn("uf", guid, effect, id, spellID) then
+		caster = nil
+	end
 
 	return effect, nil, texture, stacks, dtype, duration, timeleft, caster
 end
@@ -577,12 +756,20 @@ lib:SetScript("OnEvent", function()
 
 				if name and durations and durations[name] then
 					if not lib.contested[arg2] then lib.contested[arg2] = {} end
-					lib.contested[arg2][name] = true
+
+					--Held as the time their cast can no longer be up by, not as a flag. Their
+					--rank and haste are unknowable, so the unhasted top rank is the longest it
+					--could possibly last -- generous on purpose, since the cost of guessing
+					--long is a border that stays neutral slightly too long, and the cost of
+					--guessing short is claiming their DoT as yours.
+					lib.contested[arg2][name] = GetTime() + lib:GetDuration(name, nil, false)
 				end
 			end
 
 			if playerGUID and arg1 == playerGUID then
-				local name = SpellInfo(arg4)
+				--Rank is the second return and decides the duration; see the note in the CAST
+				--branch below for what ignoring it cost.
+				local name, rank = SpellInfo(arg4)
 
 				if arg3 == "CHANNEL" then
 					if name then channelEffect = name end
@@ -601,13 +788,28 @@ lib:SetScript("OnEvent", function()
 					--AddEffect rather than AddPending: this event fires on completion, so
 					--there is nothing left to resist. arg2 is the target's GUID, which is also
 					--the store's preferred key.
+					--
+					--THE NAME IS NO LONGER REQUIRED. UnitName(arg2) answers only for a mob the
+					--client currently has in its object list, so this used to discard your own
+					--cast the moment you dotted something and turned away. AddEffect takes the
+					--GUID alone now, and the name is passed when there happens to be one.
+					--
+					--RANK MATTERS AND WAS BEING THROWN AWAY. SpellInfo returns it as the second
+					--value; passing nil meant every own cast was timed at max rank, so a
+					--lower-rank DoT ran a timer longer than the debuff.
 					local durations = Durations()
 
-					if name and durations and durations[name] and arg2 then
-						local unit = UnitName(arg2)
-						if unit then
-							lib:AddEffect(unit, UnitLevel(arg2) or 0, name,
-								lib:GetDuration(name, nil, true), "player", arg2)
+					if name and arg2 then
+						if durations and durations[name] then
+							lib:AddEffect(UnitName(arg2), UnitLevel(arg2) or 0, name,
+								lib:GetDuration(name, rank, true), "player", arg2)
+
+							--The id, not just the name. Ranks are separate ids, so this is what
+							--tells our icon apart from another caster's when they are running a
+							--different rank of the same spell. See lib:ClaimOwn.
+							lib:NoteOwnSpell(arg2, name, arg4)
+						else
+							lib:NoteUntracked(name)
 						end
 					end
 				end

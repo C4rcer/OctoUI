@@ -1573,8 +1573,13 @@ function TWT.updateUI(from)
             -- perc
             _G['OctoTWThreat' .. index .. 'Perc']:SetText(TWT.round(data.perc) .. '%')
 
+            -- Same guard as the aggro branch below, and for the same reason: this reads the
+            -- player's own row and raises if it is not there.
             if TWT.name ~= TWT.tankName and name == TWT.AGRO then
-                _G['OctoTWThreat' .. index .. 'Perc']:SetText(100 - TWT.round(TWT.threats[TWT.name].perc) .. '%')
+                local own = TWT.threats[TWT.name]
+                if own and type(own.perc) == 'number' then
+                    _G['OctoTWThreat' .. index .. 'Perc']:SetText(100 - TWT.round(own.perc) .. '%')
+                end
             end
 
             -- name
@@ -1607,17 +1612,33 @@ function TWT.updateUI(from)
 
             elseif name == TWT.AGRO then
 
+                -- Every figure on the aggro row is expressed against the player's own row, so
+                -- it is read once here and guarded. The loop above tests the same thing before
+                -- entering, and a row is created for the player further up -- and it still
+                -- raised at this branch (reported 2026-08-12, "attempt to index field ?").
+                -- Whatever the window is, the cost of not guarding is out of proportion: the
+                -- error leaves updateUI, so every bar below this one stops being drawn and the
+                -- meter looks dead rather than one row looking wrong.
+                local own = TWT.threats[TWT.name]
+                local ownThreat = own and own.threat
+                local ownPerc = own and own.perc
+
                 TWT.barAnimator:animateTo(index, nil)
 
                 _G['OctoTWThreat' .. index .. 'BG']:SetWidth(TWT.windowWidth - 2)
-                _G['OctoTWThreat' .. index .. 'Threat']:SetText('+' .. TWT.formatNumber(data.threat - TWT.threats[TWT.name].threat))
+
+                if type(ownThreat) == 'number' then
+                    _G['OctoTWThreat' .. index .. 'Threat']:SetText('+' .. TWT.formatNumber(data.threat - ownThreat))
+                end
 
                 local colorLimit = 50
 
-                if TWT.threats[TWT.name].perc >= 0 and TWT.threats[TWT.name].perc < colorLimit then
-                    _G['OctoTWThreat' .. index .. 'BG']:SetVertexColor(TWT.threats[TWT.name].perc / colorLimit, 1, 0, 0.9)
-                elseif TWT.threats[TWT.name].perc >= colorLimit then
-                    _G['OctoTWThreat' .. index .. 'BG']:SetVertexColor(1, 1 - (TWT.threats[TWT.name].perc - colorLimit) / colorLimit, 0, 0.9)
+                if type(ownPerc) == 'number' then
+                    if ownPerc >= 0 and ownPerc < colorLimit then
+                        _G['OctoTWThreat' .. index .. 'BG']:SetVertexColor(ownPerc / colorLimit, 1, 0, 0.9)
+                    elseif ownPerc >= colorLimit then
+                        _G['OctoTWThreat' .. index .. 'BG']:SetVertexColor(1, 1 - (ownPerc - colorLimit) / colorLimit, 0, 0.9)
+                    end
                 end
 
                 if TWT.tankName == TWT.name then

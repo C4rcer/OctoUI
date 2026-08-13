@@ -620,3 +620,10 @@ L["MOUNTGEAR_CURSOR_BUSY"] = "the cursor was already holding something"
 L["MOUNTGEAR_CURSOR_STUCK"] = "the swap left an item on the cursor"
 L["MOUNTGEAR_LOCKED"] = "that bag slot was locked"
 L["MOUNTGEAR_NO_PICKUP"] = "the client did not pick the item up"
+
+--Modules/Misc/CCWatch.lua -- what you have crowd controlled
+L["CC Watch"] = true;
+L["Lists what you have crowd controlled, with the time left on each. Click a row to target that mob. Only your own casts appear, so another player's fear on the same mob is not counted as yours."] = true;
+L["How many at once. Anything past this is still tracked, it just does not have a row."] = true;
+L["Use /moveui to position the list."] = true;
+L["Rows"] = true;

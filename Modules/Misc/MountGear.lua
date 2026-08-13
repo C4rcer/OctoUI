@@ -66,6 +66,12 @@ local mounted
 local pendingAction
 local lastResults = {}
 
+--Declared with the rest of the state rather than beside the re-apply code below, because
+--ApplyMountGear sets `applying` and a local declared after that function would not be the
+--one it writes to -- the assignment would land on a global and the guard would never fire.
+local applying
+local reapplyPending
+
 local function Store()
 	local db = E.db.general
 	if not db.mountGear then
@@ -236,6 +242,10 @@ function M:ApplyMountGear()
 	local db = Store()
 	lastResults = {}
 
+	--Our own swaps fire UNIT_INVENTORY_CHANGED, which is what asks for a re-apply. This
+	--flag is what stops that being a loop.
+	applying = true
+
 	for _, def in ipairs(SLOTS) do
 		local entry = db.slots[def.key]
 		if entry and (entry.id or entry.name) then
@@ -253,22 +263,95 @@ function M:ApplyMountGear()
 				else
 					--Written down BEFORE the swap. An empty slot is remembered as empty,
 					--which restore reads as "take ours back off again".
+					--ONLY THE FIRST DISPLACEMENT IS REMEMBERED. Take the riding item off
+					--while still mounted and this runs again to put it back -- overwriting
+					--here would record whatever was in the slot at that moment (usually
+					--nothing) as the thing you are owed, and your real trinket would never
+					--come back.
+					--
 					--The link is kept alongside the id and name purely so the report can show
 					--exactly what is owed back, including an item this client cannot name.
-					db.saved[def.key] = current and {id = LinkID(current), name = LinkName(current), link = current} or {empty = true}
+					local justSaved
+					if not db.saved[def.key] then
+						db.saved[def.key] = current and {id = LinkID(current), name = LinkName(current), link = current} or {empty = true}
+						justSaved = true
+					end
 
 					local ok, why = EquipFromBag(bag, slot, invSlot)
 					if ok then
 						Record(def, true, L["MOUNTGEAR_EQUIPPED"])
-					else
-						--Nothing moved, so nothing is owed back.
+					elseif justSaved then
+						--Nothing moved, so nothing is owed back -- but only the record THIS
+						--pass wrote is dropped. An earlier successful swap on this slot is
+						--still owed, and clearing it here would strand the player's trinket.
 						db.saved[def.key] = nil
+						Record(def, false, why)
+					else
 						Record(def, false, why)
 					end
 				end
 			end
 		end
 	end
+
+	applying = nil
+end
+
+--[[
+	Riding gear that comes off while the mount is still under you.
+
+	Reported 2026-08-13: take the trinket off mid-flight and nothing put it back. Nothing
+	could -- the gear was applied on the TRANSITION into mounted and never looked at again,
+	so the only thing that could have restored it was dismounting and mounting a second time.
+
+	While the mount is up, these slots belong to the riding set: anything that leaves one of
+	them empty, or fills it with something else, is put right. Deliberately one-directional.
+	Taking a riding item off while mounted is nearly always the bags being tidied or an
+	on-use trinket being swapped back by another addon, not a decision -- and the way to
+	stop it for good is to clear the box, not to fight it every time.
+
+	The cheap test runs first: one GetInventoryItemLink per configured slot. Only when a
+	slot is actually wrong does the expensive bag walk happen.
+]]
+local function NeedsReapply()
+	local db = Store()
+
+	for _, def in ipairs(SLOTS) do
+		local entry = db.slots[def.key]
+		if entry and (entry.id or entry.name) then
+			local invSlot = GetInventorySlotInfo(def.key)
+			if not ItemMatches(entry, GetInventoryItemLink("player", invSlot)) then
+				return true
+			end
+		end
+	end
+
+	return false
+end
+
+local function ReapplyCheck()
+	reapplyPending = nil
+
+	if not mounted then return end
+	if not Store().enable then return end
+	if not NeedsReapply() then return end
+
+	--Held for the end of the fight rather than dropped, same as every other transition.
+	if UnitAffectingCombat("player") then
+		pendingAction = "equip"
+		return
+	end
+
+	M:ApplyMountGear()
+end
+
+--Coalesced, because one swap fires several inventory events and the check would otherwise
+--run in the middle of our own three-step equip, reading a slot that is mid-move.
+local function ScheduleReapply()
+	if reapplyPending or applying then return end
+
+	reapplyPending = true
+	E:Delay(0.2, ReapplyCheck)
 end
 
 function M:RestoreMountGear()
@@ -371,6 +454,15 @@ function M:GetMountGearSettings()
 	return Store()
 end
 
+--Forget the last known state and look again. Turning the feature on has to do this or
+--nothing happens until the next aura change -- which, if you are already sitting on a
+--mount, may not be until you get off it. The options toggle always did this; the slash
+--command did not, which made "/octoui-mountgear on" while mounted look like a dead feature.
+function M:ResetMountGearState()
+	mounted = nil
+	M:UpdateMountGear()
+end
+
 function M:GetMountGearResults()
 	return lastResults, pendingAction
 end
@@ -410,10 +502,7 @@ local function BuildOptions()
 			get = function() return Store().enable and true or false end,
 			set = function(_, value)
 				Store().enable = value and true or false
-				--Forget the last known state so the next check reads as a transition, or
-				--turning this on while already mounted does nothing until you dismount.
-				mounted = nil
-				M:UpdateMountGear()
+				M:ResetMountGearState()
 			end
 		},
 		combat = {
@@ -441,7 +530,8 @@ local function BuildOptions()
 	end
 
 	general.args.mountGear = {
-		order = 6,
+		--Between Loot Rolls (5) and Chat Bubbles (6), which already own whole numbers here.
+		order = 5.5,
 		type = "group",
 		name = L["Mount Gear"],
 		args = args
@@ -458,8 +548,17 @@ function M:LoadMountGear()
 	mountGearFrame:RegisterEvent("PLAYER_AURAS_CHANGED")
 	mountGearFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 	mountGearFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+	--Riding gear taken off while the mount is still up. See ReapplyCheck.
+	mountGearFrame:RegisterEvent("UNIT_INVENTORY_CHANGED")
 
 	mountGearFrame:SetScript("OnEvent", function()
+		if event == "UNIT_INVENTORY_CHANGED" then
+			--Fires for every unit whose equipment the client can see; only ours matters, and
+			--this one is common enough that the mount check must not run for anyone else's.
+			if arg1 == "player" then ScheduleReapply() end
+			return
+		end
+
 		if event == "PLAYER_REGEN_ENABLED" then
 			--The held transition first, and straight away rather than coalesced -- this is
 			--the moment the player has been waiting for their own gear back.

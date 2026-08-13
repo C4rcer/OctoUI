@@ -234,9 +234,11 @@ function mod:UpdateAuraSide(auras, unit, isDebuff)
 	for index = 1, MAX_UNIT_AURAS do
 		if frameNum > maxIcons then break end
 
-		local texture, count
+		local texture, count, spellID
 		if isDebuff then
-			texture, count = UnitDebuff(unit, index)
+			--Fourth return is SuperWoW's spell id, nil without it. Only used to tell our own
+			--icon from another caster's when the mob carries two of the same debuff.
+			texture, count, _, spellID = UnitDebuff(unit, index)
 		else
 			texture, count = UnitBuff(unit, index)
 		end
@@ -255,6 +257,12 @@ function mod:UpdateAuraSide(auras, unit, isDebuff)
 				--`unit` is the SuperWoW GUID whenever we have one, which is also what
 				--the combat log stores under when GUID mode is on
 				_, timeleft, caster = lib:GetTimeLeft(unitname, unitlevel, name, unit)
+
+				--Two warlocks on one mob means two identical icons reading from one store
+				--entry, and both drew green. Only one icon may claim it.
+				if caster == "player" and not lib:ClaimOwn("np", unit, name, index, spellID) then
+					caster = nil
+				end
 			end
 
 			self:SetAura(auras.icons[frameNum], texture, count, name, timeleft, caster)

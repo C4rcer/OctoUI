@@ -661,6 +661,17 @@ function E:DebuffTimerReport()
 		E:Print("LibHaste: |cffff0000MISSING|r")
 	end
 
+	--Your own casts the duration table has no entry for. Direct-damage spells belong here and
+	--mean nothing; a DoT of yours in this list is why that DoT has no timer.
+	if lib and lib.untracked and getn(lib.untracked) > 0 then
+		local names = ""
+		for i = 1, getn(lib.untracked) do
+			names = (i == 1) and lib.untracked[i] or (names..", "..lib.untracked[i])
+		end
+		E:Print(format("own casts with no duration entry: %s", names))
+		E:Print("  (direct damage spells are expected here -- a DOT of yours in that list is the reason it has no timer)")
+	end
+
 	--the keys say whether the combat log is giving names or GUIDs, which is the
 	--difference between a lookup that matches and one that silently does not
 	if lib and lib.objects then
@@ -681,7 +692,9 @@ function E:DebuffTimerReport()
 
 	local found
 	for i = 1, 16 do
-		local texture = UnitDebuff("target", i)
+		--Fourth return is SuperWoW's spell id. Printed against the id we recorded for our own
+		--cast, because that pair is what decides which of two identical icons draws as yours.
+		local texture, _, _, spellID = UnitDebuff("target", i)
 		if not texture then break end
 		found = true
 
@@ -689,9 +702,27 @@ function E:DebuffTimerReport()
 		local known = (durations and effect and durations[effect]) and "in table" or "|cffff0000not in table|r"
 		--`local a, b = cond and f()` truncates f() to one value, so timeleft was
 		--always nil here regardless of what the store held. Call it plainly.
-		local duration, timeleft
+		local duration, timeleft, caster
 		if lib then
-			duration, timeleft = lib:GetTimeLeft(name, level, effect or "", guid)
+			duration, timeleft, caster = lib:GetTimeLeft(name, level, effect or "", guid)
+		end
+
+		--WHOSE IT IS, and the two records that decide it. A DoT of yours reading "theirs"
+		--with a second caster on the mob is the whole of the 2026-08-12 report, and none of
+		--this is visible from the icon.
+		local owner = "|cffff8800not known to be yours|r"
+		if caster == "player" then
+			owner = "|cff44ff44yours|r"
+		elseif lib and effect and lib:OwnCastLive(guid, effect) then
+			owner = "|cffff3333yours but not reported so|r"
+		end
+		if lib and effect and lib:Contested(guid, effect) then
+			owner = owner.." |cff888888(someone else cast this too)|r"
+		end
+
+		local mineID = lib and effect and lib.ownspell and lib.ownspell[guid] and lib.ownspell[guid][effect]
+		if spellID or mineID then
+			owner = owner..format(" |cff888888[id %s, yours %s]|r", tostring(spellID), tostring(mineID))
 		end
 
 		--built separately: a nil reaching string.format raises, and an error here
@@ -701,8 +732,8 @@ function E:DebuffTimerReport()
 			timer = format("left %.1f of %.0f", timeleft, (type(duration) == "number" and duration) or 0)
 		end
 
-		E:Print(format("  %d. %s | %s | %s", i,
-			effect and ("'"..effect.."'") or "|cffff0000name unresolved|r", known, timer))
+		E:Print(format("  %d. %s | %s | %s | %s", i,
+			effect and ("'"..effect.."'") or "|cffff0000name unresolved|r", known, timer, owner))
 	end
 
 	if not found then E:Print("  target has no debuffs") end
@@ -1128,6 +1159,9 @@ function E:MountGearReport(msg)
 
 	if action == "on" or action == "off" then
 		db.enable = (action == "on")
+		--Look again straight away rather than waiting for the next aura change, which if you
+		--are already mounted may not come until you get off.
+		M:ResetMountGearState()
 		E:Print(format("Mount gear is %s.", action == "on" and "on" or "off"))
 		return
 	end
@@ -1150,10 +1184,26 @@ function E:MountGearReport(msg)
 		return
 	end
 
+	local isMounted = M:MountGearIsMounted()
+
 	E:Print(format("Mount gear -- %s. Mounted: %s. In combat: %s.",
 		db.enable and "on" or "OFF",
-		M:MountGearIsMounted() and "yes" or "no",
+		isMounted and "yes" or "no",
 		UnitAffectingCombat("player") and "yes" or "no"))
+
+	--"Mounted: no" while sitting on a mount is a different fault from everything else here,
+	--and it is not this module's: the check is AutoDismount's, so its buff list is where the
+	--answer is. Saying so beats leaving the reader to work out which half is broken.
+	if not isMounted then
+		local mounts, shifts = 0, 0
+		if M.DismountScanBuffs then
+			local m, s = M:DismountScanBuffs()
+			mounts, shifts = getn(m or {}), getn(s or {})
+		end
+		E:Print(format("  mount check: %s, matched %d mount buff(s) and %d form buff(s).",
+			M.DismountScanBuffs and "present" or "|cffff0000MISSING|r", mounts, shifts))
+		E:Print("  if you are mounted right now and that says 0, the mount's buff wording is not recognised -- run /octoui-dismount, which lists what it can see.")
+	end
 
 	for _, def in ipairs(M:GetMountGearSlots()) do
 		local entry = db.slots[def.key]
@@ -1183,6 +1233,57 @@ function E:MountGearReport(msg)
 	end
 
 	E:Print("Usage: /octoui-mountgear [on / off / trinket1 / trinket2 / boots / gloves] <item link, item id or name>")
+end
+
+--The CC watch report. Whether a spell is recognised, whether the cast was seen as yours and
+--why a row went away are all invisible from the list itself.
+function E:CCWatchReport()
+	local M = E:GetModule("Misc")
+
+	if not M.GetCCWatch then
+		E:Print("CC Watch is not loaded yet. Exit WoW.exe fully and start it again -- a /reload cannot pick up a file that was not there at login.")
+		return
+	end
+
+	local db = M:GetCCWatchSettings()
+	local watch, lastRemoved = M:GetCCWatch()
+
+	local _, playerGUID = UnitExists("player")
+	local _, petGUID = UnitExists("pet")
+
+	E:Print(format("CC Watch -- %s, %d row(s) max. SpellInfo is %s.",
+		db.enable and "on" or "OFF",
+		tonumber(db.maxRows) or 4,
+		type(SpellInfo) == "function" and "present" or "|cffff0000MISSING -- nothing can be recognised|r"))
+	E:Print(format("  yours: player %s, pet %s", tostring(playerGUID), tostring(petGUID)))
+
+	local count = 0
+	for guid, entry in pairs(watch) do
+		count = count + 1
+		local left = entry.start + entry.duration - GetTime()
+		E:Print(format("  %s on %s -- %.1f of %.0f left |cff888888(id %s)|r",
+			entry.spell,
+			UnitName(guid) or guid,
+			left > 0 and left or 0,
+			entry.duration,
+			tostring(entry.spellID)))
+	end
+
+	if count == 0 then
+		E:Print("  nothing controlled right now")
+	end
+
+	if lastRemoved then
+		E:Print(format("  last row removed: %s", lastRemoved))
+	end
+
+	local names = ""
+	local n = 0
+	for spell in pairs(M:GetCCSpells()) do
+		n = n + 1
+		names = (n == 1) and spell or (names..", "..spell)
+	end
+	E:Print(format("  recognised (%d): %s", n, names))
 end
 
 function E:FilterCommand(msg)
@@ -1428,6 +1529,7 @@ function E:LoadCommands()
 	self:RegisterChatCommand("octoui-blacklist", "BlacklistCommand")
 	self:RegisterChatCommand("octoui-roll", "AutoRollCommand")
 	self:RegisterChatCommand("octoui-mountgear", "MountGearReport")
+	self:RegisterChatCommand("octoui-cc", "CCWatchReport")
 	self:RegisterChatCommand("octoui-auras", "AuraReport")
 	self:RegisterChatCommand("octoui-dismount", "DismountReport")
 	self:RegisterChatCommand("octoui-mail", "MailReport")
