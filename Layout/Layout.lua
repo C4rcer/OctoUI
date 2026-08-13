@@ -59,6 +59,20 @@ function LO:TopPanelVisibility()
 	end
 end
 
+--[[
+	THE TOGGLE BUTTON KEEPS A VISIBLE EDGE WHEN THE PANEL IS HIDDEN.
+
+	Upstream fades the button to nothing along with its panel, which leaves the only way
+	back as hovering an invisible strip at the panel's bottom corner -- something you can
+	only find if you already know it is there. Clicking that strip by accident is easy, and
+	the loot and damage window then appears to have gone for good. Reported 2026-08-13, and
+	the report command has warned about it since it was written.
+
+	A faint but real handle costs a sliver of the clean edge and makes the panel
+	recoverable by looking at the screen. /octoui-chat show is the belt and braces.
+]]
+local FADED_BUTTON_ALPHA = 0.35
+
 local function ChatPanelLeft_OnFade()
 	LeftChatPanel:Hide()
 end
@@ -90,7 +104,7 @@ end
 local function ChatButton_OnLeave()
 	if E.db[this.parent:GetName().."Faded"] then
 		UIFrameFadeOut(this.parent, 0.2, this.parent:GetAlpha(), 0)
-		UIFrameFadeOut(this, 0.2, this:GetAlpha(), 0)
+		UIFrameFadeOut(this, 0.2, this:GetAlpha(), FADED_BUTTON_ALPHA)
 		this.parent.fadeInfo.finishedFunc = this.parent.fadeFunc
 	end
 	GameTooltip:Hide()
@@ -105,7 +119,7 @@ local function ChatButton_OnClick()
 	else
 		E.db[this.parent:GetName().."Faded"] = true
 		UIFrameFadeOut(this.parent, 0.2, this.parent:GetAlpha(), 0)
-		UIFrameFadeOut(this, 0.2, this:GetAlpha(), 0)
+		UIFrameFadeOut(this, 0.2, this:GetAlpha(), FADED_BUTTON_ALPHA)
 		this.parent.fadeInfo.finishedFunc = this.parent.fadeFunc
 	end
 end
@@ -379,13 +393,15 @@ function LO:CreateChatPanels()
 	rchattb.text:SetText(">")
 
 	--Load Settings
+	--Restored at the same faint alpha the fade leaves it at, so a panel hidden before a
+	--reload still has something on screen to click.
 	if E.db.LeftChatPanelFaded then
-		LeftChatToggleButton:SetAlpha(0)
+		LeftChatToggleButton:SetAlpha(FADED_BUTTON_ALPHA)
 		LeftChatPanel:Hide()
 	end
 
 	if E.db.RightChatPanelFaded then
-		RightChatToggleButton:SetAlpha(0)
+		RightChatToggleButton:SetAlpha(FADED_BUTTON_ALPHA)
 		RightChatPanel:Hide()
 	end
 

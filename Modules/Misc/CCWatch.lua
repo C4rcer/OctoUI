@@ -97,6 +97,19 @@ local SCAN_INTERVAL = 0.25
 --tried thirty seconds and found it dropped mobs that were still standing in front of you.
 local UNSEEN_TIMEOUT = 300
 
+--A row that has been red for a minute on a mob the client cannot even see is not helping
+--anyone: it either reset, was killed out of range, or was dealt with by somebody else.
+--Loose AND out of sight, both -- a loose mob standing in front of you is exactly the row
+--worth keeping.
+local LOOSE_TIMEOUT = 60
+
+local function MarkLoose(entry, why)
+	if not entry or entry.loose then return end
+
+	entry.loose = why
+	entry.looseAt = GetTime()
+end
+
 local watch = {}
 local rows = {}
 local holder, watcher
@@ -215,7 +228,7 @@ function M:AddCCWatch(guid, spellName, rank, spellID, texture)
 		--at where it currently is.
 		entry.spell, entry.spellID, entry.texture = spellName, spellID, texture
 		entry.start, entry.duration = now, duration
-		entry.loose = nil
+		entry.loose, entry.looseAt = nil, nil
 	else
 		watch[guid] = {
 			guid = guid,
@@ -320,7 +333,7 @@ function M:NoteMobActed(guid, why)
 	local entry = guid and watch[guid]
 	if not entry or entry.loose then return end
 
-	entry.loose = why
+	MarkLoose(entry, why)
 	M:UpdateCCWatch()
 end
 
@@ -342,7 +355,7 @@ local function NoteMobActedByName(msg)
 	end
 
 	if matches == 1 then
-		match.loose = "acted"
+		MarkLoose(match, "acted")
 		M:UpdateCCWatch()
 	end
 end
@@ -535,18 +548,23 @@ local function OnUpdate()
 			M:RemoveCCWatch(guid, "died")
 		elseif (now - (entry.lastSeen or now)) > UNSEEN_TIMEOUT then
 			M:RemoveCCWatch(guid, "gone, not seen for five minutes")
+		elseif entry.loose and not visible and (now - (entry.looseAt or now)) > LOOSE_TIMEOUT then
+			M:RemoveCCWatch(guid, "loose and out of sight")
 		elseif not entry.loose then
 			if now >= entry.start + entry.duration then
-				entry.loose = "ran out"
+				MarkLoose(entry, "ran out")
 			elseif scan then
 				local on, known = ControlState(entry)
-				if known and not on then entry.loose = "broke early" end
+				if known and not on then MarkLoose(entry, "broke early") end
 			end
 		elseif scan and entry.loose ~= "ran out" and now < entry.start + entry.duration then
 			--A false alarm can be taken back, but only by looking straight at the mob: the
 			--signals that set it are inferences and the debuff itself is not.
 			local on, known = ControlState(entry)
-			if known and on then entry.loose = nil end
+			if known and on then
+				entry.loose = nil
+				entry.looseAt = nil
+			end
 		end
 	end
 
@@ -555,6 +573,29 @@ end
 
 --[[ events ]]--
 local function OnEvent()
+	--[[
+		LEAVING COMBAT ENDS THE PULL, and with it every row that is no longer holding
+		anything.
+
+		Death was the only removal, and that is too narrow: a mob that resets and walks home
+		never dies, so its row sat there red for five minutes. Reported 2026-08-13 with a
+		Skeletal Acolyte that evaded.
+
+		Rows still under control are kept -- a banish that is genuinely still up is worth
+		seeing whether or not you are in combat, and something sapped before a pull would
+		otherwise be swept away the moment it was cast.
+	]]
+	if event == "PLAYER_REGEN_ENABLED" then
+		for guid, entry in pairs(watch) do
+			if entry.loose then
+				M:RemoveCCWatch(guid, "combat ended")
+			end
+		end
+
+		M:UpdateCCWatch()
+		return
+	end
+
 	if event ~= "UNIT_CASTEVENT" then
 		--A combat log line. Only worth parsing while something is actually being watched,
 		--which is almost never -- these events are the noisiest in the game.
@@ -672,6 +713,8 @@ function M:LoadCCWatch()
 	--AceEvent keeps one callback per event per object.
 	local events = CreateFrame("Frame")
 	events:RegisterEvent("UNIT_CASTEVENT")
+	--The end of the pull, which is what clears a mob that reset instead of dying.
+	events:RegisterEvent("PLAYER_REGEN_ENABLED")
 
 	--A mob swinging at something is loose, and the combat log is the only place that shows
 	--up for a mob you are not targeting. See NoteMobActedByName.

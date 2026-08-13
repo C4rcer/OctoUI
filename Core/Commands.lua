@@ -832,8 +832,33 @@ end
 --onto the wrong panel. Guessing between them has cost several rounds, and the state is lost
 --on every crash -- 1.12 writes SavedVariables only on a clean logout or reload -- so it has
 --to be readable while it is happening.
-function E:ChatPanelReport()
+function E:ChatPanelReport(msg)
 	local CH = E:GetModule("Chat", true)
+
+	--Bring both panels back, whatever state they are in. The toggle button now keeps a
+	--visible edge when a panel is faded, but this is the answer that cannot itself be
+	--hidden -- and a panel carrying the loot and damage log is not something to lose to a
+	--misclick with no way back.
+	if lower(match(msg or "", "^%s*(%S*)") or "") == "show" then
+		local restored = 0
+
+		for _, side in ipairs({"Left", "Right"}) do
+			local panel = _G[side.."ChatPanel"]
+			local button = _G[side.."ChatToggleButton"]
+
+			E.db[side.."ChatPanelFaded"] = nil
+
+			if panel then
+				panel:Show()
+				panel:SetAlpha(1)
+				restored = restored + 1
+			end
+			if button then button:SetAlpha(1) end
+		end
+
+		E:Print(format("Restored %d chat panel(s). If the window itself is still missing rather than the panel, run /octoui-chat and send me what it says.", restored))
+		return
+	end
 
 	E:Print(format("chat module: %s, lockPositions %s",
 		(E.private.chat.enable == true) and "enabled" or "|cffff0000disabled|r",
@@ -869,6 +894,8 @@ function E:ChatPanelReport()
 				(parent and parent:GetName()) or "?"))
 		end
 	end
+
+	E:Print("Usage: /octoui-chat [show] -- show brings both chat panels back if one has been faded out.")
 end
 
 --Aura filter lists. The options GUI has no page for these -- E:SetToFilterConfig is called
