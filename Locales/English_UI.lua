@@ -571,6 +571,7 @@ L["Sort finished, but %d move(s) could not be completed. Run /octoui-bags to see
 
 --Modules/Chat/Chat.lua
 L["Undocked the right chat window; the dock was hiding it on every login."] = true;
+L["Reopened the right chat window; the client had it closed."] = true;
 
 --Modules/Misc/AutoRoll.lua -- per-item loot roll rules
 L["Loot Rolls"] = true;

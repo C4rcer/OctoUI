@@ -452,6 +452,21 @@ function CH:PositionChat(override)
 			FCF_UnDockFrame(rightChat)
 			rightChat:Show()
 			E:Print(L["Undocked the right chat window; the dock was hiding it on every login."])
+
+		--UNDOCKED AND CLOSED, which the block above never covered: it only ever repaired a
+		--frame the DOCK was hiding. The client remembers a closed chat window across
+		--sessions, so a right-hand window that ended up shut stayed shut through every
+		--reload and had to be reopened by hand -- reported 2026-08-13 as needing
+		--ChatFrame2:Show() after each one.
+		--
+		--This is the window OctoUI reserves a whole panel for and positions itself, so a
+		--closed one is very nearly always an accident rather than a choice. Reopened ONCE
+		--per session, at load, for the same reason the undock above is: close it during play
+		--and it stays closed, which is the only thing separating a deliberate close from
+		--this. Printed either way, so it is never silent about moving a window.
+		elseif rightChat and not rightChat:IsShown() then
+			rightChat:Show()
+			E:Print(L["Reopened the right chat window; the client had it closed."])
 		end
 	end
 
