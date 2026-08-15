@@ -146,11 +146,33 @@ end
 
 if not OctoAllDotsUp then
 	function OctoAllDotsUp()
-		for i = 1, table.getn(OctoWarlockDots) do
+		local total = table.getn(OctoWarlockDots)
+		--An empty list would otherwise pass vacuously -- "all zero of them are up" -- and
+		--open the gate permanently. That exact shape is what made the conditional macro look
+		--like it worked for a week.
+		if total == 0 then return false end
+
+		for i = 1, total do
 			if not OctoMyDebuff(OctoWarlockDots[i]) then return false end
 		end
 
 		return true
+	end
+end
+
+--What the gate thinks, dot by dot. Run it with the mob targeted: /run OctoDotReport()
+if not OctoDotReport then
+	function OctoDotReport()
+		local out = DEFAULT_CHAT_FRAME
+		out:AddMessage("Dot gate -- target: "..tostring(UnitName("target")))
+
+		for i = 1, table.getn(OctoWarlockDots) do
+			local name = OctoWarlockDots[i]
+			out:AddMessage("  "..name.." = "..tostring(OctoMyDebuff(name)))
+		end
+
+		out:AddMessage("  all mine = "..tostring(OctoAllDotsUp())
+			.. ", Dark Harvest ready = "..tostring(DHReady()))
 	end
 end
 

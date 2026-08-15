@@ -856,7 +856,26 @@ function E:ChatPanelReport(msg)
 			if button then button:SetAlpha(1) end
 		end
 
-		E:Print(format("Restored %d chat panel(s). If the window itself is still missing rather than the panel, run /octoui-chat and send me what it says.", restored))
+		--THE WINDOW, not just the panel it sits in. The first version of this only unfaded
+		--the panels, which leaves an empty frame on screen when the chat window itself is
+		--the thing that is hidden -- and that is the common case, since the client remembers
+		--a closed window across sessions.
+		local id = (CH and CH.RightChatWindowID) or (E.db.chat and E.db.chat.rightChatWindowID)
+		local chat = id and _G[format("ChatFrame%d", id)]
+		local window = "no right-hand window found"
+
+		if chat then
+			--Undocked first where it applies: a docked frame that is not the selected tab is
+			--hidden again by Blizzard's own dock update, so showing it alone would not last.
+			if chat.isDocked and type(FCF_UnDockFrame) == "function" then
+				FCF_UnDockFrame(chat)
+			end
+
+			chat:Show()
+			window = format("ChatFrame%d shown", id)
+		end
+
+		E:Print(format("Restored %d chat panel(s), %s.", restored, window))
 		return
 	end
 

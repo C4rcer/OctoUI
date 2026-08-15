@@ -372,7 +372,12 @@ function lib:AddEffect(unit, unitlevel, effect, duration, caster, guid)
 	entry.start_old = entry.start
 	entry.start = GetTime()
 	entry.duration = duration or lib:GetDuration(effect, nil, caster == "player")
-	entry.caster = caster
+
+	--A KNOWN CASTER IS NEVER DOWNGRADED TO NIL. The catch-all aura scan calls this with no
+	--caster, and letting that overwrite an effect already recorded as the player's would
+	--take the green border off a dot they are still holding. Only a fresh entry -- one the
+	--expiry path has already deleted -- starts out ownerless again.
+	entry.caster = caster or entry.caster
 
 	--Every route to "the player cast this" passes through here, so this is the one place
 	--the own-cast record has to be written. See lib.owncasts.
@@ -551,43 +556,73 @@ function lib:RevertLastAction()
 end
 
 --[[ pending spells ]]--
---A cast is recorded but not committed: it only becomes a timer once the combat log
---confirms the debuff landed, or the next frame ticks over with nothing contradicting
---it. Without this every resisted DoT would start a countdown.
+--[[
+	A cast is recorded but not committed: it only becomes a timer once the combat log
+	confirms the debuff landed, or the next frame ticks over with nothing contradicting it.
+	Without this every resisted DoT would start a countdown.
+
+	ONE PENDING CAST PER EFFECT, not one in total. It used to be a single six-slot list with
+	`if lib.pending[3] then return end` in front of it, so casting a second dot inside the
+	0.1s commit window silently threw it away.
+
+	That is what produced the reported symptom: apply four dots back to back, and the ones
+	that lost the slot were never recorded as YOURS at cast time. Their entry was created
+	instead by the catch-all aura scan, which knows no caster -- so for the moment between
+	the debuff landing and UNIT_CASTEVENT arriving, one dot had no green border and anything
+	asking "are all four mine" got told no. A macro gated on that then picked the wrong
+	spell, which is exactly how it was noticed.
+]]
 function lib:AddPending(unit, unitlevel, effect, duration, caster)
-	if not unit or not duration or duration <= 0 then return end
+	if not unit or not effect or not duration or duration <= 0 then return end
 
 	local durations = Durations()
 	if not (durations and durations[effect]) then return end
-	if lib.pending[3] then return end
 
-	lib.pending[1] = unit
-	lib.pending[2] = unitlevel or 0
-	lib.pending[3] = effect
-	lib.pending[4] = duration
-	lib.pending[5] = caster
-	lib.pending[6] = lib:GuidForName(unit)
+	lib.pending[effect] = {
+		unit = unit,
+		level = unitlevel or 0,
+		duration = duration,
+		caster = caster,
+		guid = lib:GuidForName(unit)
+	}
 
-	E:Delay(0.1, lib.PersistPending)
+	E:Delay(0.1, function() lib:PersistPending(effect) end)
 end
 
-function lib:RemovePending()
-	lib.pending[1] = nil
-	lib.pending[2] = nil
-	lib.pending[3] = nil
-	lib.pending[4] = nil
-	lib.pending[5] = nil
-	lib.pending[6] = nil
+--Named effect only, or everything when called bare.
+function lib:RemovePending(effect)
+	if effect then
+		lib.pending[effect] = nil
+		return
+	end
+
+	for name in pairs(lib.pending) do
+		lib.pending[name] = nil
+	end
 end
 
 function lib:PersistPending(effect)
-	if not lib.pending[3] then return end
+	if effect then
+		local entry = lib.pending[effect]
+		if not entry then return end
 
-	if lib.pending[3] == effect or (effect == nil and lib.pending[3]) then
-		lib:AddEffect(lib.pending[1], lib.pending[2], lib.pending[3], lib.pending[4], lib.pending[5], lib.pending[6])
+		lib:AddEffect(entry.unit, entry.level, effect, entry.duration, entry.caster, entry.guid)
+		lib.pending[effect] = nil
+		return
 	end
 
-	lib:RemovePending()
+	--Assigning nil to the key pairs() is on is the one mutation the iterator allows.
+	for name, entry in pairs(lib.pending) do
+		lib:AddEffect(entry.unit, entry.level, name, entry.duration, entry.caster, entry.guid)
+		lib.pending[name] = nil
+	end
+end
+
+--Any effect currently waiting to commit. Only the channel code wants this, and only because
+--SPELLCAST_CHANNEL_START calls every spell "Channeling" and has to guess the name.
+function lib:AnyPending()
+	local name = next(lib.pending)
+	return name
 end
 
 --[[ query ]]--
@@ -758,8 +793,10 @@ lib:SetScript("OnEvent", function()
 	elseif event == "CHAT_MSG_SPELL_FAILED_LOCALPLAYER" or event == "CHAT_MSG_SPELL_SELF_DAMAGE" then
 		for _, msg in pairs(lib.removePending) do
 			local effect = cmatch(arg1, msg)
-			if effect and lib.pending[3] == effect then
-				lib:RemovePending()
+			--Drops only the resisted effect now, where a single shared slot meant any resist
+			--cancelled whichever cast happened to be waiting.
+			if effect and lib.pending[effect] then
+				lib:RemovePending(effect)
 				return
 			elseif effect and lastspell and lastspell.start_old and lastspell.effect == effect then
 				--late arrivals, hunter arrows in particular, land after the cast ended
@@ -792,7 +829,7 @@ lib:SetScript("OnEvent", function()
 		--other two are fallbacks for a client without SuperWoW.
 		local effect = channelEffect
 		if not (effect and durations and durations[effect]) then
-			effect = lib.pending[3]
+			effect = lib:AnyPending()
 		end
 		if not (effect and durations and durations[effect]) then
 			effect = lastspell and lastspell.effect or nil
