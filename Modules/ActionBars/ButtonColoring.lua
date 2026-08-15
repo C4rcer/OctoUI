@@ -13,6 +13,8 @@ local ActionHasRange = ActionHasRange
 local IsActionInRange = IsActionInRange
 local IsUsableAction = IsUsableAction
 local HasAction = HasAction
+local GetActionCooldown = GetActionCooldown
+local GetActionText = GetActionText
 
 local tullaRange = CreateFrame("Frame", "tullaRange", UIParent)
 
@@ -36,6 +38,48 @@ local tullaRange = CreateFrame("Frame", "tullaRange", UIParent)
 	internal state and it is not there at all when that addon is not installed -- in which
 	case everything below behaves exactly as it did before.
 ]]
+--[[
+	A /run MACRO'S RANGE, which nothing can work out on its own.
+
+	CleveRoid resolves the spell behind a /cast macro, so those are covered. `/run
+	WarlockPriority()` resolves to nothing -- the spell is chosen inside Lua at the moment
+	of the press, and there is no way to know beforehand which one it will be.
+
+	So it is declared instead. OctoUI_MacroRange in Modules\Misc\UserMacros.lua maps a
+	macro's NAME to a number of yards, and the distance comes from UnitXP, which is where
+	Cursive gets precise yards too. Nothing is assumed: a macro with no entry keeps the
+	behaviour it had before, which is no range colouring at all.
+]]
+local function MacroDeclaredRange(action)
+	local ranges = _G.OctoUI_MacroRange
+	if type(ranges) ~= "table" then return nil end
+
+	local name = GetActionText(action)
+	return name and ranges[name] or nil
+end
+
+--Yards to the current target, or nil when that cannot be answered. Wrapped because UnitXP
+--is another addon's dispatcher and this runs on a timer.
+local function TargetDistance()
+	if not UnitExists("target") then return nil end
+	if type(UnitXP) ~= "function" then return nil end
+
+	local ok, distance = pcall(UnitXP, "distanceBetween", "player", "target")
+	if ok and type(distance) == "number" then return distance end
+
+	return nil
+end
+
+--Genuinely on cooldown, as opposed to inside the global cooldown. A button greying for the
+--1.5s after every cast would make the glow flicker on every press and mean nothing.
+local function OnCooldown(action)
+	local start, duration = GetActionCooldown(action)
+	if not (start and duration) then return false end
+	if duration <= 1.5 then return false end
+
+	return start > 0 and duration > 0
+end
+
 local function MacroActionState(action)
 	if not action then return nil end
 
@@ -133,7 +177,7 @@ function tullaRange:UpdateButtonStatus()
 	--A macro qualifies on the strength of the spell it resolves to, since ActionHasRange
 	--will never say yes for one.
 	if not(this:IsVisible() and action and HasAction(action)
-		and (ActionHasRange(action) or MacroActionState(action))) then
+		and (ActionHasRange(action) or MacroActionState(action) or MacroDeclaredRange(action))) then
 		self.buttonsToUpdate[this] = nil
 	else
 		self.buttonsToUpdate[this] = true
@@ -177,15 +221,34 @@ function tullaRange:UpdateButtonUsable(button)
 		if macro.usable == 1 and not macro.oom then
 			--Only 0 means out of range. -1 is "no target to measure against", which is not
 			--the same thing and must not paint the icon red.
-			if macro.inRange == 0 then
-				tullaRange.SetButtonColor(button, "OOR")
-			else
-				tullaRange.SetButtonColor(button, "NORMAL")
-			end
+			local inRange = macro.inRange ~= 0
+			tullaRange.SetButtonColor(button, inRange and "NORMAL" or "OOR")
+			--macro.inRange is -1 with no target, and a glow then would be a promise the
+			--client has not made.
+			tullaRange.SetButtonGlow(button, inRange and macro.inRange ~= -1 and not OnCooldown(action))
 		elseif macro.oom or macro.usable == 2 then
 			tullaRange.SetButtonColor(button, "OOM")
+			tullaRange.SetButtonGlow(button, false)
 		else
 			tullaRange.SetButtonColor(button, "UNUSABLE")
+			tullaRange.SetButtonGlow(button, false)
+		end
+		return
+	end
+
+	--A /run macro, whose range only exists because it was declared. Usability and cost are
+	--unknowable here -- the spell is picked inside Lua at the moment of the press -- so
+	--range and cooldown are all this can honestly test.
+	local yards = MacroDeclaredRange(action)
+	if yards then
+		local distance = TargetDistance()
+		if distance then
+			local inRange = distance <= yards
+			tullaRange.SetButtonColor(button, inRange and "NORMAL" or "OOR")
+			tullaRange.SetButtonGlow(button, inRange and not OnCooldown(action))
+		else
+			tullaRange.SetButtonColor(button, "NORMAL")
+			tullaRange.SetButtonGlow(button, false)
 		end
 		return
 	end
@@ -193,16 +256,59 @@ function tullaRange:UpdateButtonUsable(button)
 	local isUsable, notEnoughMana = IsUsableAction(action)
 
 	if isUsable then
-		if IsActionInRange(action) == 0 then
-			tullaRange.SetButtonColor(button, "OOR")
-		else
-			tullaRange.SetButtonColor(button, "NORMAL")
-		end
+		local range = IsActionInRange(action)
+		tullaRange.SetButtonColor(button, range == 0 and "OOR" or "NORMAL")
+		--`nil` means the action has no range concept at all (a buff, a trinket), and those
+		--should not glow on the strength of a target existing.
+		tullaRange.SetButtonGlow(button, range == 1 and not OnCooldown(action))
 	elseif notEnoughMana then
 		tullaRange.SetButtonColor(button, "OOM")
+		tullaRange.SetButtonGlow(button, false)
 	else
 		tullaRange.SetButtonColor(button, "UNUSABLE")
+		tullaRange.SetButtonGlow(button, false)
 	end
+end
+
+--[[
+	THE GLOW, which says "pressing this right now would work".
+
+	In range, affordable, and off cooldown -- all three. A glow that only meant "in range"
+	would sit on most of the bar for as long as you had a target and tell you nothing; the
+	whole value is that it appears at the moment a button becomes the one to press.
+
+	Its own texture rather than the button's built-in highlight, which is reserved for the
+	mouse and for auto-repeat and would fight both.
+]]
+local function EnsureGlow(button)
+	if button.octoRangeGlow then return button.octoRangeGlow end
+
+	local glow = button:CreateTexture(nil, "OVERLAY")
+	glow:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
+	glow:SetBlendMode("ADD")
+	glow:SetAlpha(0.85)
+	--Deliberately larger than the icon: this border texture is mostly transparent margin,
+	--so drawn to the button's own size it barely shows.
+	glow:SetPoint("TOPLEFT", button, "TOPLEFT", -7, 7)
+	glow:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 7, -7)
+	glow:Hide()
+
+	button.octoRangeGlow = glow
+	return glow
+end
+
+function tullaRange.SetButtonGlow(button, show)
+	if not E.db.actionbar.rangeGlow then
+		if button.octoRangeGlow then button.octoRangeGlow:Hide() end
+		return
+	end
+
+	--Only built once something actually needs it, so a bar full of buttons that never glow
+	--costs no textures at all.
+	if not show and not button.octoRangeGlow then return end
+
+	local glow = EnsureGlow(button)
+	if show then glow:Show() else glow:Hide() end
 end
 
 function tullaRange.SetButtonColor(button, colorType)

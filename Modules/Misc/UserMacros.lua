@@ -34,6 +34,22 @@ for name in pairs(_G) do
 	_globalsBefore[name] = true
 end
 
+--[[
+	RANGE FOR A /run MACRO, so its button can colour and glow like a spell button.
+
+	A /cast macro resolves to a spell and OctoUI reads that spell's range. `/run
+	WarlockPriority()` resolves to nothing -- which spell it casts is decided inside Lua at
+	the moment you press it -- so the range has to be stated here.
+
+	The key is the MACRO's name as it appears in the macro list, not the function's, and the
+	value is yards. A macro with no entry here behaves exactly as before: no range colouring.
+]]
+if not OctoUI_MacroRange then
+	OctoUI_MacroRange = {
+		--["Priority"] = 30,
+	}
+end
+
 --[[ helpers ]]--
 
 --True while the player carries a buff whose icon path contains `match` (lowercase).

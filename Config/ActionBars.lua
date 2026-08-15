@@ -105,6 +105,21 @@ local function BuildABConfig()
 				isPercent = true,
 				set = function(info, value) E.db.actionbar[ info[getn(info)] ] = value AB.fadeParent:SetAlpha(1-value) end
 			},
+			rangeGlow = {
+				order = 11.5,
+				type = "toggle",
+				name = L["Range Glow"],
+				desc = L["Glows a button when pressing it right now would work -- in range, affordable and off cooldown. Macros are included: a /cast macro uses whichever spell its conditions resolve to, and a /run macro uses the range you declare for it in Modules\\Misc\\UserMacros.lua."],
+				set = function(info, value)
+					E.db.actionbar[ info[getn(info)] ] = value
+					--Repainted at once, so turning it off clears every glow currently on
+					--screen instead of leaving them until each button next changes state.
+					for button in pairs(tullaRange.buttonsToUpdate) do
+						button.tullaRangeColor = nil
+						tullaRange.UpdateButtonUsable(button)
+					end
+				end
+			},
 			colorGroup = {
 				order = 12,
 				type = "group",

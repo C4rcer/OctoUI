@@ -2824,6 +2824,8 @@ P["actionbar"] = {
 	["desaturateOnCooldown"] = false,
 
 	["useRangeColorText"] = false,
+	--Glows a button only when pressing it would actually work; see Modules\ActionBars\ButtonColoring.lua
+	["rangeGlow"] = true,
 	["noRangeColor"] = {r = 0.8, g = 0.1, b = 0.1},
 	["noPowerColor"] = {r = 0.5, g = 0.5, b = 1},
 	["usableColor"] = {r = 1, g = 1, b = 1},

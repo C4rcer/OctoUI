@@ -649,6 +649,10 @@ L["LUAMACRO_OK"] = "|cff44ff44Loaded.|r"
 L["LUAMACRO_ERROR"] = "|cffff3333%s|r"
 L["LUAMACRO_LOAD_FAILED"] = "%d Lua snippet(s) failed to load, %d loaded. Run /octoui-lua to see which."
 L["Loaded from UserMacros.lua"] = true;
+
+--Modules/ActionBars/ButtonColoring.lua
+L["Range Glow"] = true;
+L["Glows a button when pressing it right now would work -- in range, affordable and off cooldown. Macros are included: a /cast macro uses whichever spell its conditions resolve to, and a /run macro uses the range you declare for it in Modules\\Misc\\UserMacros.lua."] = true;
 L["LUAMACRO_FILE_LIST"] = "|cff44ff44%d function(s) loaded|r, callable from a macro with /run Name()\n\n%s"
 L["LUAMACRO_FILE_EMPTY"] = "|cffff8800Nothing loaded from that file.|r It lives at Interface\\AddOns\\OctoUI\\Modules\\Misc\\UserMacros.lua -- edit it in a text editor and /reload."
 L["LUAMACRO_FILE_LOADED"] = "Lua loaded (%d): %s"
