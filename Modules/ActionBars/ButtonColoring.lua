@@ -16,6 +16,43 @@ local HasAction = HasAction
 
 local tullaRange = CreateFrame("Frame", "tullaRange", UIParent)
 
+--[[
+	MACRO BUTTONS, whose range this client will not answer for.
+
+	ActionHasRange is false for every macro -- a macro has no inherent range, only whatever
+	it happens to cast -- so UpdateButtonStatus never registered one and the icon stayed at
+	its normal colour whatever the target was doing. Reported 2026-08-14: three macro
+	buttons that never showed out of range while the spell buttons beside them did.
+
+	SuperCleveRoidMacros already solves the hard half. It resolves which spell a macro's
+	conditionals actually land on and tracks that spell's range and usability, which is the
+	part no vanilla API will give us for a macro. CleveRoids.GetAction(slot) hands it over:
+
+		active.usable   1 usable, 2 out of power, nil unusable
+		active.oom      out of power
+		active.inRange  0 out of range, 1 in range, -1 not known
+
+	Read through pcall and behind a full set of nil checks, because this is another addon's
+	internal state and it is not there at all when that addon is not installed -- in which
+	case everything below behaves exactly as it did before.
+]]
+local function MacroActionState(action)
+	if not action then return nil end
+
+	local CleveRoids = _G.CleveRoids
+	if not (CleveRoids and CleveRoids.GetAction) then return nil end
+
+	local ok, actions = pcall(CleveRoids.GetAction, action)
+	if not ok or type(actions) ~= "table" then return nil end
+
+	local active = actions.active
+	--No resolved spell means the macro's conditionals matched nothing this instant, and
+	--there is no range to speak of. Left to the normal path rather than guessed at.
+	if type(active) ~= "table" or not active.action then return nil end
+
+	return active
+end
+
 function tullaRange:Load()
 	self:SetScript("OnUpdate", self.OnUpdate)
 	self:SetScript("OnHide", self.OnHide)
@@ -93,7 +130,10 @@ end
 
 function tullaRange:UpdateButtonStatus()
 	local action = ActionButton_GetPagedID(this)
-	if not(this:IsVisible() and action and HasAction(action) and ActionHasRange(action)) then
+	--A macro qualifies on the strength of the spell it resolves to, since ActionHasRange
+	--will never say yes for one.
+	if not(this:IsVisible() and action and HasAction(action)
+		and (ActionHasRange(action) or MacroActionState(action))) then
 		self.buttonsToUpdate[this] = nil
 	else
 		self.buttonsToUpdate[this] = true
@@ -128,6 +168,28 @@ end
 
 function tullaRange:UpdateButtonUsable(button)
 	local action = ActionButton_GetPagedID(button)
+
+	--Taken from the macro's resolved spell when there is one. IsUsableAction answers for the
+	--macro itself, which is always usable and never in range, so asking it about a macro is
+	--how the icon came to sit at its normal colour permanently.
+	local macro = MacroActionState(action)
+	if macro then
+		if macro.usable == 1 and not macro.oom then
+			--Only 0 means out of range. -1 is "no target to measure against", which is not
+			--the same thing and must not paint the icon red.
+			if macro.inRange == 0 then
+				tullaRange.SetButtonColor(button, "OOR")
+			else
+				tullaRange.SetButtonColor(button, "NORMAL")
+			end
+		elseif macro.oom or macro.usable == 2 then
+			tullaRange.SetButtonColor(button, "OOM")
+		else
+			tullaRange.SetButtonColor(button, "UNUSABLE")
+		end
+		return
+	end
+
 	local isUsable, notEnoughMana = IsUsableAction(action)
 
 	if isUsable then

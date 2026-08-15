@@ -633,3 +633,22 @@ L["Stop watching a spell"] = true;
 L["Removes it from the list, whether it was one of yours or one of the built-in ones."] = true;
 L["Rows"] = true;
 L["CC_LOOSE"] = "LOOSE"
+
+--Modules/Misc/LuaMacros.lua -- Lua that loads itself so a macro can call it
+L["Lua Macros"] = true;
+L["Lua that is compiled and run every time the UI loads, so a macro can call it by name. A 255 character macro cannot hold a function; this is where the function lives. Call it with /run YourFunction()"] = true;
+L["New snippet"] = true;
+L["A name for it. Letters and numbers, no spaces -- it is only a label, not the function name."] = true;
+L["Run all now"] = true;
+L["Run now"] = true;
+L["Runs it immediately, without waiting for the next reload."] = true;
+L["Code"] = true;
+L["Delete"] = true;
+L["Nothing here yet. Name one above, then paste its code into the box that appears."] = true;
+L["LUAMACRO_OK"] = "|cff44ff44Loaded.|r"
+L["LUAMACRO_ERROR"] = "|cffff3333%s|r"
+L["LUAMACRO_LOAD_FAILED"] = "%d Lua snippet(s) failed to load, %d loaded. Run /octoui-lua to see which."
+L["Loaded from UserMacros.lua"] = true;
+L["LUAMACRO_FILE_LIST"] = "|cff44ff44%d function(s) loaded|r, callable from a macro with /run Name()\n\n%s"
+L["LUAMACRO_FILE_EMPTY"] = "|cffff8800Nothing loaded from that file.|r It lives at Interface\\AddOns\\OctoUI\\Modules\\Misc\\UserMacros.lua -- edit it in a text editor and /reload."
+L["LUAMACRO_FILE_LOADED"] = "Lua loaded (%d): %s"

@@ -13,6 +13,9 @@
 	<Script file="AutoDismount.lua"/>
 	<Script file="MountGear.lua"/>
 	<Script file="CCWatch.lua"/>
+	<Script file="LuaMacros.lua"/>
+	<!-- Yours. Edited in a text editor, reloaded with /reload; OctoUI never writes to it. -->
+	<Script file="UserMacros.lua"/>
 	<Script file="EnergyTick.lua"/>
 	<Script file="CombatFeedback.lua"/>
 	<Script file="MacroTweaks.lua"/>

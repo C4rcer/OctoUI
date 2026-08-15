@@ -380,6 +380,13 @@ function lib:AddEffect(unit, unitlevel, effect, duration, caster, guid)
 		lib:NoteOwnCast(guid, effect, entry.duration)
 	end
 
+	--A known cast beats a recent expiry: recasting the dot yourself must start a real timer
+	--rather than being mistaken for the icon of the one that just dropped. Only the
+	--catch-all scan, which passes no caster, is ever suppressed.
+	if caster then
+		lib:ClearExpired(unit, guid, effect)
+	end
+
 	--Filed under the GUID as well whenever both are known, so the two keys share one table
 	--and cannot drift apart.
 	if guid and guid ~= store then
@@ -447,6 +454,62 @@ end
 	did not recognise, and for the same reason.
 ]]
 lib.untracked = {}
+
+--[[
+	EFFECTS WHOSE TIMER HAS JUST RUN OUT.
+
+	Reported 2026-08-15: a dot of yours drops off and reappears for a moment showing its FULL
+	duration. The catch-all scan is what does it. GetTimeLeft deletes an entry the instant it
+	expires, and the scan below then finds the icon still on the mob, asks HasEffect, is told
+	no, and re-adds it -- with a nil duration, which AddEffect fills in as the whole unhasted
+	length. The debuff really drops a moment later and the phantom timer goes with it.
+
+	The scan cannot tell "a debuff I have never seen" from "a debuff I expired a heartbeat
+	ago", so it is told. A mark is left when a timer runs out, and while that mark is fresh
+	the scan leaves the effect alone: the icon shows with no countdown, which is the honest
+	answer, rather than a countdown that is wrong by its whole duration.
+
+	The mark is CLEARED by any known cast -- see AddEffect -- so recasting the dot yourself
+	starts a real timer immediately and is never suppressed.
+]]
+lib.expired = {}
+
+local EXPIRY_GRACE = 8
+
+function lib:MarkExpired(unitname, guid, effect)
+	if not effect then return end
+
+	local now = GetTime()
+	for _, key in ipairs({unitname, guid}) do
+		if key then
+			if not lib.expired[key] then lib.expired[key] = {} end
+			lib.expired[key][effect] = now
+		end
+	end
+end
+
+function lib:ClearExpired(unitname, guid, effect)
+	if not effect then return end
+
+	for _, key in ipairs({unitname, guid}) do
+		if key and lib.expired[key] then lib.expired[key][effect] = nil end
+	end
+end
+
+--Self-cleaning: a stale mark is dropped as it is found, so nothing has to sweep the table.
+function lib:RecentlyExpired(unitname, guid, effect)
+	if not effect then return false end
+
+	for _, key in ipairs({unitname, guid}) do
+		local when = key and lib.expired[key] and lib.expired[key][effect]
+		if when then
+			if (GetTime() - when) <= EXPIRY_GRACE then return true end
+			lib.expired[key][effect] = nil
+		end
+	end
+
+	return false
+end
 
 function lib:NoteUntracked(name)
 	if not name then return end
@@ -552,6 +615,11 @@ function lib:GetTimeLeft(unitname, unitlevel, effect, guid)
 		--expired: drop it rather than hand back a negative timer
 		if store[unitlevel] then store[unitlevel][effect] = nil end
 		if store[0] then store[0][effect] = nil end
+
+		--Remembered, so the catch-all scan does not see the icon still on the mob a
+		--fraction of a second later and put the effect back at its full duration. See
+		--lib.expired.
+		lib:MarkExpired(unitname, guid, effect)
 		return
 	end
 
@@ -662,7 +730,8 @@ lib:SetScript("OnEvent", function()
 		if unit and effect then
 			local unitlevel = (UnitName("target") == unit and UnitLevel("target")) or 0
 			local guid = lib:GuidForName(unit)
-			if not lib:HasEffect(unit, unitlevel, effect, guid) then
+			if not lib:HasEffect(unit, unitlevel, effect, guid)
+				and not lib:RecentlyExpired(unit, guid, effect) then
 				lib:AddEffect(unit, unitlevel, effect, nil, nil, guid)
 			end
 		end
@@ -677,7 +746,10 @@ lib:SetScript("OnEvent", function()
 			if effect and effect ~= "" then
 				local unit, unitlevel = UnitName("target"), UnitLevel("target") or 0
 				local guid = lib:GuidForName(unit)
-				if unit and not lib:HasEffect(unit, unitlevel, effect, guid) then
+				--This is the scan that caused the phantom full-duration timer: it sees an
+				--icon with no stored countdown and assumes the debuff is new. See lib.expired.
+				if unit and not lib:HasEffect(unit, unitlevel, effect, guid)
+					and not lib:RecentlyExpired(unit, guid, effect) then
 					lib:AddEffect(unit, unitlevel, effect, nil, nil, guid)
 				end
 			end

@@ -1396,6 +1396,77 @@ function E:CCWatchReport(msg)
 	E:Print("Usage: /octoui-cc [test / add <spell> / remove <spell>]")
 end
 
+--Lua snippets that load themselves. Adding one from chat is impractical -- a multi-line
+--function does not fit a slash command -- so this lists, runs and removes, and the options
+--page is where the code is pasted.
+function E:LuaMacroCommand(msg)
+	local M = E:GetModule("Misc")
+
+	if not M.GetLuaMacros then
+		E:Print("Lua macros are not loaded yet. Exit WoW.exe fully and start it again -- a /reload cannot pick up a file that was not there at login.")
+		return
+	end
+
+	local action, rest = match(msg or "", "^%s*(%S*)%s*(.-)%s*$")
+	action = lower(action or "")
+
+	if action == "run" then
+		if rest == "" then
+			local ran, failed = M:RunLuaMacros()
+			E:Print(format("Ran %d snippet(s), %d failed.", ran, failed))
+		else
+			local ok, why = M:RunLuaMacro(rest)
+			E:Print(ok and format("Ran %s.", rest) or format("%s: |cffff3333%s|r", rest, why or "?"))
+		end
+		M:ScheduleLuaMacroRefresh()
+		return
+	end
+
+	if action == "remove" or action == "delete" then
+		if M:RemoveLuaMacro(rest) then
+			E:Print(format("Removed %s.", rest))
+			M:ScheduleLuaMacroRefresh()
+		else
+			E:Print(format("No snippet called %s.", rest ~= "" and rest or "?"))
+		end
+		return
+	end
+
+	--The file first: it is where real code lives, and "is mine loaded" is the question.
+	local fns = M:GetUserMacroFunctions()
+	if getn(fns) > 0 then
+		E:Print(format("UserMacros.lua -- |cff44ff44%d function(s) loaded|r: %s", getn(fns), concat(fns, ", ")))
+	else
+		E:Print("UserMacros.lua -- |cffff8800nothing loaded from it|r (Modules\\Misc\\UserMacros.lua, then /reload)")
+	end
+
+	local list = M:GetLuaMacros()
+	E:Print(format("Lua macros -- %d snippet(s), %s.", getn(list),
+		M:LuaMacrosLoaded() and "loaded this session" or "|cffff3333not run yet|r"))
+
+	for _, item in ipairs(list) do
+		local entry = item.entry
+		local state
+		if entry.enable == false then
+			state = "|cff888888off|r"
+		elseif entry.error then
+			--The whole point of keeping the error: a snippet that failed to compile is
+			--invisible otherwise, and its functions simply do not exist.
+			state = format("|cffff3333%s|r", entry.error)
+		else
+			state = "|cff44ff44ok|r"
+		end
+
+		E:Print(format("  %s -- %s", item.name, state))
+	end
+
+	if getn(list) == 0 then
+		E:Print("  none yet. Add one at /oc - General - Lua Macros, then call it from a macro with /run YourFunction()")
+	end
+
+	E:Print("Usage: /octoui-lua [run <name> / remove <name>] -- code is pasted in the options page.")
+end
+
 function E:FilterCommand(msg)
 	local filters = E.global.unitframe.aurafilters
 	if not filters then
@@ -1640,6 +1711,7 @@ function E:LoadCommands()
 	self:RegisterChatCommand("octoui-roll", "AutoRollCommand")
 	self:RegisterChatCommand("octoui-mountgear", "MountGearReport")
 	self:RegisterChatCommand("octoui-cc", "CCWatchReport")
+	self:RegisterChatCommand("octoui-lua", "LuaMacroCommand")
 	self:RegisterChatCommand("octoui-auras", "AuraReport")
 	self:RegisterChatCommand("octoui-dismount", "DismountReport")
 	self:RegisterChatCommand("octoui-mail", "MailReport")
