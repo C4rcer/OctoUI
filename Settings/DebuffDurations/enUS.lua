@@ -736,7 +736,11 @@ D["debuffs"] = {
 	['Shadow Flame']={[0]=10.0,},
 	['Shadow Mark']={[0]=15.0,},
 	['Shadow Protection ']={[0]=3600.0,},
-	['Shadow Vulnerability']={[0]=15.0,},
+	--OCTOWOW OVERRIDE, 2026-08-16. Upstream (vanilla) is 15.0. This realm's Improved
+	--Shadow Bolt reads "increase Shadow damage dealt to the target by 20% for 10 sec"
+	--in the talent tooltip, and it is a flat duration here rather than vanilla's
+	--charge-consumed debuff. Re-extracting this file from ShaguPlates will revert it.
+	['Shadow Vulnerability']={[0]=10.0,},
 	['Shadow Weakness']={[0]=45.0,},
 	['Shadow Word: Pain']={[0]=18.0,},
 	['Shadow of Ebonroc']={[0]=8.0,},

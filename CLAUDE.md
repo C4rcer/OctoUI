@@ -94,10 +94,29 @@ without complaint, so "did it register" tests nothing.
 Each subsystem has a report command, and extending one beats asking the user to time
 something by hand:
 
-`/octoui-bags [moves]` · `/octoui-dots` · `/octoui-dismount` · `/octoui-dps` · `/octoui-mail`
+`/octoui-bags [moves]` · `/octoui-dots` · `/octoui-dismount` · `/octoui-dps` · `/octoui-mail` ·
+`/octoui-recipes [name]`
 
 Prefer a passive **log** over a snapshot for anything transient — `/oprobe dots` hooks the
 debuff store's writes so a bug can be read back afterwards rather than caught live.
+
+## Generated data is not source
+
+`Modules/Recipes/DB/*.lua` and its `Load_DB.xml` are **generated**. Editing them by hand is
+lost work: the next run overwrites it. The generator is
+`octoui-dev/tools/recipe-pipeline/` — fix the reconciliation rules there and re-run
+`build.py`, then `validate.py` to confirm every id the addon dereferences still resolves.
+
+It merges three upstream databases because no single one is sufficient: LibCrafts-1.0 has
+profession/skill/reagents and is current to Turtle 1.18, TradeSkillsData is the only source
+with vendor **prices** and **reputation** requirements, and the installed pfQuest is the only
+one with live drop rates, vendor stock limits and spawn coordinates. Conflicts go in
+`REPORT.md` rather than being resolved silently, and a recipe whose profession had to be
+inferred carries `unsure` and renders with a trailing `?`.
+
+pfQuest's coord tables are written `[1] = {x, y, zone, respawn}`, so they parse as
+**index-keyed tables, not arrays**. Reading them as a list yields no locations and no error —
+it cost a full rebuild before the empty zone column was noticed.
 
 ## Two recurring traps
 

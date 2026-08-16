@@ -1,0 +1,8 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/">
+	<!-- Data first: RecipeFinder.lua indexes OctoUI_RecipeDB on Initialize, and
+	     RecipeFinderUI.lua resolves the module with E:GetModule at load time, so
+	     neither tolerates being loaded ahead of what it depends on. -->
+	<Include file="DB\Load_DB.xml"/>
+	<Script file="RecipeFinder.lua"/>
+	<Script file="RecipeFinderUI.lua"/>
+</Ui>

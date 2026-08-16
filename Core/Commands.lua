@@ -284,6 +284,19 @@ function E:MailReport()
 	Misc:MailReport()
 end
 
+--Bare command opens the browser; with an argument it prints the first matching
+--recipe's sources to chat, which is the only way to get at them while a
+--full-screen window would be in the way.
+function E:RecipeFinderCommand(msg)
+	local RF = E:GetModule("RecipeFinder", true)
+	if not (RF and RF.Command) then
+		E:Print("|cffff0000Recipe Finder is not loaded.|r")
+		return
+	end
+
+	RF:Command(msg)
+end
+
 function E:MeterReport(msg)
 	local M = E:GetModule("Misc", true)
 	if not (M and M.MeterData) then
@@ -1734,6 +1747,7 @@ function E:LoadCommands()
 	self:RegisterChatCommand("octoui-auras", "AuraReport")
 	self:RegisterChatCommand("octoui-dismount", "DismountReport")
 	self:RegisterChatCommand("octoui-mail", "MailReport")
+	self:RegisterChatCommand("octoui-recipes", "RecipeFinderCommand")
 	self:RegisterChatCommand("octoui-threatreset", "ThreatReset")
 
 	if E:GetModule("ActionBars") and E.private.actionbar.enable then

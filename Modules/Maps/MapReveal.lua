@@ -125,8 +125,8 @@ if TargetHPText and TargetHPPercText then
 end
 
 function M:BuildMapReveal()
-  local enabled = true
-
+  --Was `local enabled = true`, which reset on every load -- so unticking the box on the
+  --map lasted until the next /reload and then silently came back. Reported 2026-08-16.
   local mapreveal = {}
   mapreveal.onmap = CreateFrame("CheckButton", "ElvUI_MapRevealToggle", WorldMapFrame, "UICheckButtonTemplate")
   mapreveal.onmap.text = _G["ElvUI_MapRevealToggleText"]
@@ -136,15 +136,13 @@ function M:BuildMapReveal()
   mapreveal.onmap.text:SetPoint("LEFT", mapreveal.onmap, "RIGHT", 2, 0)
   mapreveal.onmap.text:SetText(L["Reveal Unexplored"])
   mapreveal.onmap:SetScript("OnShow", function()
-    this:SetChecked(enabled)
+    this:SetChecked(E.db.general.mapRevealActive)
   end)
 
   mapreveal.onmap:SetScript("OnClick", function ()
-    if this:GetChecked() then
-      enabled = true
-    else
-      enabled = false
-    end
+    --GetChecked returns 1 or nil on this client, so it is normalised before storing --
+    --a saved variable holding 1 would read back as truthy but compare oddly.
+    E.db.general.mapRevealActive = this:GetChecked() and true or false
 
     WorldMapFrame_Update()
   end)
@@ -228,6 +226,94 @@ function M:BuildMapReveal()
     end
 
     local zoneData = this.overlayData[mapFileName]
+
+    --[[
+      IS OUR OVERLAY DATA STILL TRUE FOR THIS ZONE?
+
+      Reported 2026-08-16: Felwood drew as a patchwork -- Zul'Hatha and Darkhollow Pass
+      each appearing twice, regions in the wrong places. The base map art was fine; the
+      coordinates were provably fine (world position, GetMapBoundaries and pfQuest-turtle's
+      zone dimensions all agreed exactly). It was this feature painting overlays.
+
+      The tables above are a snapshot. The vanilla one is right for vanilla; the Turtle one
+      was right for whatever Turtle build it was captured from. OctoWoW is on 1.18.1 and has
+      redrawn several zones since, so replaying the snapshot's geometry onto the current art
+      puts pieces of the map in places they do not belong. That is why only the changed
+      zones looked wrong and untouched ones were fine.
+
+      Rather than chase the upstream dataset forever -- it would break again on the next
+      patch that moves a zone -- the snapshot is checked against the live client. The client
+      reports real geometry through GetMapOverlayInfo for every overlay ALREADY EXPLORED, so
+      any disagreement means the snapshot is out of date for this zone.
+
+      Two ways it can be wrong, and both are treated the same way:
+
+        * the client reports an overlay the snapshot has never heard of
+        * the snapshot and the client disagree on where an overlay sits
+
+      Either one and the whole zone is skipped, leaving the client's own explored overlays
+      to stand. Losing the reveal on a changed zone is a far better outcome than corrupting
+      the map, and it self-heals whenever the data is refreshed.
+
+      Not detectable when nothing in the zone has been explored yet -- there is nothing to
+      compare against. Nothing can be done about that, and it corrects itself as soon as the
+      player explores anything here.
+    ]]
+    --Names are compared CASE-INSENSITIVELY. The bundled tables store them uppercased
+    --("RUTTHERANVILLAGE:128:100:494:548") while GetMapOverlayInfo returns the real texture
+    --path in its own casing, so a literal comparison misses on every zone -- which showed
+    --up immediately as the reveal doing nothing anywhere at all.
+    do
+      local snapshot = {}
+      for i, hash in ipairs(zoneData) do
+        local tName, tW, tH, oX, oY = unpack_hash(prefix, hash)
+        if tName then snapshot[string.upper(tName)] = {tW, tH, oX, oY} end
+      end
+
+      --A TOLERANCE, not an exact match. Measured 2026-08-16 in Winterspring:
+      --
+      --    live    DARKWHISPERGORGE  247:191:452:447
+      --    bundled DARKWHISPERGORGE  255:205:447:441
+      --
+      --Off by 8, 14, 5 and 6 pixels -- the snapshot came from a slightly different Turtle
+      --build. On a 1002px map that is under two percent and renders fine. Hyjal, by
+      --contrast, was wrong by whole regions: the same overlay appearing twice, hundreds of
+      --pixels out. Demanding equality throws away the reveal on zones that only drifted,
+      --to protect against zones that were genuinely redrawn.
+      --
+      --24px is chosen to sit well above the observed drift and far below anything that
+      --misplaces a region visibly. If a zone ever renders subtly off, lower it; that is the
+      --knob.
+      local TOLERANCE = 24
+
+      local function adrift(a, b)
+        local d = a - b
+        if d < 0 then d = -d end
+        return d > TOLERANCE
+      end
+
+      local compared = 0
+      for i = 1, numOverlays do
+        local tName, tW, tH, oX, oY = GetMapOverlayInfo(i)
+        local ref = tName and snapshot[string.upper(tName)]
+
+        --An overlay the snapshot has never heard of is not drift, it is different data.
+        if not ref then return end
+
+        if adrift(ref[1], tW) or adrift(ref[2], tH)
+          or adrift(ref[3], oX) or adrift(ref[4], oY) then
+          return
+        end
+
+        compared = compared + 1
+      end
+
+      --Nothing explored here yet, so nothing could be checked. Falling through would draw
+      --the snapshot unverified, which is the corruption this guard exists to prevent, so
+      --a zone that cannot be validated is left alone until it can be.
+      if compared == 0 then return end
+    end
+
     local textureCount = 0
     local texturePixelWidth, textureFileWidth, texturePixelHeight, textureFileHeight
     for i, hash in ipairs(zoneData) do
@@ -249,14 +335,14 @@ function M:BuildMapReveal()
       explore.tex:SetAllPoints()
 
       -- show exploration points
-      if E.db.general.mapRevealMarker and enabled and not alreadyknown[textureName] then
+      if E.db.general.mapRevealMarker and E.db.general.mapRevealActive and not alreadyknown[textureName] then
         explore.tex:SetTexture("Interface\\WorldMap\\WorldMap-MagnifyingGlass")
         explore:Show()
       else
         explore:Hide()
       end
 
-      if enabled or alreadyknown[textureName] then
+      if E.db.general.mapRevealActive or alreadyknown[textureName] then
         if errata[textureName] and errata[textureName].offsetX and errata[textureName].offsetX[1] == offsetX then
           offsetX = errata[textureName].offsetX[2]
         end

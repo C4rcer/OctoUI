@@ -42,6 +42,10 @@ P["general"] = {
 	["energyTick"] = false,
 	["combatFeedback"] = true,
 	["mapReveal"] = true,
+	--The on-map "Reveal Unexplored" tick. Separate from mapReveal, which is the master
+	--switch in the config and needs a reload: this one is flipped from the world map
+	--itself and has to survive one, which it did not when it was a session local.
+	["mapRevealActive"] = true,
 	["mapRevealMarker"] = true,
 
 	--Ported from ShaguTweaks-extras, same reasoning
@@ -109,6 +113,15 @@ P["general"] = {
 				["position"] = "BOTTOMRIGHT",
 				["xOffset"] = 3,
 				["yOffset"] = 0,
+			},
+			--Recipe Finder toggle. TOPLEFT is the one minimap corner none of the
+			--icons above claim, so the default cannot land on top of another.
+			["recipeFinder"] = {
+				["scale"] = 1,
+				["position"] = "TOPLEFT",
+				["xOffset"] = 2,
+				["yOffset"] = -2,
+				["hide"] = false,
 			}
 		}
 	},

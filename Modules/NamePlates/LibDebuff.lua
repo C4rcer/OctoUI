@@ -29,6 +29,7 @@ local mod = E:GetModule("NamePlates")
 local pairs, tonumber, type = pairs, tonumber, type
 local getn, tinsert, tremove = table.getn, table.insert, table.remove
 local format, gsub, gfind, find = string.format, string.gsub, string.gfind, string.find
+local floor = math.floor
 local GetTime = GetTime
 local GetComboPoints, GetTalentInfo = GetComboPoints, GetTalentInfo
 local UnitName, UnitLevel, UnitClass = UnitName, UnitLevel, UnitClass
@@ -625,6 +626,343 @@ function lib:AnyPending()
 	return name
 end
 
+--[[
+	TICK COUNTING -- the only honest timer for our own damage-over-time effects.
+
+	Measured 2026-08-15, two fights, five spells (OctWoW Enhancer\docs\DLL_LANDSCAPE.md):
+	OctoWoW does not run periodic effects at their declared interval. Observed spacing
+	divided by the DBC amplitude falls into two tight clusters -- about 0.92 all the time,
+	and about 0.65 while a haste effect is up -- and the SAME two ratios appear across
+	spells whose base intervals are 1s, 2s and 3s.
+
+	The load-bearing fact: the tick COUNT is preserved. Curse of Agony expired naturally
+	after exactly twelve ticks, which is what a 24s/2s effect should produce, but delivered
+	them in 19.4 seconds. The spacing compresses; the number of ticks does not.
+
+	Two consequences, and they point the same way.
+
+	  * A duration table cannot work. It was 4.6 seconds wrong on that one cast.
+	  * NOTHING computed at cast time can work either, table or not, because the rate
+	    changes WHILE the effect is running. Curse of Agony ran at 1.83s, sped to 1.26s,
+	    and relaxed back to 1.87s inside a single application.
+
+	So stop predicting and start counting. Total ticks is known exactly -- base duration
+	over declared interval, both constants -- and every tick that lands is observable. Ticks
+	remaining is therefore EXACT even though seconds remaining is an estimate, and it
+	re-anchors on every tick. For a rotation that is the better number anyway: refreshing
+	is about not clipping a tick.
+
+	This also fixes ownership for free. SPELL_DAMAGE_EVENT_SELF is our own damage, so
+	anything counted here is certainly ours -- no caster inference, no contest, no
+	"untimed and no border" from an effect the catch-all scan re-learned without a caster.
+
+	Only our own periodic effects. Somebody else's DoT produces no damage events for us,
+	and a non-periodic debuff has no ticks to count; both fall through to the table below.
+]]
+lib.ticks = {}
+
+--Anything not ticked for this long is gone and its entry with it. lib.objects is famously
+--never pruned and contributes to the heap climbing about 1 MB a minute; this table is not
+--going to repeat that.
+local TICK_STALE = 60
+
+--Declared here, above PruneTicks, and not beside the functions that use it further down:
+--a local referenced by a function defined EARLIER in the file resolves to a global instead
+--and reads nil at runtime. See lib.owndamage for what this is for.
+lib.owndamage = {}
+local OWN_DAMAGE_WINDOW = 0.20
+
+--[[
+	OWNERSHIP IS A SEPARATE FACT FROM DURATION, and treating them as one is why an effect
+	the duration table has never heard of draws no owned border.
+
+	Reported 2026-08-15: Dark Harvest gets no green border on nameplates or the target
+	frame. It is not in Settings\DebuffDurations -- this realm added it -- so nothing can
+	time it, and until now that also meant nothing could say it was yours: the border is
+	drawn from GetTimeLeft's caster, and GetTimeLeft has nothing to return for an effect it
+	holds no entry for.
+
+	But we now know the caster exactly. AURA_CAST_ON_OTHER carries the casting GUID for
+	every aura whether or not any table has heard of the spell, so "this one is mine" is
+	answerable even when "how long is left" is not.
+
+	Kept apart from lib.objects deliberately. That store is keyed by name and level and
+	carries a duration; this is keyed by GUID and carries a timestamp and nothing else.
+	The honest display for an unknown effect is an icon with an owned border and no
+	countdown, which is what this produces.
+]]
+lib.owned = {}
+
+--Long enough for a curse, short enough not to hold a lie forever. The normal lifecycle is
+--DEBUFF_REMOVED_OTHER clearing the entry; this is the backstop for when we never see one.
+local OWNED_STALE = 300
+
+local tickNames = {}
+local function TickSpellName(spellID)
+	if not spellID then return nil end
+
+	local cached = tickNames[spellID]
+	if cached ~= nil then return cached or nil end
+
+	local name
+	if type(SpellInfo) == "function" then
+		--SuperWoW. Cached because it resolves against the object list on every call.
+		name = SpellInfo(spellID)
+	end
+
+	tickNames[spellID] = name or false
+	return name
+end
+
+--CACHED. UnitExists("player") is SuperWoW resolving against the object list, and this is
+--called from the tick path -- once per tick per dot per target. Calling a GUID lookup per
+--damage event has been a real defect here once already (HANDOFF: the damage meter). The
+--player's own GUID does not change while logged in, so it is resolved once.
+local playerGUIDCache = nil
+local function TickPlayerGUID()
+	if playerGUIDCache then return playerGUIDCache end
+
+	local _, guid = UnitExists("player")
+	--Not cached until it answers: this can be called before the object manager has the
+	--player, and caching a nil would make it nil for the session.
+	if guid then playerGUIDCache = guid end
+	return guid
+end
+
+--Drops entries nothing has ticked in a while. Called from the tick path, so it costs
+--nothing when no dots are running.
+function lib:PruneTicks()
+	local now = GetTime()
+
+	--Swept here rather than on its own timer: entries are worthless within a fifth of a
+	--second and this runs on every tick of every dot.
+	for guid, when in pairs(lib.owndamage) do
+		if (now - when) > OWN_DAMAGE_WINDOW then lib.owndamage[guid] = nil end
+	end
+
+	for guid, spells in pairs(lib.ticks) do
+		local live = false
+		for id, rec in pairs(spells) do
+			if (now - rec.last) > TICK_STALE then
+				spells[id] = nil
+			else
+				live = true
+			end
+		end
+		if not live then lib.ticks[guid] = nil end
+	end
+end
+
+--Seeded from AURA_CAST_ON_OTHER, whose arg6 carries the declared tick interval in ms --
+--the DBC amplitude, handed over at application time. A refresh restarts the count, which
+--is why this resets `seen` rather than skipping an effect it already knows.
+function lib:NoteTickSpell(guid, spellID, intervalMs)
+	if not (guid and spellID and intervalMs and intervalMs > 0) then return end
+
+	local effect = TickSpellName(spellID)
+	if not effect then return end
+
+	--The table is unreliable for SECONDS but reliable for tick COUNT, because the count is
+	--exactly what the acceleration preserves. Rank is unknown from a spell id, so this
+	--takes the max rank -- the same assumption the rest of the library makes.
+	local base = lib:GetDuration(effect, nil, false)
+	if not base or base <= 0 then
+		lib:NoteUntracked(effect)
+		return
+	end
+
+	local interval = intervalMs / 1000
+	local total = floor((base / interval) + 0.5)
+	if total < 1 then return end
+
+	if not lib.ticks[guid] then lib.ticks[guid] = {} end
+
+	lib.ticks[guid][spellID] = {
+		effect   = effect,
+		total    = total,
+		seen     = 0,
+		declared = interval,
+		interval = interval,
+		start    = GetTime(),
+		last     = GetTime(),
+		--Resolved once per application, not per tick. Needed to force the unit frames to
+		--re-read when the rate changes; see NoteTick.
+		name     = UnitName(guid),
+	}
+end
+
+--Unit frames take ONE snapshot of duration and expiration when the aura set changes and
+--then count down from it linearly. That is correct while the rate holds, and wrong the
+--moment it does not: a dot that speeds up mid-application would go on draining at the old
+--rate until something else happened to refresh the icon.
+--
+--Nameplates poll GetTimeLeft on their own update cycle and need no help. The unit frames
+--do, so they are told -- but only when the rate has ACTUALLY moved, because forcing an
+--update on every tick of every dot would be several full aura rebuilds a second for a
+--number that usually has not changed.
+local TICK_RATE_TOLERANCE = 0.10
+local lastTickRefresh = 0
+
+local function TickRateChanged(rec, oldInterval)
+	if not oldInterval or oldInterval <= 0 then return false end
+
+	local drift = (rec.interval - oldInterval) / oldInterval
+	if drift < 0 then drift = -drift end
+	if drift < TICK_RATE_TOLERANCE then return false end
+
+	--Several dots re-rate together when one haste effect lands. One refresh covers them.
+	local now = GetTime()
+	if (now - lastTickRefresh) < 0.2 then return false end
+	lastTickRefresh = now
+
+	return true
+end
+
+--One tick landed. The observed interval is kept as the estimate for the next one, which is
+--what makes this track a haste effect coming and going instead of averaging it away.
+function lib:NoteTick(guid, spellID)
+	if not (guid and spellID) then return end
+
+	local rec = lib.ticks[guid] and lib.ticks[guid][spellID]
+	if not rec then return end
+
+	local now = GetTime()
+	local oldInterval = rec.interval
+
+	if rec.seen > 0 then
+		local gap = now - rec.last
+		--A gap far longer than declared means we missed one, or the effect was refreshed
+		--and reseeded. Do not let that poison the rate estimate.
+		if gap > 0 and gap < (rec.declared * 2) then rec.interval = gap end
+	end
+
+	rec.seen = rec.seen + 1
+	rec.last = now
+
+	--The unit frames are counting down from a snapshot taken at the old rate.
+	if rec.name and TickRateChanged(rec, oldInterval) then
+		lib:RefreshUnitFrames(rec.name)
+	end
+
+	lib:PruneTicks()
+end
+
+function lib:ClearTicks(guid, spellID)
+	if not guid or not lib.ticks[guid] then return end
+
+	if spellID then
+		lib.ticks[guid][spellID] = nil
+	else
+		lib.ticks[guid] = nil
+	end
+end
+
+--[[
+	OUR OWN DAMAGE, PER UNIT, for a moment.
+
+	A proc has no caster on the wire, so the only evidence it is ours is that our damage
+	landed on that unit in the same instant. Both events carried the same timestamp in the
+	measured case; the window is deliberately small, because it is standing in for
+	causation and a wide one would start claiming other people's procs.
+
+	One entry per unit, overwritten, and swept on the same schedule as the tick store, so
+	this cannot become another table that only ever grows.
+]]
+function lib:NoteOwnDamage(guid)
+	if not guid then return end
+	lib.owndamage[guid] = GetTime()
+end
+
+function lib:DamagedRecently(guid)
+	local when = guid and lib.owndamage[guid]
+	if not when then return false end
+
+	if (GetTime() - when) > OWN_DAMAGE_WINDOW then
+		lib.owndamage[guid] = nil
+		return false
+	end
+
+	return true
+end
+
+--[[ ownership, independent of whether anything can be timed ]]--
+
+function lib:NoteOwned(guid, effect)
+	if not (guid and effect) then return end
+
+	if not lib.owned[guid] then lib.owned[guid] = {} end
+	lib.owned[guid][effect] = GetTime()
+end
+
+function lib:ClearOwned(guid, effect)
+	if not guid or not lib.owned[guid] then return end
+
+	if effect then
+		lib.owned[guid][effect] = nil
+	else
+		lib.owned[guid] = nil
+	end
+end
+
+--Returns "player" or nil, in the same vocabulary GetTimeLeft uses for its third value.
+--Self-cleaning, so a stale entry is dropped as it is found.
+function lib:OwnedEffect(guid, effect)
+	if not (guid and effect and lib.owned[guid]) then return end
+
+	local when = lib.owned[guid][effect]
+	if not when then return end
+
+	if (GetTime() - when) > OWNED_STALE then
+		lib.owned[guid][effect] = nil
+		return
+	end
+
+	--Once anyone else has cast this effect here, ownership is contested and the border
+	--stops being ours to draw -- the same veto GetTimeLeft applies to a timed entry.
+	if lib:Contested(guid, effect) and not lib:OwnCastLive(guid, effect) then return end
+
+	return "player"
+end
+
+--Returns: duration, timeleft, caster -- the same shape GetTimeLeft hands back.
+--
+--A fully resisted tick fires no damage event, so `seen` can run low and the estimate long.
+--It is clamped against the declared schedule so it can never claim more time than the
+--effect could possibly have left.
+function lib:TickTimeLeft(guid, effect)
+	if not (guid and effect and lib.ticks[guid]) then return end
+
+	for spellID, rec in pairs(lib.ticks[guid]) do
+		if rec.effect == effect then
+			local left = rec.total - rec.seen
+			if left <= 0 then return end
+
+			local remaining = left * rec.interval
+			local ceiling = (rec.start + (rec.total * rec.declared)) - GetTime()
+			if ceiling > 0 and remaining > ceiling then remaining = ceiling end
+			if remaining <= 0 then return end
+
+			--Duration reported on the same scale as the estimate, so a bar drawn from
+			--timeleft/duration fills correctly rather than jumping when the rate changes.
+			return rec.total * rec.interval, remaining, "player"
+		end
+	end
+end
+
+--How many ticks are left, which is the exact number and the one worth showing.
+--Returns: ticksLeft, totalTicks, secondsToNextTick
+function lib:TicksLeft(guid, effect)
+	if not (guid and effect and lib.ticks[guid]) then return end
+
+	for _, rec in pairs(lib.ticks[guid]) do
+		if rec.effect == effect then
+			local nextIn = (rec.last + rec.interval) - GetTime()
+			if nextIn < 0 then nextIn = 0 end
+			return rec.total - rec.seen, rec.total, nextIn
+		end
+	end
+end
+
 --[[ query ]]--
 --Takes a name the caller already has rather than resolving one itself. The nameplate
 --element caches names per icon slot and only rescans when the icon changes; making
@@ -634,17 +972,28 @@ end
 function lib:GetTimeLeft(unitname, unitlevel, effect, guid)
 	if not effect then return end
 
+	--Counted ticks beat a table lookup whenever we have them. Only our own periodic
+	--effects get counted, so everything else falls straight through to the logic below and
+	--behaves exactly as it did before.
+	local tickDuration, tickLeft, tickCaster = lib:TickTimeLeft(guid, effect)
+	if tickLeft then return tickDuration, tickLeft, tickCaster end
+
+	--Known to be ours even when nothing can time it -- an effect this realm added that the
+	--duration table has never heard of. Returned on every path below that has no timer to
+	--offer, so the caller draws an owned border with no countdown instead of neither.
+	local owned = lib:OwnedEffect(guid, effect)
+
 	--SuperWoW has a "GUID in combat log/events" option. With it on, the log hands us
 	--GUIDs where it would otherwise hand us names, so the store ends up keyed by GUID
 	--and a lookup by name finds nothing. Try both rather than depending on a setting
 	--we do not control -- and when it *is* on, two mobs of the same name finally get
 	--their own timers instead of sharing one.
 	local store = (guid and lib.objects[guid]) or (unitname and lib.objects[unitname])
-	if not store then return end
+	if not store then return nil, nil, owned end
 
 	unitlevel = unitlevel or 0
 	local entry = (store[unitlevel] and store[unitlevel][effect]) or (store[0] and store[0][effect])
-	if not (entry and entry.start and entry.duration) then return end
+	if not (entry and entry.start and entry.duration) then return nil, nil, owned end
 
 	if (entry.start + entry.duration) < GetTime() then
 		--expired: drop it rather than hand back a negative timer
@@ -655,7 +1004,11 @@ function lib:GetTimeLeft(unitname, unitlevel, effect, guid)
 		--fraction of a second later and put the effect back at its full duration. See
 		--lib.expired.
 		lib:MarkExpired(unitname, guid, effect)
-		return
+
+		--The timer is gone; whose it was is not. An effect that outlives its table
+		--duration -- which the acceleration measurements show is routine -- should keep
+		--its owned border rather than turning grey the moment the countdown lapses.
+		return nil, nil, owned
 	end
 
 	--The timer is still ours to report -- it is the same spell with the same duration either
@@ -732,6 +1085,60 @@ lib:RegisterEvent("SPELLCAST_STOP")
 --moment nampower queues one -- which is most of the time in a real rotation.
 --    arg1 caster GUID, arg2 target GUID, arg3 START/CAST/CHANNEL/FAIL, arg4 spell ID
 lib:RegisterEvent("UNIT_CASTEVENT")
+
+--[[
+	NAMPOWER'S AURA EVENTS. These apply to EVERY debuff, from every caster, not just our
+	own damage-over-time effects -- which is the point of using them.
+
+	AURA_CAST_ON_OTHER fires at the moment an aura is actually applied, and carries:
+	    arg1 spell id, arg2 caster GUID, arg3 target GUID, arg5 aura type,
+	    arg6 declared tick interval in ms (0 for anything non-periodic)
+
+	Two things that were previously guessed become exact for all of them:
+
+	  START TIME. A debuff learned from the periodic-damage branch starts its countdown at
+	  the FIRST TICK, not at application -- already noted below for channels, and just as
+	  wrong for everything else. This event is the application.
+
+	  OWNERSHIP. arg2 against the player's GUID is a fact. The library currently infers it,
+	  and the catch-all scan re-learns effects with no caster at all, which is where an
+	  icon with no owned border comes from.
+
+	Gated on the effect being in the duration table, so an unknown spell -- or a BUFF, which
+	this event also fires for -- does not get filed into the debuff store. Unknown ones are
+	recorded by NoteUntracked exactly as before, so "why is my dot not timed" still answers
+	itself.
+
+	Measured 2026-08-15: arg3 can be nil for a unit outside the object manager. Guarded.
+]]
+lib:RegisterEvent("AURA_CAST_ON_OTHER")
+lib:RegisterEvent("SPELL_DAMAGE_EVENT_SELF")
+lib:RegisterEvent("DEBUFF_REMOVED_OTHER")
+
+--[[
+	PROCS DO NOT FIRE AURA_CAST_ON_OTHER. Measured 2026-08-16.
+
+	Shadow Vulnerability lands from an Improved Shadow Bolt crit, and it arrives with a
+	DEBUFF_ADDED_OTHER and nothing else -- no aura-cast event at all, because nobody cast
+	it. That event carries the caster's LEVEL (arg5) but not their GUID, so on its own it
+	cannot say whose the debuff is. Which is why this spell has always drawn untimed and
+	unowned, and why it is the one HANDOFF item 12c is about.
+
+	The capture shows the answer sitting right next to it:
+
+	    14.46  SPELL_DAMAGE_EVENT_SELF  mob | me | 11661 | 1136 | 0,0,0 | 2
+	    14.46  DEBUFF_ADDED_OTHER       mob | 1 | 17794 | 1 | 60 | 32
+
+	Our own Shadow Bolt hit that unit in the same instant -- and the trailing 2 is the crit
+	flag; every non-crit in the same fight had 0 there. A debuff appearing on a unit we just
+	damaged is a proc off our own damage, so it is ours.
+
+	Deliberately narrow. DEBUFF_ADDED_OTHER is world-scoped like every other nampower aura
+	event -- the same capture has one for a debuff on the pet -- so an entry is written only
+	when our own damage on that exact GUID is fresh enough to have caused it.
+]]
+lib:RegisterEvent("DEBUFF_ADDED_OTHER")
+
 lib:RegisterEvent("SPELLCAST_CHANNEL_START")
 lib:RegisterEvent("SPELLCAST_CHANNEL_UPDATE")
 lib:RegisterEvent("SPELLCAST_CHANNEL_STOP")
@@ -759,6 +1166,92 @@ lib:SetScript("OnEvent", function()
 				end
 			end
 		end
+
+	elseif event == "AURA_CAST_ON_OTHER" then
+		--arg1 spell id, arg2 caster GUID, arg3 target GUID, arg5 aura type, arg6 interval ms
+		local spellID, casterGUID, targetGUID, intervalMs = arg1, arg2, arg3, arg6
+		local effect = targetGUID and TickSpellName(spellID)
+
+		if effect then
+			local durations = Durations()
+			local playerGUID = TickPlayerGUID()
+			local mine = playerGUID and casterGUID == playerGUID
+
+			--OWNERSHIP FIRST, and unconditionally. This is the one thing we now know for
+			--certain about any aura from any caster, and it must not depend on the
+			--duration table having heard of the spell -- Dark Harvest is not in it, which
+			--is exactly why it drew no owned border.
+			if mine then lib:NoteOwned(targetGUID, effect) end
+
+			--OUR OWN CASTS ONLY, and this restriction is load-bearing.
+			--
+			--Written first as "any caster", which was wrong and caused a regression the
+			--same day: AURA_CAST_ON_OTHER fires for EVERY unit in range, and AddEffect
+			--writes lib.objects[unitName] -- the store every mob of that name shares. So
+			--another warlock's Improved Shadow Bolt, landing on any mob of the same name
+			--anywhere in range, wrote an entry that the current target then displayed.
+			--Reported as Shadow Vulnerability appearing on the target with no Shadow Bolt
+			--ever cast.
+			--
+			--Somebody else's debuff keeps the routes it already had -- the combat log and
+			--the UNIT_AURA sweep, both of which are scoped to the target. The only thing
+			--this event is used for now is what it alone can answer: that a debuff is OURS
+			--and exactly when it landed.
+			if mine and durations and durations[effect] then
+				--AddEffect fills the duration from the table; for our own periodic effects
+				--the tick counter overrides that in GetTimeLeft, which is where it belongs.
+				local name = UnitName(targetGUID) or targetGUID
+				local level = (UnitName("target") == name and UnitLevel("target")) or 0
+				lib:AddEffect(name, level, effect, nil, "player", targetGUID)
+			elseif mine then
+				--Still untimed, and still reported so /octoui-dots can name it -- but it
+				--will now at least draw as ours.
+				lib:NoteUntracked(effect)
+			end
+
+			--Periodic, and ours to count. arg6 is 0 for everything non-periodic.
+			if mine and intervalMs and intervalMs > 0 then
+				lib:NoteTickSpell(targetGUID, spellID, intervalMs)
+			end
+		end
+
+	elseif event == "SPELL_DAMAGE_EVENT_SELF" then
+		--arg1 target GUID, arg2 caster GUID, arg3 spell id, arg4 amount,
+		--arg5 "block,absorb,resist", arg7 hit type (2 = crit).
+		local playerGUID = TickPlayerGUID()
+		if playerGUID and arg2 == playerGUID then
+			lib:NoteTick(arg1, arg3)
+			--Remembered so a debuff appearing on this unit a fraction of a second later
+			--can be recognised as a proc off this hit. See DEBUFF_ADDED_OTHER.
+			lib:NoteOwnDamage(arg1)
+		end
+
+	elseif event == "DEBUFF_ADDED_OTHER" then
+		--arg1 target GUID, arg3 spell id. No caster GUID exists on this event, so the
+		--only debuffs claimed here are the ones our own damage just caused.
+		local effect = arg1 and TickSpellName(arg3)
+		if effect and lib:DamagedRecently(arg1) then
+			lib:NoteOwned(arg1, effect)
+
+			local durations = Durations()
+			if durations and durations[effect] then
+				--Exact application time, which is the other half of the fix: the shared
+				--name store hands a new mob the previous one's leftover countdown, and a
+				--fresh start here overwrites it.
+				local name = UnitName(arg1) or arg1
+				local level = (UnitName("target") == name and UnitLevel("target")) or 0
+				lib:AddEffect(name, level, effect, nil, "player", arg1)
+			else
+				lib:NoteUntracked(effect)
+			end
+		end
+
+	elseif event == "DEBUFF_REMOVED_OTHER" then
+		--arg1 target GUID, arg3 spell id. arg2 is a COMPACTED DISPLAY slot that collides
+		--on mass removal -- five removals all reported slot 1 at one mob death on
+		--2026-08-15 -- so it is deliberately not used here. The spell id is unambiguous.
+		lib:ClearTicks(arg1, arg3)
+		lib:ClearOwned(arg1, TickSpellName(arg3))
 
 	elseif event == "CHAT_MSG_SPELL_PERIODIC_HOSTILEPLAYER_DAMAGE" or event == "CHAT_MSG_SPELL_PERIODIC_CREATURE_DAMAGE" then
 		local unit, effect = cmatch(arg1, AURAADDEDOTHERHARMFUL)

@@ -206,6 +206,15 @@ authors.
 | **Ace3** | the Ace3 team | [WowAce](https://www.wowace.com/projects/ace3) |
 | **LibSharedMedia-3.0** | Elkano | [WowAce](https://www.wowace.com/projects/libsharedmedia-3-0) |
 
+The Recipe Finder ships a generated database reconciled from three projects. No
+code from any of them is included, only the facts they record about the game:
+
+| Project | Author | Link |
+| --- | --- | --- |
+| **LibCrafts-1.0** | Refaim | [refaim/LibCrafts-1.0](https://github.com/refaim/LibCrafts-1.0) (MIT) |
+| **TradeSkillsData** and **TradeSkillsData-turtle** | Refaim | [refaim/TradeSkillsData](https://github.com/refaim/TradeSkillsData) |
+| **pfQuest** and **pfQuest-turtle** | Eric Mauser (shagu) | [shagu/pfQuest](https://github.com/shagu/pfQuest) (MIT) |
+
 The compatibility layer that lets Ace3 and ElvUI run on Lua 5.0 borrows
 approaches from [pfUI](https://github.com/shagu/pfUI) by shagu, which is the
 reference for what actually works on this client.
@@ -224,6 +233,11 @@ ElvUI is licensed per the upstream project. The ShaguTweaks and
 ShaguTweaks-extras code is MIT, Copyright (c) 2021 Eric Mauser (shagu);
 attribution is kept in each ported file. TWThreat is included with credit to
 its author.
+
+The Recipe Finder's database is derived from pfQuest and LibCrafts-1.0 (both
+MIT) and from TradeSkillsData, which states no licence; it is credited above and
+supplies only the vendor prices and reputation requirements, which no
+MIT-licensed source records.
 
 Technical notes on how the port was done, and what had to change to run on the
 1.12.1 client, are in [PORTING.md](PORTING.md).

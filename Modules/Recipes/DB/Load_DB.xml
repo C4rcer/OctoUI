@@ -1,0 +1,19 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/">
+	<!-- Generated alongside the data. Core must load first: it creates the table
+	     the profession files write into. -->
+	<Script file="Core.lua"/>
+	<Script file="Alchemy.lua"/>
+	<Script file="Blacksmithing.lua"/>
+	<Script file="Cooking.lua"/>
+	<Script file="Disguise.lua"/>
+	<Script file="Enchanting.lua"/>
+	<Script file="Engineering.lua"/>
+	<Script file="FirstAid.lua"/>
+	<Script file="Fishing.lua"/>
+	<Script file="Jewelcrafting.lua"/>
+	<Script file="Leatherworking.lua"/>
+	<Script file="Mining.lua"/>
+	<Script file="Poisons.lua"/>
+	<Script file="Tailoring.lua"/>
+	<Script file="Unknown.lua"/>
+</Ui>
