@@ -129,6 +129,7 @@ function RF:BuildWindow()
 	self.filters = {
 		phase = RF.PHASE_ORDER.AQ,
 		learnable = false,
+		unlearned = false,
 		vendorOnly = false
 	}
 	self.profession = self:Professions()[1]
@@ -184,7 +185,7 @@ function RF:BuildFilterBar()
 	local frame = self.frame
 
 	local search = CreateFrame("EditBox", "OctoUI_RecipeFinderSearch", frame)
-	E:Size(search, 210, 18)
+	E:Size(search, 190, 18)
 	E:SetTemplate(search, "Transparent")
 	E:Point(search, "TOPLEFT", frame, "TOPLEFT", TAB_WIDTH + 4, -32)
 	search:SetAutoFocus(false)
@@ -207,15 +208,45 @@ function RF:BuildFilterBar()
 	search.hint:SetTextColor(0.45, 0.45, 0.45)
 	frame.search = search
 
-	local learnable = Toggle(frame, L["Learnable"], 74, function()
+	local unlearned = Toggle(frame, L["Unlearned"], 72, function()
+		RF.filters.unlearned = not RF.filters.unlearned
+		RF.offset = 0
+		RF:Refresh()
+	end)
+	E:Point(unlearned, "LEFT", search, "RIGHT", 4, 0)
+	--Worth a tooltip because the filter genuinely cannot work until a profession
+	--has been opened once: 1.12 exposes the known list only while that window is
+	--up. Silently showing everything would read as the filter being broken.
+	unlearned:SetScript("OnEnter", function()
+		if not this.active then this:SetBackdropBorderColor(1, 1, 1) end
+		GameTooltip:SetOwner(this, "ANCHOR_BOTTOM")
+		GameTooltip:AddLine(L["Unlearned only"])
+		GameTooltip:AddLine(L["Hides recipes you already know."], 1, 1, 1, 1)
+
+		local count = RF:KnownCount(RF.profession)
+		if count then
+			GameTooltip:AddLine(format(L["%d known in %s."], count, RF.profession), 0.6, 1, 0.6, 1)
+		else
+			GameTooltip:AddLine(format(L["Open your %s window once so it can read what you know."],
+				RF.profession or "?"), 1, 0.5, 0.5, 1)
+		end
+		GameTooltip:Show()
+	end)
+	unlearned:SetScript("OnLeave", function()
+		this:SetActive(this.active)
+		GameTooltip:Hide()
+	end)
+	frame.unlearned = unlearned
+
+	local learnable = Toggle(frame, L["Learnable"], 70, function()
 		RF.filters.learnable = not RF.filters.learnable
 		RF.offset = 0
 		RF:Refresh()
 	end)
-	E:Point(learnable, "LEFT", search, "RIGHT", 4, 0)
+	E:Point(learnable, "LEFT", unlearned, "RIGHT", 4, 0)
 	frame.learnable = learnable
 
-	local vendor = Toggle(frame, L["Vendor"], 60, function()
+	local vendor = Toggle(frame, L["Vendor"], 56, function()
 		RF.filters.vendorOnly = not RF.filters.vendorOnly
 		RF.offset = 0
 		RF:Refresh()
@@ -223,20 +254,33 @@ function RF:BuildFilterBar()
 	E:Point(vendor, "LEFT", learnable, "RIGHT", 4, 0)
 	frame.vendorOnly = vendor
 
-	--Cycles the content ceiling. Defaults to AQ, which is "up to and including
-	--AQ40" -- the tier this database was assembled for.
-	local phase = Toggle(frame, RF.PHASE_LABEL[RF.PHASE_ORDER.AQ], 92, function()
-		local current = RF.filters.phase
-		RF.filters.phase = (current >= RF.PHASE_ORDER.NAXX) and RF.PHASE_ORDER.BASE or (current + 1)
-		RF.offset = 0
-		RF:Refresh()
+	--The content ceiling, as a menu rather than a click-through cycle: six
+	--values is too many to page past one at a time, and a cycling button never
+	--shows what the other options are.
+	local menu = CreateFrame("Frame", "OctoUI_RecipeFinderTierMenu", E.UIParent)
+	E:SetTemplate(menu, "Transparent")
+	menu:Hide()
+
+	local phase = Toggle(frame, RF.PHASE_LABEL[RF.PHASE_ORDER.AQ], 118, function()
+		local list = {}
+		for tier = RF.PHASE_ORDER.BASE, RF.PHASE_ORDER.NAXX do
+			tinsert(list, {
+				text = RF.PHASE_LABEL[tier],
+				func = function()
+					RF.filters.phase = tier
+					RF.offset = 0
+					RF:Refresh()
+				end
+			})
+		end
+		E:DropDown(list, menu, 0, 0)
 	end)
 	E:Point(phase, "LEFT", vendor, "RIGHT", 4, 0)
 	phase:SetScript("OnEnter", function()
 		this:SetBackdropBorderColor(1, 1, 1)
 		GameTooltip:SetOwner(this, "ANCHOR_BOTTOM")
 		GameTooltip:AddLine(L["Content tier"])
-		GameTooltip:AddLine(L["Hides recipes from later content. Click to cycle."], 1, 1, 1, 1)
+		GameTooltip:AddLine(L["Hides recipes from content later than this."], 1, 1, 1, 1)
 		GameTooltip:Show()
 	end)
 	phase:SetScript("OnLeave", function()
@@ -244,6 +288,7 @@ function RF:BuildFilterBar()
 		GameTooltip:Hide()
 	end)
 	frame.phase = phase
+	frame.tierMenu = menu
 end
 
 function RF:BuildList()
@@ -513,12 +558,21 @@ function RF:Refresh()
 	self.frame.slider:SetValue(self.offset)
 
 	self.frame.learnable:SetActive(self.filters.learnable)
+	self.frame.unlearned:SetActive(self.filters.unlearned)
 	self.frame.vendorOnly:SetActive(self.filters.vendorOnly)
 	self.frame.phase:SetActive(self.filters.phase ~= RF.PHASE_ORDER.NAXX)
 	self.frame.phase.text:SetText(RF.PHASE_LABEL[self.filters.phase])
 
-	self.frame.status:SetText(format(L["%d of %d shown"], total,
-		getn(self:Recipes(self.profession))))
+	local status = format(L["%d of %d shown"], total, getn(self:Recipes(self.profession)))
+	local known = self:KnownCount(self.profession)
+	if known then
+		status = status..format(" - "..L["%d known"], known)
+	elseif self.filters.unlearned then
+		status = status.." - |cffff8000"
+			..format(L["open your %s window to filter known recipes"],
+				self.profession or "?").."|r"
+	end
+	self.frame.status:SetText(status)
 
 	self:UpdateTabs()
 	self:UpdateRows()

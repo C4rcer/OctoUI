@@ -104,9 +104,12 @@ local function IsCollectable(child)
 	local name = child:GetName()
 	if not name or ignore[name] then return false end
 
-	--our own frames, and anything the Minimap module made
+	--Our own frames, and anything the Minimap module made. A module that wants
+	--its button treated like every other addon's opts in with octoCollect --
+	--without that escape hatch an OctoUI button is the ONLY one left sitting on
+	--the minimap while the rest line up in the bar, which looks like a bug.
 	if find(name, "^ElvUI") or find(name, "^OctoUI") or find(name, "^Elv_") then
-		return false
+		return child.octoCollect and true or false
 	end
 
 	for i = 1, getn(ignorePatterns) do

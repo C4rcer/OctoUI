@@ -357,7 +357,13 @@ end
 --the name-keyed alias and the frame refresh -- neither of which means anything for a mob no
 --unit frame is showing.
 function lib:AddEffect(unit, unitlevel, effect, duration, caster, guid)
-	if not effect then return end
+	--EMPTY IS NOT A NAME. The tooltip scan that produces `effect` returns the line's
+	--text, which is nil when the scan fails and "" when the line exists but is blank --
+	--and `not effect` rejects only the first of those. An "" key is not one effect, it
+	--is a bucket every unnameable aura on that mob falls into, whatever cast it. Let
+	--one of the player's own casts land in it and every other class's unscannable
+	--debuff inherits caster == "player" and draws the owned border.
+	if not effect or effect == "" then return end
 	if not unit and not guid then return end
 	unitlevel = unitlevel or 0
 
@@ -970,7 +976,9 @@ end
 --times a second, which is exactly what that cache exists to avoid.
 --Returns: duration, timeleft, caster
 function lib:GetTimeLeft(unitname, unitlevel, effect, guid)
-	if not effect then return end
+	--Rejects "" for the same reason AddEffect does: looking up the shared empty-name
+	--bucket answers "yours" for auras that were never scanned, let alone cast.
+	if not effect or effect == "" then return end
 
 	--Counted ticks beat a table lookup whenever we have them. Only our own periodic
 	--effects get counted, so everything else falls straight through to the logic below and
@@ -1034,7 +1042,9 @@ function lib:UnitDebuff(unit, id)
 	local texture, stacks, dtype, spellID = UnitDebuff(unit, id)
 	if not texture then return end
 
-	local effect = mod:ScanAuraName(unit, id, true) or ""
+	--No `or ""` fallback: a blank name is not a key, it is every unnameable aura on the
+	--mob sharing one entry. Left nil so the lookups below decline it outright.
+	local effect = mod:ScanAuraName(unit, id, true)
 
 	--WITH THE GUID. This asked by name and level only, and the name store is shared by every
 	--mob that has ever carried that name -- it accumulates, and GetTimeLeft prefers the GUID

@@ -3,5 +3,5 @@
 -- by Shagu. See README.md for credits.
 
 OctoUI_RecipeDB.recipes["Fishing"] = {
-	{id=16083,name="Expert Fishing - The Bass and You",q=1,vendor={npcs={2626},price=10000}},
+	{id=16083,name="Expert Fishing - The Bass and You",q=1,skill=125,tier=225,tierFrom=150,tierRank=3,vendor={npcs={2626},price=10000}},
 }

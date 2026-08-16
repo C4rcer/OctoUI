@@ -5,7 +5,7 @@ E.RecipeFinder = RF
 --Cache global variables
 --Lua functions
 local pairs, ipairs, unpack = pairs, ipairs, unpack
-local format, find, lower = string.format, string.find, string.lower
+local format, find, lower, gsub = string.format, string.find, string.lower, string.gsub
 local tinsert, sort, getn = table.insert, table.sort, table.getn
 local floor, mod = math.floor, math.mod
 local _G = _G
@@ -13,7 +13,20 @@ local _G = _G
 local CreateFrame = CreateFrame
 local GetNumSkillLines, GetSkillLineInfo = GetNumSkillLines, GetSkillLineInfo
 local GetItemInfo = GetItemInfo
-local GetNumMerchantItems, GetMerchantItemInfo = GetNumMerchantItems, GetMerchantItemInfo
+--It is GetMerchantNumItems on this client, NOT GetNumMerchantItems -- the latter
+--is a later-expansion name that exists nowhere in 1.12, and caching it here gave
+--a nil that only blew up when someone opened a vendor. Modules\Skins\Blizzard\
+--Merchant.lua had the right name all along.
+local GetMerchantNumItems, GetMerchantItemInfo = GetMerchantNumItems, GetMerchantItemInfo
+local GetNumTradeSkills, GetTradeSkillInfo = GetNumTradeSkills, GetTradeSkillInfo
+local GetTradeSkillLine = GetTradeSkillLine
+local GetNumCrafts, GetCraftInfo = GetNumCrafts, GetCraftInfo
+local GetCraftDisplaySkillLine = GetCraftDisplaySkillLine
+local GetNumSpellTabs, GetSpellTabInfo = GetNumSpellTabs, GetSpellTabInfo
+local GetSpellName = GetSpellName
+--Constants.lua defines this before addons load, but "spell" is its value and a
+--correct argument regardless, so there is no reason to depend on the ordering.
+local BOOKTYPE_SPELL = BOOKTYPE_SPELL or "spell"
 local GameTooltip, Minimap = GameTooltip, Minimap
 local DEFAULT_CHAT_FRAME = DEFAULT_CHAT_FRAME
 
@@ -52,9 +65,11 @@ local DEFAULT_CHAT_FRAME = DEFAULT_CHAT_FRAME
 --shows everything up to and including AQ40 and hides Naxxramas.
 local PHASE_ORDER = {BASE = 1, MC = 2, BWL = 3, ZG = 4, AQ = 5, NAXX = 6}
 RF.PHASE_ORDER = PHASE_ORDER
+--Labelled as ceilings, because that is what the filter is. "Ahn'Qiraj" on a
+--button reads as "show me AQ recipes", which is the opposite of what it does.
 RF.PHASE_LABEL = {
-	[1] = L["Vanilla"], [2] = L["Molten Core"], [3] = L["Blackwing Lair"],
-	[4] = L["Zul'Gurub"], [5] = L["Ahn'Qiraj"], [6] = L["Naxxramas"]
+	[1] = L["Vanilla only"], [2] = L["Up to Molten Core"], [3] = L["Up to Blackwing Lair"],
+	[4] = L["Up to Zul'Gurub"], [5] = L["Up to AQ40"], [6] = L["Everything"]
 }
 
 --Item quality colours, indexed as the generator writes them.
@@ -70,11 +85,6 @@ local REACT_COLOR = {
 	["Alliance"] = {0.35, 0.55, 1}, ["Horde"] = {1, 0.30, 0.30},
 	["Hostile"] = {1, 0.45, 0.45}, ["Neutral"] = {1, 0.85, 0.35}
 }
-
---Professions that are gathering-only or have a single stub entry. They exist in
---the generated data because a recipe item technically maps to them, but a tab
---holding one row is noise.
-local HIDE_TAB = {["Mining"] = true, ["Fishing"] = true}
 
 local index, professions
 
@@ -95,8 +105,12 @@ function RF:BuildIndex()
 
 	index, professions = {}, {}
 
+	--Every profession with anything in it gets a tab, including the one-row ones.
+	--Mining and Fishing were suppressed as stubs until it turned out their single
+	--entries are the Expert Fishing book and Turtle's Smelt Dreamsteel -- exactly
+	--the sort of thing someone opens this window to find.
 	for profession, list in pairs(db.recipes) do
-		if not HIDE_TAB[profession] and getn(list) > 0 then
+		if getn(list) > 0 then
 			local rows = {}
 			for i = 1, getn(list) do
 				local recipe = list[i]
@@ -104,6 +118,18 @@ function RF:BuildIndex()
 				--Searchable on both the recipe item name and the thing it makes,
 				--because people look for "Mongoose", not "Recipe: Elixir of the".
 				recipe.search = lower((recipe.name or "").." "..(recipe.craft or ""))
+
+				--What the trade skill window would call this, for the "unlearned"
+				--filter to match against. Usually the craft name; where no source
+				--supplied one, the item name with its "Manual: "/"Pattern: "
+				--prefix stripped is the next best thing. A name with no prefix is
+				--left alone, so it simply never matches rather than matching
+				--something wrong.
+				recipe.knownKey = recipe.craft
+				if not recipe.knownKey and recipe.name then
+					recipe.knownKey = gsub(recipe.name, "^%a+:%s*", "")
+				end
+
 				tinsert(rows, recipe)
 			end
 
@@ -137,16 +163,132 @@ end
 --------------------------------------------------------------------------------
 
 --Current rank in each trade skill, read fresh rather than cached: skill lines
---change while the window is open and a stale "learnable" filter is worse than none.
+--change while the window is open and a stale filter is worse than none.
 function RF:PlayerSkills()
-	local skills = {}
+	local ranks = {}
 	for i = 1, GetNumSkillLines() do
 		local name, isHeader, _, rank = GetSkillLineInfo(i)
 		if name and not isHeader then
-			skills[name] = rank or 0
+			ranks[name] = rank or 0
 		end
 	end
-	return skills
+	return ranks
+end
+
+--Which rank of a profession the character holds, read from the SPELLBOOK: the
+--profession's entry carries the rank as its subtext, which is why the spellbook
+--shows "First Aid / Artisan" and "Cooking / Journeyman".
+--
+--This is the exact test for owning a rank book, and it is exact precisely where
+--a skill-cap comparison is weakest -- at the boundary. A character sitting at
+--225 First Aid either needs Expert or has it, and the cap alone cannot say
+--which; the spellbook says outright. It also assumes nothing about what
+--GetSkillLineInfo reports as a maximum, which is not something to take on faith.
+function RF:ProfessionRank(profession)
+	local db = self:Database()
+	local words = db and db.professionRanks and db.professionRanks[profession]
+	if not words then return nil end
+
+	for tab = 1, GetNumSpellTabs() do
+		local _, _, offset, count = GetSpellTabInfo(tab)
+		if offset and count then
+			for slot = offset + 1, offset + count do
+				local name, rank = GetSpellName(slot, BOOKTYPE_SPELL)
+				if name == profession and rank then
+					return words[rank]
+				end
+			end
+		end
+	end
+
+	return nil
+end
+
+--------------------------------------------------------------------------------
+-- Known recipes
+--------------------------------------------------------------------------------
+
+--1.12 will only tell an addon what a character has learned while the profession
+--window is OPEN -- GetTradeSkillInfo reads whatever that frame is currently
+--showing and nothing else. So the known set is scraped whenever a profession is
+--opened and remembered per character.
+--
+--Entries are only ever ADDED. A collapsed category is simply absent from the
+--list rather than marked as unknown, so a subtractive scan would "forget"
+--recipes every time someone browsed with a header rolled up. Nothing in vanilla
+--can be unlearned, which makes merge-only both safe and correct.
+function RF:KnownStore()
+	if not ElvCharacterDB then return nil end
+	if not ElvCharacterDB.RecipeFinderKnown then
+		ElvCharacterDB.RecipeFinderKnown = {}
+	end
+	return ElvCharacterDB.RecipeFinderKnown
+end
+
+function RF:RecordKnown(profession, names)
+	local store = self:KnownStore()
+	--Only professions the database actually has a tab for. The Craft API is
+	--shared with Beast Training, so this is what keeps pet skills out.
+	if not store or not profession or not index or not index[profession] then return end
+
+	local known = store[profession]
+	if not known then
+		known = {}
+		store[profession] = known
+	end
+
+	for i = 1, getn(names) do
+		known[names[i]] = true
+	end
+
+	if self.frame and self.frame:IsShown() then self:Refresh() end
+end
+
+function RF:TRADE_SKILL_SHOW()
+	local profession = GetTradeSkillLine()
+	if not profession then return end
+
+	local names = {}
+	for i = 1, GetNumTradeSkills() do
+		local name, skillType = GetTradeSkillInfo(i)
+		if name and skillType ~= "header" then
+			tinsert(names, name)
+		end
+	end
+
+	self:RecordKnown(profession, names)
+end
+
+RF.TRADE_SKILL_UPDATE = RF.TRADE_SKILL_SHOW
+
+function RF:CRAFT_SHOW()
+	--Enchanting is a Craft, not a TradeSkill, on this client. This is the same
+	--call Atlas-OctoUI's profession hooks use to name the Craft frame, which is
+	--how it is known to work here.
+	local profession = GetCraftDisplaySkillLine and GetCraftDisplaySkillLine()
+	if not profession then return end
+
+	local names = {}
+	for i = 1, GetNumCrafts() do
+		local name, _, craftType = GetCraftInfo(i)
+		if name and craftType ~= "header" then
+			tinsert(names, name)
+		end
+	end
+
+	self:RecordKnown(profession, names)
+end
+
+RF.CRAFT_UPDATE = RF.CRAFT_SHOW
+
+function RF:KnownCount(profession)
+	local store = self:KnownStore()
+	local known = store and store[profession]
+	if not known then return nil end
+
+	local count = 0
+	for _ in pairs(known) do count = count + 1 end
+	return count
 end
 
 --------------------------------------------------------------------------------
@@ -162,7 +304,18 @@ function RF:Filter(profession, query, options)
 	if query == "" then query = nil end
 
 	local ceiling = options.phase or PHASE_ORDER.AQ
-	local skill = options.learnable and (self:PlayerSkills()[profession] or 0) or nil
+
+	local ranks
+	if options.learnable or options.unlearned then
+		ranks = self:PlayerSkills()
+	end
+
+	local skill = options.learnable and (ranks[profession] or 0) or nil
+	local current = ranks and ranks[profession] or nil
+	local profRank = options.unlearned and self:ProfessionRank(profession) or nil
+
+	local store = options.unlearned and self:KnownStore() or nil
+	local known = store and store[profession] or nil
 
 	for i = 1, getn(rows) do
 		local recipe = rows[i]
@@ -181,6 +334,25 @@ function RF:Filter(profession, query, options)
 		--sources simply do not have.
 		if keep and skill and recipe.skill and recipe.skill > skill then
 			keep = false
+		end
+
+		--Matched on the CRAFT name, which is what the trade skill window lists;
+		--recipe.name is the scroll in the bag and never appears there.
+		if keep and known and recipe.knownKey and known[recipe.knownKey] then
+			keep = false
+		end
+
+		--A profession rank book. The spellbook rank settles it outright; where
+		--that cannot be read, fall back to the cap of the rank BELOW this one,
+		--which the character could not have passed without owning the book.
+		--That fallback can only ever be late, never wrong: someone who just
+		--bought Expert at exactly 150 still sees it until they gain a point.
+		if keep and options.unlearned and recipe.tierRank then
+			if profRank then
+				if profRank >= recipe.tierRank then keep = false end
+			elseif recipe.tierFrom and current and current > recipe.tierFrom then
+				keep = false
+			end
 		end
 
 		if keep and options.vendorOnly and not recipe.vendor then
@@ -203,12 +375,18 @@ function RF:FormatMoney(copper)
 	local gold = floor(copper / 10000)
 	local silver = floor(mod(copper, 10000) / 100)
 	local bronze = mod(copper, 100)
-	local text = ""
+	local parts = {}
 
-	if gold > 0 then text = text..format("|cffffd700%d|rg ", gold) end
-	if silver > 0 then text = text..format("|cffc7c7cf%d|rs ", silver) end
-	if bronze > 0 or text == "" then text = text..format("|cffeda55f%d|rc", bronze) end
+	if gold > 0 then tinsert(parts, format("|cffffd700%d|rg", gold)) end
+	if silver > 0 then tinsert(parts, format("|cffc7c7cf%d|rs", silver)) end
+	--Joined rather than each part carrying its own trailing space, which is what
+	--rendered a round 50 silver as "Sold by (50s )".
+	if bronze > 0 or getn(parts) == 0 then
+		tinsert(parts, format("|cffeda55f%d|rc", bronze))
+	end
 
+	local text = parts[1]
+	for i = 2, getn(parts) do text = text.." "..parts[i] end
 	return text
 end
 
@@ -252,6 +430,10 @@ function RF:SourceLines(recipe)
 	local lines = {}
 
 	local function add(text, header) tinsert(lines, {text = text, header = header}) end
+
+	if recipe.tier then
+		add(format(L["Raises the skill cap to %d"], recipe.tier), true)
+	end
 
 	if recipe.rep then
 		local faction = db.factions[recipe.rep.f] or L["Unknown faction"]
@@ -388,7 +570,7 @@ function RF:MERCHANT_SHOW()
 		self.vendorByName = byName
 	end
 
-	for slot = 1, GetNumMerchantItems() do
+	for slot = 1, GetMerchantNumItems() do
 		local name, _, price, quantity = GetMerchantItemInfo(slot)
 		local recipe = name and byName[name]
 		if recipe and price and price > 0 and (quantity or 1) == 1 then
@@ -407,14 +589,15 @@ function RF:CreateMinimapButton()
 	if not config or config.hide then return end
 	if self.minimapButton then return end
 
-	--Named with the OctoUI prefix on purpose: MinimapButtons.lua skips anything
-	--so named, which keeps this button out of the third-party collection bar and
-	--under the control of the options below instead.
 	local button = CreateFrame("Button", "OctoUI_RecipeFinderButton", Minimap)
-	E:Size(button, 24)
+	E:Size(button, E.db.general.minimap.buttonBar.buttonSize or 26)
 	E:SetTemplate(button, "Default")
 	button:SetFrameStrata("MEDIUM")
 	button:SetFrameLevel(Minimap:GetFrameLevel() + 8)
+	--Opt in to the third-party button bar. MinimapButtons.lua otherwise skips
+	--every OctoUI-named frame, which left this as the one button still stuck on
+	--the minimap while all the others lined up underneath it.
+	button.octoCollect = true
 
 	local icon = button:CreateTexture(nil, "ARTWORK")
 	E:SetInside(icon, button, 2, 2)
@@ -441,9 +624,13 @@ function RF:CreateMinimapButton()
 	self:PositionMinimapButton()
 end
 
+--Only ever positions the button while it is still on the minimap. Once the
+--button bar has adopted it, the bar owns both its parent and its point, and
+--ClearAllPoints here would unanchor a frame whose SetPoint has been noop'd --
+--leaving it invisible with no way to get it back short of a reload.
 function RF:PositionMinimapButton()
 	local button = self.minimapButton
-	if not button then return end
+	if not button or button.octoCollected then return end
 
 	local config = E.db.general.minimap.icons.recipeFinder
 	local point = config.position or "TOPLEFT"
@@ -504,6 +691,10 @@ function RF:Initialize()
 	self:BuildIndex()
 	self:CreateMinimapButton()
 	self:RegisterEvent("MERCHANT_SHOW")
+	self:RegisterEvent("TRADE_SKILL_SHOW")
+	self:RegisterEvent("TRADE_SKILL_UPDATE")
+	self:RegisterEvent("CRAFT_SHOW")
+	self:RegisterEvent("CRAFT_UPDATE")
 end
 
 --Reached from /octoui-recipes, registered in Core\Commands.lua with the rest.
