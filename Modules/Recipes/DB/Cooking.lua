@@ -3,10 +3,6 @@
 -- by Shagu. See README.md for credits.
 
 OctoUI_RecipeDB.recipes["Cooking"] = {
-	{drop={max=5.92,n=90,npcs={12397,9441,9437,9554,7797,9439,8924,9438},rates={[7797]=0.36,[8924]=0.34,[9437]=0.46,[9438]=0.34,[9439]=0.36,[9441]=0.52,[9554]=0.4,[12397]=5.92},wd=1,zones={1584,1477,1583,100001,8}},id=17682,name="Book: Gift of the Wild",unsure=1},
-	{drop={max=4.12,n=241,npcs={12397,14521,14519,9817,9818,10318,9439,9819},rates={[9439]=0.51,[9817]=0.54,[9818]=0.52,[9819]=0.48,[10318]=0.52,[12397]=4.12,[14519]=0.56,[14521]=0.68},wd=1,zones={1583,2017,3456,2057,1584}},id=17683,name="Book: Gift of the Wild II",phase="NAXX",unsure=1},
-	{id=2795,name="Book: Stresses of Iron",unsure=1},
-	{drop={max=5,npcs={2338,2339},rates={[2338]=5,[2339]=5}},id=5352,name="Book: The Powers Below",unsure=1},
 	{id=6891,name="Recipe: Herb Baked Egg",unsure=1},
 	{id=7678,name="Recipe: Thistle Tea",unsure=1},
 	{craft="Brilliant Smallfish",id=6325,name="Recipe: Brilliant Smallfish",q=1,reagents={[6291]=1},result=6290,skill=1,spell=7751,vendor={npcs={66,1684,3029,3550,4265,4574,5494,5940,8508,61274,61732,61813,62144},price=40}},

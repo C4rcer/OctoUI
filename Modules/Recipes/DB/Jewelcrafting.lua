@@ -3,9 +3,7 @@
 -- by Shagu. See README.md for credits.
 
 OctoUI_RecipeDB.recipes["Jewelcrafting"] = {
-	{id=55076,name="Design: Carnelia's Sunset",unsure=1},
 	{id=70150,name="Plans: Malachite Ring",unsure=1},
-	{id=83570,name="Technique: Die by the Sword",object={ids={2010867},rates={[2010867]=15}},unsure=1},
 	{craft="Bulky Copper Ring",drop={max=2.9,n=530,npcs={6128,1949,8996,3535,2166,471,5786,1993},rates={[471]=0.7,[1949]=1.66,[1993]=0.42,[2166]=0.76,[3535]=0.78,[5786]=0.5,[6128]=2.9,[8996]=0.98},wd=1,zones={141,85,17,14,12}},id=56022,name="Plans: Bulky Copper Ring",q=2,reagents={[2880]=1,[55156]=1,[55245]=1},result=81093,skill=25,spell=41249},
 	{craft="Minor Trollblood Ring",drop={max=2.9,n=530,npcs={6128,1949,8996,3535,2166,471,5786,1993},rates={[471]=0.7,[1949]=1.66,[1993]=0.42,[2166]=0.76,[3535]=0.78,[5786]=0.5,[6128]=2.9,[8996]=0.98},wd=1,zones={141,85,17,14,12}},id=50298,name="Plans: Minor Trollblood Ring",q=2,reagents={[3382]=1,[55156]=1,[55245]=1},result=55164,skill=50,spell=41231,spellsrc={"Trainer"}},
 	{craft="Small Pearl Ring",drop={max=0.44,n=674,npcs={2065,5823,1961,2068,3528,2061,3454,6124},rates={[1961]=0.2,[2061]=0.18,[2065]=0.44,[2068]=0.2,[3454]=0.18,[3528]=0.2,[5823]=0.22,[6124]=0.18},wd=1,zones={17,40,148,141,85}},id=56021,name="Plans: Small Pearl Ring",q=2,reagents={[5498]=1,[55150]=2,[55156]=1,[55245]=1},result=55169,skill=65,spell=41247},

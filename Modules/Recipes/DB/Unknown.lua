@@ -3,6 +3,11 @@
 -- by Shagu. See README.md for credits.
 
 OctoUI_RecipeDB.recipes["Unknown"] = {
+	{id=55076,name="Design: Carnelia's Sunset"},
+	{id=70002,name="Formula: Enchant Gloves - Holy Power"},
+	{id=6222,name="Formula: Imbue Chest - Minor Spirit"},
+	{id=6343,name="Formula: Imbue Chest - Spirit"},
+	{id=6345,name="Formula: Imbue Cloak - Protection"},
 	{id=60779,name="Pattern: Depthstalker Helm"},
 	{id=55042,name="Pattern: Harness of the High Thanes"},
 	{id=55069,name="Pattern: Mantle of Falling Knives"},
@@ -13,4 +18,5 @@ OctoUI_RecipeDB.recipes["Unknown"] = {
 	{id=23690,name="Recipe: Crystal Flake Throat Lozenge"},
 	{id=2556,name="Recipe: Elixir of Tongues"},
 	{id=5657,name="Recipe: Instant Toxin"},
+	{id=61392,name="Schematic: High Energy Regulator",object={ids={2020020},rates={[2020020]=100}}},
 }

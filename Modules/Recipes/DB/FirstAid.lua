@@ -3,10 +3,6 @@
 -- by Shagu. See README.md for credits.
 
 OctoUI_RecipeDB.recipes["First Aid"] = {
-	{id=23689,name="Manual: Crystal Infused Bandage",unsure=1},
-	{id=60775,name="Manual: Intervene",unsure=1},
-	{id=6897,name="Manual: Path of the Berserker",unsure=1},
-	{id=6619,name="Manual: The Path of Defense",unsure=1},
 	{id=16084,name="Expert First Aid - Under Wraps",q=1,skill=125,tier=225,tierFrom=150,tierRank=3,vendor={npcs={2805,13476},price=10000}},
 	{craft="Strong Anti-Venom",drop={lvl={20,35},max=0.8,n=597,npcs={1160,6209,14357,4821,7053,11683,1716,3833},rates={[1160]=0.8,[1716]=0.06,[3833]=0.06,[4821]=0.08,[6209]=0.32,[7053]=0.08,[11683]=0.08,[14357]=0.1},wd=1,zones={331,11,5561,5581,406}},id=6454,name="Manual: Strong Anti-Venom",object={ids={2560,2849,2852,2855,4095,4096,74447,74448,75295,75296,75297,75298,75299,75300,105570,105578,105579,111095,153462},rates={[2560]=0.02,[2849]=0.5,[2852]=0.5,[2855]=0.5,[4095]=0.5,[4096]=0.5,[74447]=0.5,[74448]=0.5,[75295]=0.5,[75296]=0.5,[75297]=0.5,[75298]=0.5,[75299]=0.5,[75300]=0.5,[105570]=0.5,[105578]=0.5,[105579]=0.5,[111095]=0.5,[153462]=0.09}},q=2,reagents={[1288]=1},result=6453,skill=130,spell=7935},
 	{craft="Heavy Silk Bandage",id=16112,name="Manual: Heavy Silk Bandage",q=1,reagents={[4306]=2},result=6451,skill=180,spell=7929,vendor={npcs={2805,13476},price=2200}},

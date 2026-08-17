@@ -4,10 +4,6 @@
 
 OctoUI_RecipeDB.recipes["Enchanting"] = {
 	{id=6376,name="Formula: Enchant Boots - Minor Stamina",unsure=1},
-	{id=70002,name="Formula: Enchant Gloves - Holy Power",unsure=1},
-	{id=6222,name="Formula: Imbue Chest - Minor Spirit",unsure=1},
-	{id=6343,name="Formula: Imbue Chest - Spirit",unsure=1},
-	{id=6345,name="Formula: Imbue Cloak - Protection",unsure=1},
 	{craft="Enchant Chest - Minor Mana",drop={lvl={5,20},max=0.3,n=642,npcs={1425,61,2186,1972,2065,2064,2968,572},rates={[61]=0.26,[572]=0.15,[1425]=0.3,[1972]=0.22,[2064]=0.17,[2065]=0.22,[2186]=0.26,[2968]=0.16},wd=1,zones={17,40,85,148,141}},id=6342,name="Formula: Enchant Chest - Minor Mana",object={ids={2039,2849,3642,75293,106319,111095,152608,152618},rates={[2039]=0.06,[2849]=0.5,[3642]=0.7,[75293]=0.5,[106319]=0.5,[111095]=0.5,[152608]=0.7,[152618]=0.7}},q=2,reagents={[10938]=1},skill=20,spell=7443,vendor={npcs={1318,3012,3346,4228,4617,5158,5757,5758,15419,62083},price=300}},
 	{craft="Minor Wizard Oil",id=20758,name="Formula: Minor Wizard Oil",q=1,reagents={[3371]=1,[10940]=2,[17034]=1},result=20744,skill=45,spell=25124,vendor={npcs={1318,3012,3346,4228,4617,5158,5757,5758,15419,62083,92170},price=500}},
 	{craft="Enchant Bracer - Minor Spirit",drop={lvl={10,25},max=0.56,n=642,npcs={3529,10643,2159,506,1112,573,2106,61962},rates={[506]=0.34,[573]=0.28,[1112]=0.32,[2106]=0.28,[2159]=0.42,[3529]=0.56,[10643]=0.56,[61962]=0.28},wd=1,zones={17,40,148,406,130}},id=6344,name="Formula: Enchant Bracer - Minor Spirit",object={ids={2849,3642,74447,74448,75293,75295,75298,106319,111095,152608,152618,153462},rates={[2849]=0.5,[3642]=0.5,[74447]=0.5,[74448]=0.5,[75293]=0.5,[75295]=0.5,[75298]=0.5,[106319]=0.5,[111095]=0.5,[152608]=0.5,[152618]=0.5,[153462]=0.02}},q=2,reagents={[10938]=2},skill=60,spell=7766},
