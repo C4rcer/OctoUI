@@ -145,12 +145,29 @@ function lib:NoteOwnSpell(guid, effect, spellID)
 end
 
 function lib:ClaimOwn(tag, guid, effect, index, spellID)
-	if not (guid and effect) then return true end
+	--An effect with no name cannot be reasoned about at all.
+	if not effect or effect == "" then return true end
 
-	local mine = lib.ownspell[guid] and lib.ownspell[guid][effect]
+	--NO GUID IS NOT A YES. This used to `return true` whenever the GUID was
+	--missing, which handed the owned border to EVERY icon carrying the effect --
+	--from the one function whose whole purpose is granting it to exactly one.
+	--
+	--That is also the worst moment to be permissive, because the other two
+	--safeguards are gated on the same GUID and fail with it: GetTimeLeft's
+	--`Contested` veto is skipped, and the store lookup falls back to the name
+	--table that every mob of that name shares. Three checks, one missing value,
+	--all three off -- which is precisely "every other warlock's Corruption is
+	--mine".
+	--
+	--Falling back to a name-less key still limits the claim to one icon per
+	--effect per frame. It cannot hide a dot the old code would have shown
+	--EXCEPT where it was showing several at once, which is the tradeoff the
+	--GUID path already makes and documents: one border wrong half the time
+	--beats two wrong always.
+	local mine = guid and lib.ownspell[guid] and lib.ownspell[guid][effect]
 	if mine and spellID and mine ~= spellID then return false end
 
-	local key = tag..guid..effect
+	local key = tag..(guid or "noguid")..effect
 	local now = GetTime()
 	local held = claims[key]
 
@@ -357,13 +374,7 @@ end
 --the name-keyed alias and the frame refresh -- neither of which means anything for a mob no
 --unit frame is showing.
 function lib:AddEffect(unit, unitlevel, effect, duration, caster, guid)
-	--EMPTY IS NOT A NAME. The tooltip scan that produces `effect` returns the line's
-	--text, which is nil when the scan fails and "" when the line exists but is blank --
-	--and `not effect` rejects only the first of those. An "" key is not one effect, it
-	--is a bucket every unnameable aura on that mob falls into, whatever cast it. Let
-	--one of the player's own casts land in it and every other class's unscannable
-	--debuff inherits caster == "player" and draws the owned border.
-	if not effect or effect == "" then return end
+	if not effect then return end
 	if not unit and not guid then return end
 	unitlevel = unitlevel or 0
 
@@ -975,10 +986,60 @@ end
 --this scan instead would put a tooltip scan on every debuff of every plate five
 --times a second, which is exactly what that cache exists to avoid.
 --Returns: duration, timeleft, caster
+--[[
+	WHICH BRANCH DECIDED THE CASTER.
+
+	GetTimeLeft can answer "player" from four different places, and when the wrong
+	debuff draws an owned border the only useful question is which of them said so.
+	Reading the code cannot answer it -- I have now traced it twice and been wrong
+	twice -- so this mirrors GetTimeLeft's order exactly and reports the branch
+	instead of the verdict.
+
+	It must stay in step with GetTimeLeft below. It is a report, so it deliberately
+	does NOT mutate: no expiring entries, no dropping stale records.
+]]
+function lib:CasterProvenance(unitname, unitlevel, effect, guid)
+	if not effect or effect == "" then
+		return "rejected", "no effect name (scan failed)"
+	end
+
+	local _, tickLeft = lib:TickTimeLeft(guid, effect)
+	if tickLeft then
+		--The one branch with no contested check and no own-cast check in front of it.
+		return "tick", "tick counter says player, unconditionally"
+	end
+
+	local owned = lib:OwnedEffect(guid, effect)
+
+	local store = (guid and lib.objects[guid]) or (unitname and lib.objects[unitname])
+	local byGuid = guid and lib.objects[guid] and true or false
+	if not store then
+		return "owned-only", owned and "lib.owned says player" or "nothing known"
+	end
+
+	unitlevel = unitlevel or 0
+	local entry = (store[unitlevel] and store[unitlevel][effect]) or (store[0] and store[0][effect])
+	if not (entry and entry.start and entry.duration) then
+		return "owned-only", owned and "lib.owned says player" or "no timed entry"
+	end
+
+	if (entry.start + entry.duration) < GetTime() then
+		return "expired", owned and "expired, lib.owned still says player" or "expired"
+	end
+
+	local why = (byGuid and "store entry by GUID" or "store entry by NAME (shared by every mob so named)")
+	if entry.caster == "player" then
+		if guid and lib:Contested(guid, effect) and not lib:OwnCastLive(guid, effect) then
+			return "contested", why.." says player, vetoed as contested"
+		end
+		return "store", why.." says player"
+	end
+
+	return "store", why..(entry.caster and (" says "..tostring(entry.caster)) or " has no caster")
+end
+
 function lib:GetTimeLeft(unitname, unitlevel, effect, guid)
-	--Rejects "" for the same reason AddEffect does: looking up the shared empty-name
-	--bucket answers "yours" for auras that were never scanned, let alone cast.
-	if not effect or effect == "" then return end
+	if not effect then return end
 
 	--Counted ticks beat a table lookup whenever we have them. Only our own periodic
 	--effects get counted, so everything else falls straight through to the logic below and
@@ -1042,9 +1103,7 @@ function lib:UnitDebuff(unit, id)
 	local texture, stacks, dtype, spellID = UnitDebuff(unit, id)
 	if not texture then return end
 
-	--No `or ""` fallback: a blank name is not a key, it is every unnameable aura on the
-	--mob sharing one entry. Left nil so the lookups below decline it outright.
-	local effect = mod:ScanAuraName(unit, id, true)
+	local effect = mod:ScanAuraName(unit, id, true) or ""
 
 	--WITH THE GUID. This asked by name and level only, and the name store is shared by every
 	--mob that has ever carried that name -- it accumulates, and GetTimeLeft prefers the GUID
@@ -1237,20 +1296,41 @@ lib:SetScript("OnEvent", function()
 		end
 
 	elseif event == "DEBUFF_ADDED_OTHER" then
-		--arg1 target GUID, arg3 spell id. No caster GUID exists on this event, so the
-		--only debuffs claimed here are the ones our own damage just caused.
+		--arg1 target GUID, arg3 spell id.
+		--
+		--THIS EVENT CANNOT ANSWER OWNERSHIP AND NO LONGER PRETENDS TO. It carries
+		--no caster GUID, and what stood here inferred one from DamagedRecently --
+		--"did I damage this mob in the last 0.2 seconds". Reported 2026-08-21 as
+		--other warlocks' dots reading as the player's, and the capture showed far
+		--worse than that: a warlock's store held Demoralizing Roar, Growl, Rupture,
+		--Arcane Missiles, Demoralizing Shout and Sunder Armor all as `caster
+		--player`. None of them are warlock spells.
+		--
+		--Three things compound. NoteOwnDamage fires on every DoT tick, so with
+		--three DoTs up the window is open a large share of the time. Any debuff
+		--anyone applies inside it gets claimed. And AddEffect never downgrades a
+		--known caster, so each mistake is permanent -- the error only accumulates,
+		--which is why a long fight ends with most of the mob's debuffs "yours".
+		--
+		--Ownership now comes only from AURA_CAST_ON_OTHER, which carries a real
+		--caster GUID and is checked against the player's. The timing this branch
+		--recorded is still worth having, so the AddEffect stays with a NIL caster:
+		--it still stamps the exact application time -- which is what stops the
+		--shared name store handing a new mob the previous one's leftover countdown
+		--- and, because a nil never overwrites a known caster, it cannot take a
+		--genuine claim away either.
+		--
+		--The cost is procs of the player's own damage that have no cast event at
+		--all, Improved Shadow Bolt's Shadow Vulnerability being the obvious one.
+		--Those lose their owned border. That is one specific effect drawn grey
+		--against every debuff in the raid drawn green, which is not a close call.
 		local effect = arg1 and TickSpellName(arg3)
 		if effect and lib:DamagedRecently(arg1) then
-			lib:NoteOwned(arg1, effect)
-
 			local durations = Durations()
 			if durations and durations[effect] then
-				--Exact application time, which is the other half of the fix: the shared
-				--name store hands a new mob the previous one's leftover countdown, and a
-				--fresh start here overwrites it.
 				local name = UnitName(arg1) or arg1
 				local level = (UnitName("target") == name and UnitLevel("target")) or 0
-				lib:AddEffect(name, level, effect, nil, "player", arg1)
+				lib:AddEffect(name, level, effect, nil, nil, arg1)
 			else
 				lib:NoteUntracked(effect)
 			end

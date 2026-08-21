@@ -39,6 +39,13 @@ function UF:Construct_Raid40Frames()
 	self.RaidDebuffs = UF:Construct_RaidDebuffs(self)
 	self.DebuffHighlight = UF:Construct_DebuffHighlight(self)
 	self.RaidRoleFramesAnchor = UF:Construct_RaidRoleFrames(self)
+	--Guarded because a /reload cannot load a file that did not exist at login:
+	--every other file here is re-read WITH the call in it while the element
+	--itself is still absent, and an unguarded call takes the whole styleFunc
+	--down with it -- which costs the party frames, not just the icon.
+	if UF.Construct_SpecRoleIcon then
+		self.SpecRoleIcon = UF:Construct_SpecRoleIcon(self)
+	end
 	self.MouseGlow = UF:Construct_MouseGlow(self)
 	self.TargetGlow = UF:Construct_TargetGlow(self)
 	self.InfoPanel = UF:Construct_InfoPanel(self)
@@ -164,6 +171,7 @@ function UF:Update_Raid40Frames(frame, db)
 	UF:Configure_GPS(frame)
 
 	UF:Configure_RaidRoleIcons(frame)
+	if UF.Configure_SpecRoleIcon then UF:Configure_SpecRoleIcon(frame) end
 
 	UF:Configure_Range(frame)
 

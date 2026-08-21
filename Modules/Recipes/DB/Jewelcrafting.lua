@@ -3,6 +3,7 @@
 -- by Shagu. See README.md for credits.
 
 OctoUI_RecipeDB.recipes["Jewelcrafting"] = {
+	{drop={max=1,npcs={5710},rates={[5710]=1}},id=42197,name="Plans: Elegant Emerald Gemstone",unsure=1},
 	{id=70150,name="Plans: Malachite Ring",unsure=1},
 	{craft="Bulky Copper Ring",drop={max=2.9,n=530,npcs={6128,1949,8996,3535,2166,471,5786,1993},rates={[471]=0.7,[1949]=1.66,[1993]=0.42,[2166]=0.76,[3535]=0.78,[5786]=0.5,[6128]=2.9,[8996]=0.98},wd=1,zones={141,85,17,14,12}},id=56022,name="Plans: Bulky Copper Ring",q=2,reagents={[2880]=1,[55156]=1,[55245]=1},result=81093,skill=25,spell=41249},
 	{craft="Minor Trollblood Ring",drop={max=2.9,n=530,npcs={6128,1949,8996,3535,2166,471,5786,1993},rates={[471]=0.7,[1949]=1.66,[1993]=0.42,[2166]=0.76,[3535]=0.78,[5786]=0.5,[6128]=2.9,[8996]=0.98},wd=1,zones={141,85,17,14,12}},id=50298,name="Plans: Minor Trollblood Ring",q=2,reagents={[3382]=1,[55156]=1,[55245]=1},result=55164,skill=50,spell=41231,spellsrc={"Trainer"}},

@@ -10,6 +10,7 @@
 	<Include file="Bags\Load_Bags.xml"/>
 	<Include file="Misc\Load_Misc.xml"/>
 	<Include file="Recipes\Load_Recipes.xml"/>
+	<Include file="Auction\Load_Auction.xml"/>
 	<Include file="Threat\TWThreat.xml"/>
 	<Include file="Skins\Load_Skins.xml"/>
 	<Include file="Blizzard\Load_Blizzard.xml"/>

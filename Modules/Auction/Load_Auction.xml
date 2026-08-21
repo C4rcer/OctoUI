@@ -1,0 +1,11 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/">
+	<!-- Auction.lua first: it creates the module the rest resolve with
+	     E:GetModule at load time. Tabs register themselves into A.tabBuilders,
+	     so a tab is added by adding a file rather than by editing Window.lua. -->
+	<Script file="Auction.lua"/>
+	<Script file="Listing.lua"/>
+	<Script file="Scan.lua"/>
+	<Script file="Buy.lua"/>
+	<Script file="Window.lua"/>
+	<Script file="Tabs\Search.lua"/>
+</Ui>

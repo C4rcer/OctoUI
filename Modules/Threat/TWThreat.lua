@@ -365,6 +365,14 @@ TWT:SetScript("OnEvent", function()
             if __substr(arg2, 1, 15) == 'TWTRoleTexture:' then
                 local tex = OctoTWTExplode(arg2, ':')[2] or ''
                 TWT.roles[arg4] = tex
+
+                --Roles arrive over the addon channel, on nobody's schedule and on no
+                --event a unit frame element can register for. Push rather than poll:
+                --without this the icon appears only when something else happens to
+                --redraw the frame, which reads as the feature not working.
+                local UF = E.GetModule and E:GetModule("UnitFrames", true)
+                if UF and UF.RefreshSpecRoleIcons then UF:RefreshSpecRoleIcons() end
+
                 return true
             end
 
@@ -2777,6 +2785,19 @@ E.ThreatMeter = TM
 --the counters live on TWT, which is a local to this file, and /octoui-threat is the one
 --thing that can tell "we never asked" apart from "we asked and were ignored" -- the two
 --causes of an empty window that look identical on screen.
+--The spec texture last broadcast by a group member, keyed by player name. TWT is a
+--local to this file, so this is the only way the unit frames can read what the threat
+--meter already collects. Returns nil for anyone not running OctoUI, which is the
+--honest answer -- nothing else on 1.12 reports another player's spec.
+function TM:GetSpecTexture(name)
+    return name and TWT.roles and TWT.roles[name] or nil
+end
+
+--Every name currently known, for the /octoui-roles report.
+function TM:AllSpecTextures()
+    return TWT.roles or {}
+end
+
 function TM:ThreatTraffic()
     return TWT.requestsSent or 0, TWT.repliesSeen or 0, TWT.lastReply, TWT.sendFailures or 0
 end

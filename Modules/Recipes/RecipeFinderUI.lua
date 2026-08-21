@@ -509,7 +509,8 @@ function RF:UpdateDetail()
 	detail.header:SetText(recipe.name)
 	detail.header:SetTextColor(color[1], color[2], color[3])
 
-	local sub = recipe.prof
+	--The selected tab IS the profession; it is no longer stamped onto each record.
+	local sub = self.profession or ""
 	if recipe.skill then sub = sub..format(" - %s %d", L["skill"], recipe.skill) end
 	if recipe.unsure then sub = sub.." |cffff8000("..L["profession inferred"]..")|r" end
 	detail.sub:SetText(sub)

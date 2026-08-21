@@ -706,3 +706,64 @@ L["Learned from a world object"] = true;
 L["No source known. See REPORT.md."] = true;
 L["No recipe matching '%s'."] = true;
 L["Raises the skill cap to %d"] = true;
+L["also"] = true;
+
+--Modules/UnitFrames/Elements/SpecRoleIcon.lua
+L["Role icons: the threat meter is not loaded, so no roles are known."] = true;
+L["Role icons - broadcast specs seen this session:"] = true;
+L["Nobody in range is broadcasting a spec."] = true;
+L["unmapped"] = true;
+L["declared"] = true;
+
+--Modules/Misc/MountGear.lua -- fight gear
+L["Riding gear"] = true;
+L["Fight gear"] = true;
+L["The item to wear in this slot when not mounted."] = true;
+L["What to put back on when the mount goes. Leave a box empty and that slot returns whatever it was wearing before you mounted, which is only right if it was right at the time."] = true;
+L["MOUNTGEAR_FIGHT_RESTORED"] = "fight gear equipped"
+L["MOUNTGEAR_FIGHT_ALREADY"] = "fight gear already worn"
+L["MOUNTGEAR_FIGHT_NOT_IN_BAGS"] = "fight gear is not in your bags"
+
+--Modules/Auction
+L["Auction House"] = true;
+L["Search"] = true;
+L["Sell"] = true;
+L["Bids"] = true;
+L["Auctions"] = true;
+L["switched off"] = true;
+L["ready"] = true;
+L["%s is loaded and owns the auction house"] = true;
+L["OctoUI auction house: %s."] = true;
+L["OctoUI auction house is off: %s is loaded and owns the auction house."] = true;
+L["Disable %s and reload to use this instead."] = true;
+L["Item"] = true;
+L["Qty"] = true;
+L["Bid/ea"] = true;
+L["Buyout/ea"] = true;
+L["Total"] = true;
+L["Time"] = true;
+L["Seller"] = true;
+L["Item name..."] = true;
+L["Min"] = true;
+L["Max"] = true;
+L["Cancel"] = true;
+L["Auction house: you are not at an auctioneer."] = true;
+L["Auction house: type something to search for."] = true;
+L["Auction house: finish or cancel the search first."] = true;
+L["Auction house: the page did not come back. Nothing was bought."] = true;
+L["Searching for %s..."] = true;
+L["Page %d, %d of %d auctions"] = true;
+L["Timed out. %d auctions found."] = true;
+L["Cancelled. %d auctions found."] = true;
+L["%d auctions found."] = true;
+L["Stack of %d"] = true;
+L["Bid %s each"] = true;
+L["Buyout %s each"] = true;
+L["Click to buy. The page it came from is re-queried first."] = true;
+L["That auction has no buyout."] = true;
+L["Buy %s for %s?"] = true;
+L["Bought %s x%d for %s."] = true;
+L["Bought %s x%d."] = true;
+L["That auction is gone -- it sold or expired. Search again."] = true;
+L["That auction is gone."] = true;
+L["Checking that %s is still there..."] = true;

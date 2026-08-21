@@ -15,6 +15,7 @@
 	<Script file="Power.lua"/>
 	<Script file="InfoPanel.lua"/>
 	<Script file="PvPIcon.lua"/>
+	<Script file="SpecRoleIcon.lua"/>
 	<Script file="PvPIndicator.lua"/>
 	<Script file="RaidDebuffs.lua"/>
 	<Script file="RaidIcon.lua"/>

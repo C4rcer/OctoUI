@@ -76,6 +76,15 @@ P["general"] = {
 	["classCacheStoreInDB"] = true,
 	["classCacheRequestInfo"] = false,
 
+	--OctoUI's own auction house. Off by default and it stands down entirely
+	--whenever aux or another auction addon is loaded: only one addon can drive
+	--Blizzard's query throttle, and two scanners interleaving pages leaves both
+	--with results that are silently wrong.
+	["auction"] = {
+		["enable"] = false,
+		["rowsPerPage"] = 22
+	},
+
 	["minimap"] = {
 		["size"] = 176,
 		--Third-party minimap buttons, collected into a row under the minimap
@@ -2037,6 +2046,16 @@ P["unitframe"] = {
 				["enable"] = true,
 				["position"] = "TOPLEFT"
 			},
+			["specRoleIcon"] = {
+				--Tank/healer/damage marker beside the name. Only ever drawn for group
+				--members running OctoUI, because nothing on 1.12 reports another
+				--player's spec. See Modules\UnitFrames\Elements\SpecRoleIcon.lua.
+				["enable"] = true,
+				["size"] = 12,
+				["anchorPoint"] = "TOPLEFT",
+				["xOffset"] = 2,
+				["yOffset"] = -2
+			},
 			["petsGroup"] = {
 				["enable"] = false,
 				["width"] = 100,
@@ -2238,6 +2257,16 @@ P["unitframe"] = {
 				["enable"] = true,
 				["position"] = "TOPLEFT"
 			},
+			["specRoleIcon"] = {
+				--Tank/healer/damage marker beside the name. Only ever drawn for group
+				--members running OctoUI, because nothing on 1.12 reports another
+				--player's spec. See Modules\UnitFrames\Elements\SpecRoleIcon.lua.
+				["enable"] = true,
+				["size"] = 12,
+				["anchorPoint"] = "TOPLEFT",
+				["xOffset"] = 2,
+				["yOffset"] = -2
+			},
 			["raidicon"] = {
 				["enable"] = true,
 				["size"] = 18,
@@ -2396,6 +2425,16 @@ P["unitframe"] = {
 			["raidRoleIcons"] = {
 				["enable"] = true,
 				["position"] = "TOPLEFT"
+			},
+			["specRoleIcon"] = {
+				--Tank/healer/damage marker beside the name. Only ever drawn for group
+				--members running OctoUI, because nothing on 1.12 reports another
+				--player's spec. See Modules\UnitFrames\Elements\SpecRoleIcon.lua.
+				["enable"] = true,
+				["size"] = 12,
+				["anchorPoint"] = "TOPLEFT",
+				["xOffset"] = 2,
+				["yOffset"] = -2
 			},
 			["buffIndicator"] = {
 				["enable"] = true,

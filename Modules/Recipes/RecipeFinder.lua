@@ -111,26 +111,16 @@ function RF:BuildIndex()
 	--the sort of thing someone opens this window to find.
 	for profession, list in pairs(db.recipes) do
 		if getn(list) > 0 then
+			--NOTHING IS WRITTEN BACK INTO THE RECIPE TABLES. Stamping three extra
+			--fields onto each of 1160 records looked free and was not: Lua rounds a
+			--table's hash part up to a power of two, so three more keys pushes an
+			--8-key record to 16 slots and costs 320 bytes of nodes it was not using,
+			--before the two new strings each record also had to intern. Roughly half
+			--a megabyte to avoid recomputing a lowercase compare that costs nothing
+			--per keystroke over a couple of hundred visible rows.
 			local rows = {}
 			for i = 1, getn(list) do
-				local recipe = list[i]
-				recipe.prof = profession
-				--Searchable on both the recipe item name and the thing it makes,
-				--because people look for "Mongoose", not "Recipe: Elixir of the".
-				recipe.search = lower((recipe.name or "").." "..(recipe.craft or ""))
-
-				--What the trade skill window would call this, for the "unlearned"
-				--filter to match against. Usually the craft name; where no source
-				--supplied one, the item name with its "Manual: "/"Pattern: "
-				--prefix stripped is the next best thing. A name with no prefix is
-				--left alone, so it simply never matches rather than matching
-				--something wrong.
-				recipe.knownKey = recipe.craft
-				if not recipe.knownKey and recipe.name then
-					recipe.knownKey = gsub(recipe.name, "^%a+:%s*", "")
-				end
-
-				tinsert(rows, recipe)
+				tinsert(rows, list[i])
 			end
 
 			sort(rows, function(a, b)
@@ -321,7 +311,8 @@ function RF:Filter(profession, query, options)
 		local recipe = rows[i]
 		local keep = true
 
-		if query and not find(recipe.search, query, 1, true) then
+		if query and not find(lower((recipe.name or "").." "..(recipe.craft or "")),
+			query, 1, true) then
 			keep = false
 		end
 
@@ -337,9 +328,14 @@ function RF:Filter(profession, query, options)
 		end
 
 		--Matched on the CRAFT name, which is what the trade skill window lists;
-		--recipe.name is the scroll in the bag and never appears there.
-		if keep and known and recipe.knownKey and known[recipe.knownKey] then
-			keep = false
+		--recipe.name is the scroll in the bag and never appears there. Where no
+		--source gave a craft name, the item name with its "Manual: "/"Pattern: "
+		--prefix stripped is the next best thing; a name with no prefix is left
+		--alone so it never matches rather than matching something wrong.
+		if keep and known then
+			local key = recipe.craft
+			if not key and recipe.name then key = gsub(recipe.name, "^%a+:%s*", "") end
+			if key and known[key] then keep = false end
 		end
 
 		--A profession rank book. The spellbook rank settles it outright; where
@@ -423,6 +419,26 @@ function RF:NpcLine(id)
 	return text
 end
 
+--Every OTHER place this NPC stands. Collapsing an NPC to one location is how
+--Janet Hommers read as Stonetalon Mountains while the player was looking at her
+--in Desolace: TradeSkillsData records that spawn, pfQuest also has her at
+--Nijel's Point, and the merge kept whichever source won. 362 of the NPCs here
+--have more than one, so this is not an edge case.
+function RF:NpcExtraLines(id)
+	local db = self:Database()
+	local npc = db and db.npcs[id]
+	local out = {}
+	if not (npc and npc.locs) then return out end
+
+	for i = 1, getn(npc.locs) do
+		local loc = npc.locs[i]
+		tinsert(out, format("    |cff9d9d9d%s|r %s |cff8080ff%.1f, %.1f|r",
+			L["also"], ZoneName(db, loc[1]), loc[2], loc[3]))
+	end
+
+	return out
+end
+
 --Builds the detail pane contents as a flat list of {text, header} rows. Kept
 --separate from the UI so the same text can go to chat via the slash command.
 function RF:SourceLines(recipe)
@@ -453,6 +469,9 @@ function RF:SourceLines(recipe)
 				text = text..format(" |cffff8080["..L["limited: %d"].."]|r", stock)
 			end
 			add(text)
+
+			local extra = self:NpcExtraLines(id)
+			for j = 1, getn(extra) do add(extra[j]) end
 		end
 	end
 
@@ -482,6 +501,13 @@ function RF:SourceLines(recipe)
 			local rate = drop.rates and drop.rates[id]
 			if rate then text = text..format(" |cff00ff00%.2f%%|r", rate) end
 			add(text)
+
+			--Only for a short list. A world drop already shows a zone summary and
+			--would otherwise bury it under eight mobs' worth of patrol routes.
+			if not drop.wd then
+				local extra = self:NpcExtraLines(id)
+				for j = 1, getn(extra) do add(extra[j]) end
+			end
 		end
 	end
 
@@ -661,10 +687,10 @@ end
 --Chat fallback for the detail pane, so a source can be read (and copied) without
 --the window, and so a broken window is never the only way to reach the data.
 function RF:PrintRecipe(query)
-	local found
+	local found, foundProf
 	for _, profession in ipairs(self:Professions()) do
 		local rows = self:Filter(profession, query, {phase = PHASE_ORDER.NAXX})
-		if getn(rows) > 0 then found = rows[1] break end
+		if getn(rows) > 0 then found, foundProf = rows[1], profession break end
 	end
 
 	if not found then
@@ -672,7 +698,7 @@ function RF:PrintRecipe(query)
 		return
 	end
 
-	E:Print(found.name.." |cff9d9d9d("..found.prof
+	E:Print(found.name.." |cff9d9d9d("..foundProf
 		..(found.skill and format(", %d", found.skill) or "")..")|r")
 	local lines = self:SourceLines(found)
 	for i = 1, getn(lines) do

@@ -84,6 +84,11 @@ local function Store()
 	if mg.enable == nil then mg.enable = false end
 	if not mg.slots then mg.slots = {} end
 	if not mg.saved then mg.saved = {} end
+	--The gear you FIGHT in, declared rather than inferred. `saved` records whatever
+	--happened to be displaced; that is only the right thing to put back if you were
+	--already wearing the right thing when you mounted. This is what should be on when
+	--the mount goes, whatever was on when it arrived.
+	if not mg.fight then mg.fight = {} end
 
 	return mg
 end
@@ -359,8 +364,14 @@ function M:RestoreMountGear()
 	lastResults = {}
 
 	for _, def in ipairs(SLOTS) do
+		--A DECLARED FIGHT ITEM OUTRANKS WHAT WAS DISPLACED. `saved` only records what
+		--was in the slot at the moment of mounting, which is the right thing to put
+		--back only if it was right to begin with. Mount up wearing the wrong trinket
+		--and the old behaviour faithfully returned the wrong trinket.
+		local wanted = db.fight[def.key]
 		local saved = db.saved[def.key]
-		if saved then
+
+		if wanted or saved then
 			local invSlot = GetInventorySlotInfo(def.key)
 			local current = GetInventoryItemLink("player", invSlot)
 
@@ -369,6 +380,22 @@ function M:RestoreMountGear()
 			if not ItemMatches(db.slots[def.key], current) then
 				Record(def, true, L["MOUNTGEAR_CHANGED_BY_HAND"])
 				db.saved[def.key] = nil
+			elseif wanted and ItemMatches(wanted, current) then
+				--Riding item and fight item are the same thing. Nothing to do, and
+				--trying would send FindInBags hunting for an item already worn.
+				Record(def, true, L["MOUNTGEAR_FIGHT_ALREADY"])
+				db.saved[def.key] = nil
+			elseif wanted then
+				local bag, slot = FindInBags(wanted)
+				if not bag then
+					--Left for the next dismount, same as a missing displaced item: it
+					--may be in the bank rather than gone.
+					Record(def, false, L["MOUNTGEAR_FIGHT_NOT_IN_BAGS"])
+				else
+					local ok, why = EquipFromBag(bag, slot, invSlot)
+					Record(def, ok, ok and L["MOUNTGEAR_FIGHT_RESTORED"] or why)
+					if ok then db.saved[def.key] = nil end
+				end
 			elseif saved.empty then
 				local ok, why = UnequipToBags(invSlot)
 				Record(def, ok, ok and L["MOUNTGEAR_REMOVED"] or why)
@@ -479,6 +506,24 @@ function M:SetMountGearItem(slotKey, text)
 	return db.slots[slotKey]
 end
 
+--The fight-gear counterpart. Separate function rather than a third argument on the
+--one above, so no existing caller can land in the wrong table by omission.
+function M:SetFightGearItem(slotKey, text)
+	local db = Store()
+
+	if not text or text == "" then
+		db.fight[slotKey] = nil
+		return nil
+	end
+
+	db.fight[slotKey] = M:ParseMountGearItem(text)
+	return db.fight[slotKey]
+end
+
+function M:GetFightGearItem(slotKey)
+	return Store().fight[slotKey]
+end
+
 --[[
 	The options page, built here rather than in Config/ for the same reason Blacklist's is:
 	Config files are read from the .toc at process start, so a change there needs a full
@@ -512,6 +557,12 @@ local function BuildOptions()
 		}
 	}
 
+	args.ridingHeader = {
+		order = 9,
+		type = "header",
+		name = L["Riding gear"]
+	}
+
 	for index, def in ipairs(SLOTS) do
 		local key = def.key
 		args[key] = {
@@ -525,6 +576,35 @@ local function BuildOptions()
 			end,
 			set = function(_, value)
 				M:SetMountGearItem(key, value)
+			end
+		}
+	end
+
+	args.fightHeader = {
+		order = 20,
+		type = "header",
+		name = L["Fight gear"]
+	}
+
+	args.fightIntro = {
+		order = 21,
+		type = "description",
+		name = L["What to put back on when the mount goes. Leave a box empty and that slot returns whatever it was wearing before you mounted, which is only right if it was right at the time."]
+	}
+
+	for index, def in ipairs(SLOTS) do
+		local key = def.key
+		args["fight"..key] = {
+			order = 21 + index,
+			type = "input",
+			width = "full",
+			name = L[def.label],
+			desc = L["The item to wear in this slot when not mounted."],
+			get = function()
+				return M:MountGearLabel(Store().fight[key]) or ""
+			end,
+			set = function(_, value)
+				M:SetFightGearItem(key, value)
 			end
 		}
 	end

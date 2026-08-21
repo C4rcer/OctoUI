@@ -19,6 +19,7 @@ local GetInventorySlotInfo, GetInventoryItemLink = GetInventorySlotInfo, GetInve
 local GetTime = GetTime
 local GetNumRaidMembers, GetNumPartyMembers = GetNumRaidMembers, GetNumPartyMembers
 local UnitExists, UnitName = UnitExists, UnitName
+local UnitDebuff, UnitLevel = UnitDebuff, UnitLevel
 local UnitAffectingCombat = UnitAffectingCombat
 
 function E:EnableAddon(addon)
@@ -287,6 +288,31 @@ end
 --Bare command opens the browser; with an argument it prints the first matching
 --recipe's sources to chat, which is the only way to get at them while a
 --full-screen window would be in the way.
+--Which group members are broadcasting a spec, and what role it resolved to. The
+--spec-texture table cannot be verified from outside the game, so an unmapped spec
+--has to be visible somewhere rather than just drawing no icon.
+function E:SpecRoleReport()
+	local UF = E:GetModule("UnitFrames", true)
+	if not (UF and UF.SpecRoleReport) then
+		E:Print("|cffff0000Role icons are not loaded.|r")
+		return
+	end
+
+	UF:SpecRoleReport()
+end
+
+--Bare command toggles the window; "status" says why it will not open, which is
+--almost always that aux is loaded and owns the auction house.
+function E:AuctionCommand(msg)
+	local A = E:GetModule("Auction", true)
+	if not (A and A.Command) then
+		E:Print("|cffff0000The auction house module is not loaded.|r")
+		return
+	end
+
+	A:Command(msg and string.lower(msg) or "")
+end
+
 function E:RecipeFinderCommand(msg)
 	local RF = E:GetModule("RecipeFinder", true)
 	if not (RF and RF.Command) then
@@ -645,6 +671,41 @@ end
 --duration table, a tooltip scan for the spell name, and combat-log timestamps -- and
 --when no timer appears there is no way to tell which one failed by looking at the
 --nameplate. Dumps all three for the current target.
+--Every debuff on the current target, with the branch that decided whose it is.
+--"Everyone's dots read as mine" has four possible causes inside GetTimeLeft and they
+--are indistinguishable on screen, so this names the one that actually spoke.
+local function ReportTargetProvenance(NP, lib)
+	if not (lib and lib.CasterProvenance) then return end
+	if not UnitExists("target") then
+		E:Print("No target -- target the mob whose debuffs look wrong and run this again.")
+		return
+	end
+
+	local unitname, unitlevel = UnitName("target"), UnitLevel("target")
+	local _, guid = UnitExists("target")
+
+	E:Print(format("debuffs on %s |cff888888(guid %s)|r:", tostring(unitname),
+		guid and "yes" or "|cffff0000no -- name lookups only|r"))
+
+	local any
+	for index = 1, 16 do
+		local texture = UnitDebuff("target", index)
+		if not texture then break end
+		any = true
+
+		local name = NP.ScanAuraName and NP:ScanAuraName("target", index, true)
+		local branch, why = lib:CasterProvenance(unitname, unitlevel, name, guid)
+		local _, _, caster = lib:GetTimeLeft(unitname, unitlevel, name, guid)
+
+		local verdict = (caster == "player") and "|cff00ff00MINE|r" or "|cff888888not mine|r"
+		E:Print(format("  %d. %s -- %s |cffffcc00[%s]|r %s",
+			index, name and name ~= "" and name or "|cffff0000<name scan failed>|r",
+			verdict, tostring(branch), why or ""))
+	end
+
+	if not any then E:Print("  none") end
+end
+
 function E:DebuffTimerReport()
 	local NP = E:GetModule("NamePlates")
 	local lib = NP and NP.LibDebuff
@@ -684,6 +745,8 @@ function E:DebuffTimerReport()
 		E:Print(format("own casts with no duration entry: %s", names))
 		E:Print("  (direct damage spells are expected here -- a DOT of yours in that list is the reason it has no timer)")
 	end
+
+	ReportTargetProvenance(NP, lib)
 
 	--the keys say whether the combat log is giving names or GUIDs, which is the
 	--difference between a lookup that matches and one that silently does not
@@ -1225,6 +1288,25 @@ function E:MountGearReport(msg)
 		return
 	end
 
+	--Fight gear takes a second word: /octoui-mountgear fight trinket1 <item>.
+	if action == "fight" then
+		local alias, item = match(rest or "", "^%s*(%S*)%s*(.-)%s*$")
+		for _, def in ipairs(M:GetMountGearSlots()) do
+			if lower(alias or "") == def.alias then
+				local entry = M:SetFightGearItem(def.key, item)
+				if entry then
+					E:Print(format("%s when not mounted: %s", def.label, M:MountGearLabel(entry)))
+				else
+					E:Print(format("%s: restores whatever was displaced.", def.label))
+				end
+				return
+			end
+		end
+
+		E:Print("Usage: /octoui-mountgear fight [trinket1 / trinket2 / boots / gloves] <item link, item id or name>")
+		return
+	end
+
 	--Setting a slot by name, for when typing beats opening the options tree.
 	if action ~= "" and action ~= "list" then
 		for _, def in ipairs(M:GetMountGearSlots()) do
@@ -1240,6 +1322,7 @@ function E:MountGearReport(msg)
 		end
 
 		E:Print("Usage: /octoui-mountgear [on / off / trinket1 / trinket2 / boots / gloves] <item link, item id or name>")
+		E:Print("       /octoui-mountgear fight <slot> <item> -- what to wear when the mount goes")
 		return
 	end
 
@@ -1270,11 +1353,18 @@ function E:MountGearReport(msg)
 		local slotID = GetInventorySlotInfo(def.key)
 		local worn = GetInventoryItemLink("player", slotID)
 
+		local fight = M.GetFightGearItem and M:GetFightGearItem(def.key)
+
 		E:Print(format("  %s -- riding: %s |cff888888(worn: %s)|r%s",
 			def.label,
 			entry and M:MountGearLabel(entry) or "not set",
 			worn or "empty",
 			saved and format(" |cffffff00owes back: %s|r", saved.empty and "an empty slot" or (M:MountGearLabel(saved) or saved.link or "?")) or ""))
+
+		--Printed even when unset, because "not set" is the answer to "why did the wrong
+		--trinket come back" and a missing line answers nothing.
+		E:Print(format("       fight: %s", fight and M:MountGearLabel(fight)
+			or "|cff888888not set -- restores whatever was displaced|r"))
 	end
 
 	local results, pending = M:GetMountGearResults()
@@ -1748,6 +1838,8 @@ function E:LoadCommands()
 	self:RegisterChatCommand("octoui-dismount", "DismountReport")
 	self:RegisterChatCommand("octoui-mail", "MailReport")
 	self:RegisterChatCommand("octoui-recipes", "RecipeFinderCommand")
+	self:RegisterChatCommand("octoui-roles", "SpecRoleReport")
+	self:RegisterChatCommand("octoui-ah", "AuctionCommand")
 	self:RegisterChatCommand("octoui-threatreset", "ThreatReset")
 
 	if E:GetModule("ActionBars") and E.private.actionbar.enable then
