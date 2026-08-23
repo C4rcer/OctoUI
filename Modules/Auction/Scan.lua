@@ -251,8 +251,15 @@ function A:ScanRateReport()
 	end
 
 	local db = self:Settings()
-	E:Print(format(L["AUCTION_RATE_LEARNED"],
-		db.scanInterval or FULL_SCAN_INTERVAL, db.scanIntervalFloor or 0))
+	local pace = db.scanInterval or FULL_SCAN_INTERVAL
+
+	--A floor only exists once some pace has actually dropped a query. Printing 0.00
+	--as though zero were the guilty pace reads as the opposite of what happened.
+	if db.scanIntervalFloor then
+		E:Print(format(L["AUCTION_RATE_LEARNED"], pace, db.scanIntervalFloor))
+	else
+		E:Print(format(L["AUCTION_RATE_LEARNED_CLEAN"], pace))
+	end
 
 	--Run mid-scan, which is the natural thing to do while waiting for one, the
 	--figures below would otherwise describe the PREVIOUS scan while the samples
