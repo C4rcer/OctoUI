@@ -319,15 +319,23 @@ function TT:SetPrice(tt, id, count)
 	self:SetAuctionPrice(tt, id, count, price)
 end
 
+local AUCTION_STALE_AFTER = 7 * 86400
+
+--Age in words, plus whether the reading is old enough to want colouring
+--differently. A price is only as good as the day it was taken and there is no
+--way for the tooltip to know the market has moved, so saying how old it is
+--is the whole of the honesty available here.
 local function AgeText(when)
-	if not when then return "" end
+	if not when then return "", false end
 
 	local seconds = time() - when
 	if seconds < 0 then seconds = 0 end
 
-	if seconds < 3600 then return format(L["%dm ago"], floor(seconds / 60)) end
-	if seconds < 86400 then return format(L["%dh ago"], floor(seconds / 3600)) end
-	return format(L["%dd ago"], floor(seconds / 86400))
+	local stale = seconds > AUCTION_STALE_AFTER
+
+	if seconds < 3600 then return format(L["%dm ago"], floor(seconds / 60)), stale end
+	if seconds < 86400 then return format(L["%dh ago"], floor(seconds / 3600)), stale end
+	return format(L["%dd ago"], floor(seconds / 86400)), stale
 end
 
 --[[
@@ -337,22 +345,31 @@ end
 	the walk to the auctioneer, or is it three copper and a wasted trip. Both halves have
 	to be on the same tooltip for that to be answerable at a glance.
 
-	It only knows items a scan has actually seen -- Modules/Misc/AuctionHouse.lua writes
-	E.global.auctionPrices -- so this line is absent far more often than it is present.
-	That is deliberate: an invented market price is worse than no market price. Scanning
-	an item at the auction house is what makes it appear here.
+	It only knows items a scan has actually seen -- Modules/Auction/Prices.lua writes
+	E.global.auctionPrices from the page-walking scan in Modules/Auction/Scan.lua -- so
+	this line is absent far more often than it is present. That is deliberate: an invented
+	market price is worse than no market price. Scanning an item at the auction house is
+	what makes it appear here, and /octoui-ah prices <name> is how to see what is stored
+	without going and finding one of the items.
 
-	The figure is the CHEAPEST per unit seen, which is what a seller would have to
+	THIS READS THE SAVED TABLE DIRECTLY rather than going through E:GetModule("Auction").
+	Two reasons, and both are load-order facts rather than preferences. The tooltip module
+	loads well before the auction module, so there is nothing to resolve at file scope; and
+	the price database outlives the module that filled it -- somebody who installs aux, or
+	switches OctoUI's own auction window off, keeps every reading they collected, and these
+	lines keep working. The store is plain data and is documented as such in Prices.lua.
+
+	EVERY FIELD EXCEPT unitBid AND unitBuyout IS TREATED AS OPTIONAL. Records banked before
+	Prices.lua existed carry no market, stack or id, and a saved variable is not something
+	to migrate on a login that never opened an auction house. Missing simply means the
+	corresponding line is not drawn.
+
+	The headline figure is the CHEAPEST per unit seen, which is what a seller would have to
 	undercut, not an average -- and it is before the auction house's cut. The 1.2x
-	threshold leaves room for that rather than pretending to model it.
+	threshold leaves room for that rather than pretending to model it. Measured 2026-08-07,
+	THIS SERVER'S CUT IS ZERO, so the threshold is more conservative than it needs to be.
 ]]
---Parked 2026-08-06 with the rest of the auction house work. The switch at the top of
---Modules/Misc/AuctionHouse.lua is the other half; both come back together, since this line
---has nothing to read until a scan has run.
-local AUCTION_TOOLTIP_ENABLED = false
-
 function TT:SetAuctionPrice(tt, id, count, vendorPrice)
-	if not AUCTION_TOOLTIP_ENABLED then return end
 	if not E.db.tooltip.auctionPrice then return end
 	if not (id and E.global and E.global.auctionPrices) then return end
 
@@ -361,6 +378,13 @@ function TT:SetAuctionPrice(tt, id, count, vendorPrice)
 
 	local record = E.global.auctionPrices[name]
 	if not record then return end
+
+	--A reading old enough to mislead can be dropped outright rather than merely aged.
+	--Zero, the default, never hides one: an old price with its age attached is still
+	--information, and silently withholding what the player collected is worse than
+	--showing it with a date on it.
+	local maxAge = E.db.tooltip.auctionPriceMaxAge or 0
+	if maxAge > 0 and record.when and (time() - record.when) > (maxAge * 86400) then return end
 
 	--Prefer the buyout: it is what the item can be turned into gold for now. Fall back to
 	--the bid only where nothing in that scan carried a buyout at all.
@@ -379,6 +403,42 @@ function TT:SetAuctionPrice(tt, id, count, vendorPrice)
 			nil, nil, nil, 1, 0.82, 0)
 	end
 
+	--What the item typically goes for, next to what the cheapest one goes for. These are
+	--different questions -- the cheapest is what a seller must beat, the typical is what
+	--the market will bear -- and on a thin market they are the same number, so the line is
+	--drawn only when it disagrees enough to be worth the row. 10% is the threshold: a
+	--second line that repeats the first is noise on a tooltip already carrying four.
+	--
+	--IT MULTIPLIES BY THE SAME COUNT THE LINE ABOVE DOES, the stack in hand. The record
+	--also knows the usual stack size on the auction house, and putting THAT here was the
+	--first attempt -- it produces two adjacent lines reading "for 5" and "for 20", where
+	--the reader has every reason to assume both totals are for the item they are holding.
+	--Two figures that can be compared straight down the column is the whole point of the
+	--second line. The usual stack size is in /octoui-ah prices instead.
+	local market = record.market
+	if market and market > 0 and market >= unit * 1.1 then
+		if count and count > 1 then
+			tt:AddDoubleLine(L["Auction (typical)"], format(L["AUCTION_TOOLTIP_STACK"],
+				E:FormatMoney(market, "SMART"), E:FormatMoney(market * count, "SMART"), count),
+				nil, nil, nil, 0.85, 0.7, 0.45)
+		else
+			tt:AddDoubleLine(L["Auction (typical)"],
+				format(L["AUCTION_TOOLTIP_EACH"], E:FormatMoney(market, "SMART")),
+				nil, nil, nil, 0.85, 0.7, 0.45)
+		end
+	end
+
+	--The footer carries how old the reading is and how much of a market it was taken
+	--from. One auction seen is a price; forty is a market, and the difference decides how
+	--much weight to give the two lines above it.
+	local age, stale = AgeText(record.when)
+	if record.seen and record.seen > 0 then
+		age = format(L["AUCTION_TOOLTIP_SEEN"], age, record.seen)
+	end
+
+	local ar, ag, ab = 0.6, 0.6, 0.6
+	if stale then ar, ag, ab = 0.85, 0.6, 0.3 end
+
 	if vendorPrice and vendorPrice > 0 then
 		local ratio = unit / vendorPrice
 		local verdict, r, g, b
@@ -391,9 +451,9 @@ function TT:SetAuctionPrice(tt, id, count, vendorPrice)
 			verdict, r, g, b = L["AUCTION_TOOLTIP_VENDOR_IT"], 1, 0.5, 0.1
 		end
 
-		tt:AddDoubleLine(AgeText(record.when), verdict, 0.6, 0.6, 0.6, r, g, b)
+		tt:AddDoubleLine(age, verdict, ar, ag, ab, r, g, b)
 	else
-		tt:AddDoubleLine(AgeText(record.when), "", 0.6, 0.6, 0.6)
+		tt:AddDoubleLine(age, "", ar, ag, ab)
 	end
 end
 

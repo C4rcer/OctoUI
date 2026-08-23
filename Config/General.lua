@@ -301,6 +301,43 @@ E.Options.args.general = {
 					name = L["Bag Item Click"],
 					desc = L["Right click bag items to send them to the trade window or search or sell them at the auction house. Hold Shift for the default action."]
 				},
+				auctionHouse = {
+					order = 12.655,
+					type = "toggle",
+					name = L["Auction House"],
+					desc = L["AUCTION_HOUSE_DESC"],
+					--Nested under general.auction, so the group's own get/set -- which
+					--index E.db.general by the option key -- cannot reach it.
+					get = function() return E.db.general.auction and E.db.general.auction.enable end,
+					set = function(info, value)
+						local A = E:GetModule("Auction", true)
+						if A and A.SetEnabled then
+							A:SetEnabled(value)
+						else
+							if not E.db.general.auction then E.db.general.auction = {} end
+							E.db.general.auction.enable = value
+						end
+					end,
+					--Greyed rather than hidden, so it is visible that the reason it will
+					--not run is another addon rather than a missing feature.
+					disabled = function()
+						local A = E:GetModule("Auction", true)
+						return (A and A.CompetingAddon and A:CompetingAddon()) and true or false
+					end
+				},
+				auctionScanPages = {
+					order = 12.657,
+					type = "range",
+					name = L["Auction Scan Pages"],
+					desc = L["AUCTION_SCAN_PAGES_DESC"],
+					min = 0, max = 250, step = 5,
+					get = function() return (E.db.general.auction and E.db.general.auction.scanPages) or 0 end,
+					set = function(info, value)
+						if not E.db.general.auction then E.db.general.auction = {} end
+						E.db.general.auction.scanPages = value
+					end,
+					disabled = function() return not (E.db.general.auction and E.db.general.auction.enable) end
+				},
 				auctionUnitPrice = {
 					order = 12.66,
 					type = "toggle",

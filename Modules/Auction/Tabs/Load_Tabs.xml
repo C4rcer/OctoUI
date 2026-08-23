@@ -1,0 +1,20 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/">
+	<!-- Tabs live behind their own loader because a Script entry with a
+	     subdirectory path in it DOES NOT LOAD on this client, and says nothing
+	     when it fails. Load_Auction.xml used to carry Tabs\Search.lua as a direct
+	     Script entry: every file above that line loaded, the window built, and the
+	     Search tab drew "this tab has not been built yet" for the rest of the
+	     session because its builder had never registered. Nothing reports it. Not
+	     the client, not the language server, not luaparse, not checkrefs; all four
+	     resolve the path happily.
+
+	     Every other subfolder in this addon is reached with an Include of a nested
+	     Load_Sub.xml holding flat Script entries. That is the convention because it
+	     is the thing that works.
+
+	     A new tab is a file in this folder plus a line below. -->
+	<Script file="Search.lua"/>
+	<Script file="Sell.lua"/>
+	<Script file="Auctions.lua"/>
+	<Script file="Bids.lua"/>
+</Ui>

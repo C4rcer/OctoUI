@@ -122,6 +122,19 @@ local hooksecurefunc = hooksecurefunc
 	`G["auctionPrices"]` in Settings/Global.lua is left in place. It is defaults-only until
 	a scan runs, so it costs nothing while this is off, and removing it would discard any
 	prices already collected.
+
+	SUPERSEDED 2026-08-22. The scan engine below now lives in Modules/Auction/, driving
+	OctoUI's own auction window instead of annotating Blizzard's browse rows, and the price
+	database it fed is owned by Modules/Auction/Prices.lua. The tooltip half is back on and
+	reads the richer record that file writes.
+
+	**DO NOT SIMPLY FLIP `ENABLED` BACK ON.** `RecordPrices` further down still writes the
+	OLD, THINNER record -- unitBid, unitBuyout, seen, when and nothing else -- to the same
+	`E.global.auctionPrices` table. Running both would have whichever scanned last overwrite
+	the other, silently dropping the market price, the usual stack size and the item id from
+	every item this one touched. The row annotation is the only part of this file with no
+	replacement; reviving it means taking that part alone and leaving the scanning and the
+	recording to Modules/Auction/.
 ]]
 local ENABLED = false
 

@@ -93,6 +93,19 @@ local function RockConfigFix()
 end
 
 function AFK:SetAFK(status)
+	--[[
+		Never go AFK during an auction house scan.
+
+		Going AFK hides UIParent, which hides the auction window, which closes the
+		auction house -- so a scan that takes a few minutes is guaranteed to be killed
+		by the very idleness it causes. The player is not idle; they are waiting on
+		something the interface started.
+	]]
+	if status then
+		local Auction = E:GetModule("Auction", true)
+		if Auction and Auction.IsScanning and Auction:IsScanning() then return end
+	end
+
 	if status and not self.isAFK then
 		--Hidden because its 3D model keeps rendering over the AFK screen. Remember that we
 		--were the one to hide it, so the exit branch can put it back: this Hide had no

@@ -256,7 +256,9 @@ function mod:UpdateAuraSide(auras, unit, isDebuff)
 			if lib and name then
 				--`unit` is the SuperWoW GUID whenever we have one, which is also what
 				--the combat log stores under when GUID mode is on
-				_, timeleft, caster = lib:GetTimeLeft(unitname, unitlevel, name, unit)
+				--spellID is SuperWoW's fourth return from UnitDebuff above; with it the
+				--tick counter matches our own cast exactly instead of by name.
+				_, timeleft, caster = lib:GetTimeLeft(unitname, unitlevel, name, unit, spellID)
 
 				--Two warlocks on one mob means two identical icons reading from one store
 				--entry, and both drew green. Only one icon may claim it.

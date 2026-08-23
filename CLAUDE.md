@@ -1,3 +1,7 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 # OctoUI
 
 A full port of ElvUI to World of Warcraft **1.12 (Vanilla)**, running on a Turtle/OctoWoW
@@ -32,11 +36,122 @@ client facts, and dead ends. Read it before assuming anything about this client.
 No `git commit`, `git push`, or remote changes unless asked in that message. The live repo
 was deleted once over this.
 
+## Architecture
+
+### There is no build, no test runner, and no package manager
+
+`.toc` and `.xml` files are the build system: the client reads them top to bottom and
+executes the Lua. Nothing is compiled, bundled or installed. So there is no `npm test`
+equivalent to reach for, and the checks that do exist are:
+
+| What | Command |
+| --- | --- |
+| Static analysis (the only one) | `lua-language-server --check <DIRECTORY>` — see **Use the LSP** below |
+| Repo vs. live addon folder | the `diff -rq` line above |
+| Recipe DB regeneration | `python octoui-dev/tools/recipe-pipeline/build.py` then `validate.py` |
+| Everything else | the game — see **In-game testing** |
+
+`--check` also runs clean over the whole repo (263 files) in a few seconds, which is the
+cheapest way to be sure an edit did not break a *different* file.
+
+### Load order is the TOC, and it is strict
+
+`OctoUI.toc` fixes the order and each stage assumes the previous one ran:
+
+`Compatibility` (polyfills `select`, `string.match`, `strsplit`, `hooksecurefunc`) →
+`Developer` → `Libraries` → `Locales` → `Media` → `Init.lua` (creates the engine table) →
+`Settings` (the defaults tables) → `Core` (the engine's own methods) → `Layout` →
+`Modules` → `Config` (the options GUI, **last**, because its files call `E:GetModule` at
+file scope).
+
+Every file after `Init.lua` opens with the same line, and the five upvalues are the whole
+public surface:
+
+```lua
+local E, L, V, P, G = unpack(ElvUI) --Engine, Locales, PrivateDB, ProfileDB, GlobalDB
+```
+
+**A new `.lua` file does not load until `WoW.exe` fully exits.** `/reload` re-reads existing
+files but does not pick up a file newly added to an XML, and it fails silently — the symptom
+is a missing feature, not an error. Prefer appending to an existing file, and say which is
+needed when asking for a test.
+
+### A module, end to end
+
+`Modules/<Name>/` holds the code, a `Load_<Name>.xml` lists its files in order, and
+`Modules/Load_Modules.xml` includes that. The module itself:
+
+```lua
+local M = E:NewModule("Auction", "AceEvent-3.0")  -- first file only
+local M = E:GetModule("Auction")                  -- every later file in the folder
+...
+function M:Initialize() ... end
+E:RegisterModule(M:GetName(), function() M:Initialize() end)
+```
+
+`Initialize` runs in registration order, which is XML order. **Failures inside it are caught
+and stashed in `E.ModuleLoadErrors` rather than raised**, so a module that errors on load is
+indistinguishable from one that is switched off unless you go and look — `/oprobe` reports
+them. `E:GetModule(name, true)` is the silent form and is what every slash command uses, so a
+missing module prints a line instead of erroring.
+
+Multi-file modules in this codebase register their own pieces into a table rather than having
+one file enumerate the others — `A.tabBuilders` in `Modules/Auction/`, the column tables in
+`Modules/Recipes/`. Adding a feature is then adding a file, not editing a dispatcher.
+
+### The four settings layers
+
+| Upvalue | Defaults live in | Read at runtime as | Scope | Saved variable |
+| --- | --- | --- | --- | --- |
+| `P` | `Settings/Profile.lua` | `E.db` | per profile | `ElvDB` |
+| `V` | `Settings/Private.lua` | `E.private` | per character | `ElvPrivateDB` |
+| `G` | `Settings/Global.lua` | `E.global` | per account | `ElvDB.global` |
+| — | — | `E.charSettings` | per character | `ElvCharacterDB` |
+
+A default added to `P`/`V`/`G` is merged into existing saved data on login, so new keys
+appear for players who already have a profile. **Removing one does not delete the saved
+value** — it only stops it being defaulted.
+
+Anything per-account that describes the *world* rather than the player belongs in `G`: the
+class cache, the ninja-looter blacklist, and the auction price database are all there because
+they are the same on every alt.
+
+### Building UI
+
+`Core/toolkit.lua` is the vocabulary — `E:Size`, `E:Point`, `E:Width`/`E:Height`,
+`E:SetTemplate`, `E:FontTemplate`, `E:CreateCloseButton`, `E:StripTextures` — and
+`E.media` (`normTex`, `rgbvaluecolor`) is where colour comes from. Frames built with these
+match the rest of the UI automatically; frames built with raw `SetBackdrop` do not, and stop
+matching the moment someone changes their value colour.
+
+`Modules/Skins/` restyles Blizzard and third-party frames. `Core/Movers.lua` provides
+`E:CreateMover` — read the trap about it below before changing any anchor.
+
 ## Writing Lua for this client
 
 1.12 is **Lua 5.0**. No `#` operator, no `string.gmatch` (`gfind`), no `select` or `strsplit`
 except where `Compatibility/` polyfills them. Event handlers read the globals `event`,
 `arg1..arg9` and `this` — they take no arguments.
+
+### A closure made in a loop cannot rely on the loop variable
+
+Measured here, not theorised: a handler created inside `for index, column in ipairs(columns)`
+read `column` as **nil** when it later ran, throwing `attempt to index a nil value`. The
+listing's column headers had this from the day they were written and it only ever showed when
+clicking a header that was not already the sort column — the other branch never touched the
+captured value, so sorting looked like it worked.
+
+Capture nothing you can look up. `this` is always the widget the handler fired on, so store an
+index on the widget and read the real thing back out of a table:
+
+```lua
+button.index = index
+button:SetScript("OnClick", function()
+    local col = listing.columns[this.index]   -- not the captured `column`
+end)
+```
+
+The language server cannot see this: the closure is valid Lua and the upvalue exists.
 
 ### Use the LSP
 
@@ -95,7 +210,9 @@ Each subsystem has a report command, and extending one beats asking the user to 
 something by hand:
 
 `/octoui-bags [moves]` · `/octoui-dots` · `/octoui-dismount` · `/octoui-dps` · `/octoui-mail` ·
-`/octoui-recipes [name]`
+`/octoui-recipes [name]` · `/octoui-ah [status|prices <name>|purge <days>]`
+
+The full list is the `RegisterChatCommand` block at the end of `Core/Commands.lua`.
 
 Prefer a passive **log** over a snapshot for anything transient — `/oprobe dots` hooks the
 debuff store's writes so a bug can be read back afterwards rather than caught live.
@@ -118,7 +235,179 @@ pfQuest's coord tables are written `[1] = {x, y, zone, respawn}`, so they parse 
 **index-keyed tables, not arrays**. Reading them as a list yields no locations and no error —
 it cost a full rebuild before the empty zone column was noticed.
 
-## Two recurring traps
+## The auction house, and the price database
+
+`Modules/Auction/` is **written from scratch and has to be**. aux-addon ships no licence file
+at all, which makes it all rights reserved — the same position ShaguDPS is in, and
+`Modules/Misc/DamageMeter.lua` records how this project handles that. Features and workflows
+are not copyrightable and the client's auction functions are facts about the client. aux's
+code is not, and none of it is here. Auctioneer is GPL-2.0 and cannot be vendored either.
+
+**It cannot share the auction house.** Only one addon can drive `CanSendAuctionQuery`; two
+scanners interleaving pages leave both with results that are silently wrong. So the module
+stands down entirely when aux, Auctioneer or AuctionLite is loaded, and it is **off by
+default** (`E.db.general.auction.enable`). Turn it on with `/octoui-ah on` or in `/oc` under
+General → General → Auction House; `/octoui-ah status` says why it will not open.
+
+| File | What it owns |
+| --- | --- |
+| `Auction.lua` | the module, the stand-down rules, `/octoui-ah` |
+| `Scan.lua` | the page-walking scan — one gated state machine on one `OnUpdate` |
+| `Prices.lua` | the price database (below) |
+| `Listing.lua` | the sortable column list every tab draws into, and `A:Money` |
+| `Buy.lua` | buyout: re-query the page, re-match the row, confirm, then bid |
+| `Window.lua` | the tabbed window; tabs are built lazily on first sight |
+| `Tabs/Search.lua` | search, the full scan, and buying a row |
+| `Tabs/Sell.lua` | posting: undercut, split stacks, deposit, paced posting |
+| `Tabs/Auctions.lua` | your own listings, and cancelling one |
+| `Tabs/Bids.lua` | what you have bid on, raising a bid, buying out |
+
+All four tabs are built. Adding another is a file in `Tabs/` that fills
+`A.tabBuilders[<id>]`, an entry in `A.TABS`, and a line in `Tabs/Load_Tabs.xml`.
+
+Two things that shape everything here:
+
+- **The query gate is the whole problem.** Firing `QueryAuctionItems` without
+  `CanSendAuctionQuery` drops pages *silently* — a short result set and no error, which is
+  the worst failure this can have. Every query in the module goes through one state machine.
+- **A paged scan can kill the client.** Measured 2026-08-06: 174 auctions over 11 pages took
+  it to 3947 MB and it died. The cost is the client caching item data for every *unique
+  item* a page returns, not anything the addon stores, so it can only be bounded — hence the
+  40-page search cap and the resumable, user-set cap on the full scan. This is the one
+  feature where "fully exit and relaunch first" is real advice rather than hygiene.
+
+**Two scans, and the difference is the whole design.** A *search* keeps every row, because
+the Search tab draws them in a sortable list. A *full scan* (`Scan All`, `/octoui-ah scan`)
+walks the house with an empty query and keeps **nothing** — each page folds straight into the
+price database and is dropped. Accumulating rows is what crashed the client, so a full scan
+that reused the search path would be a guaranteed crash rather than a slow one. It runs to the end on its
+own; `E.db.general.auction.scanPages` is a ceiling that defaults to **0, meaning no limit**,
+and only exists for a machine that cannot take a large one. If it does stop at the ceiling it
+remembers where, so pressing again continues — but the resume point is session-only, because
+a page number into a result set the server rebuilds constantly means nothing tomorrow.
+
+### Client facts this cost a session to learn
+
+None of these are guessable and none of them error in a way that points at the cause. Each
+one is load-bearing somewhere in `Modules/Auction/`.
+
+**Hiding `AuctionFrame` closes the auction house.** It carries an `OnHide` script that calls
+`CloseAuctionHouse()`. Show your own window, hide theirs, and the session ends with the
+server while your window sits there looking fine — every query after that goes unanswered.
+The symptoms are scattered: scans time out with zero results, and `AtAuctionHouse` reports
+you are not at an auctioneer while you are standing at one. `AuctionFrame:SetScript("OnHide",
+nil)` is what makes hiding it safe, and `UnregisterEvent("AUCTION_HOUSE_SHOW")` stops it
+coming back.
+
+**Blizzard's Auctions tab throws while hidden.** It still listens for
+`AUCTION_OWNED_LIST_UPDATE`, and its update function does arithmetic on
+`AuctionFrameAuctions.page`, which is only set when the frame is *shown*. Posting an auction
+therefore throws `attempt to perform arithmetic on field 'page'` out of
+`Blizzard_AuctionUI.lua`, from code you never called. Wrap `AuctionFrameAuctions_OnEvent` so
+it only calls through when the frame is visible.
+
+**`Blizzard_AuctionUI` is load on demand**, so `AuctionFrame` does not exist at login and
+usually does not exist yet when `AUCTION_HOUSE_SHOW` reaches an addon. Neutralise it from
+`ADDON_LOADED` as well as at `Initialize`.
+
+**A split has to land in a BAG slot.** `SplitContainerItem` puts the piece on the cursor and
+must be paired with `PickupContainerItem` on another bag slot. Splitting and then clicking
+the auction slot does nothing at all — the pickup is audible and nothing arrives. To post a
+stack of N, build a bag stack of exactly N first, then pick that whole slot up. A free bag
+slot is therefore a hard requirement of posting a partial stack.
+
+**The auction slot clears on `StartAuction` whether or not the server accepts.** It is proof
+of nothing. `ERR_AUCTION_STARTED` on `CHAT_MSG_SYSTEM` — the "Auction created." line — is the
+only evidence an auction exists, and the listener has to be registered immediately before the
+call and unregistered on the first match, or a late message gets credited to the next post.
+Waiting for it also **paces** the run: posting a frame apart is refused by the server, so
+confirming any faster produces one auction and a count that says three.
+
+**Seller names arrive after the rest of a page.** `GetAuctionItemInfo` returns `nil` for
+`owner` on a page just delivered. Anything that has to find the same auction again later must
+wait for them, or match without them — comparing a stored `nil` against a later real name
+never succeeds, which makes every buyout report the auction as gone. Match on **`minBid`**
+rather than the live bid for the same reason: a bid placed in between moves `bidAmount` and
+leaves `minBid` alone.
+
+**Owner and bidder lists are separate result sets** — `GetOwnerAuctionItems(page)` and
+`GetBidderAuctionItems(page)`, answered on `AUCTION_OWNED_LIST_UPDATE` and
+`AUCTION_BIDDER_LIST_UPDATE`. They are **not** gated on `CanSendAuctionQuery`; that gate is
+for the browse query only, and waiting on it here just stalls. The owner list also does not
+reliably honour the page argument: asking for page 1 can be answered with page 0 again while
+the reported total exceeds what is served, so paging on the total alone duplicates every
+auction. Two byte-identical pages mean there is no next page.
+
+**Pages hold 50** and the last page index is `ceil(total / 50) - 1`.
+`NUM_AUCTION_ITEMS_PER_PAGE` has never been measured here.
+
+**`highBidder` means two different things.** On the *owner* list it is the name of whoever is
+winning your auction. On the *bidder* list it is a flag, set when **you** are the high bidder.
+Reading it as a name on the bidder list gives every row the same useless value. The next legal
+bid is `bidAmount + minIncrement`, or `minBid` where nobody has bid yet.
+
+**`GetWidth` can report half the anchored width.** Measured: a window 780 wide, a page
+anchored inside it at `+8`/`-8`, a listing anchored to that page at `0`/`0` — and the listing
+reports **382**, as does the page, while the window reports 780 correctly. Anything that
+divides a measured width between columns is therefore laying out into half the frame, which
+looks exactly like badly chosen column weights. **The caller knows the real width because it
+placed the anchors**, so pass it in and take the largest of measured, parent and declared.
+`Listing.lua:LayoutColumns` is the worked example.
+
+The corollary cost an outage on its own: **never derive a saved position from measured
+widths.** Storing a window's place as an offset computed from `GetLeft`, `GetWidth` and
+UIParent's width put it off screen, where it sat built, unblocked and invisible with nothing
+to report — and it only took effect on the *next* reload, so it looked like whatever had
+changed most recently. `GetPoint()` after `StopMovingOrSizing` hands back a real anchor in
+exactly the form `SetPoint` takes it; store that. `/octoui-ah reset` exists because a window
+that lands somewhere unreachable cannot be dragged back.
+
+**`QueryAuctionItems` accepts a nil name** — that is how a whole-house scan is asked for. Pass
+`nil`, not `""`. And a query can be **accepted and then never answered**: no page, no error.
+Re-send rather than treating the first silence as the end of the scan.
+
+**Going AFK hides `UIParent`**, which hides any window parented to it, which fires their
+`OnHide`. A scan that takes minutes was reliably killed by the idleness it caused. `AFK:SetAFK`
+refuses while a scan is running, and the auction window only closes the session when
+`UIParent` is actually visible.
+
+### The price store contract
+
+`E.global.auctionPrices` — per account, written by `Prices.lua`, and **read by indexing it
+directly**. `Modules/Tooltip/Tooltip.lua` does exactly that, and must: the tooltip module
+loads long before the auction module, and the database has to outlive it anyway so that
+somebody who installs aux keeps the readings they already collected.
+
+- **Keyed by item NAME**, because `GetAuctionItemInfo` gives no id. The id is stored
+  alongside when `GetAuctionItemLink` resolves it, but it is not the key.
+- **One record per item, never a history.** A fresh scan replaces the record for the items it
+  saw. Averages over sessions are what Auctioneer is; open item 19 in `HANDOFF.md` records
+  the decision not to grow into that.
+- **Every field except `unitBid` and `unitBuyout` is optional to a reader.** Records banked
+  before `Prices.lua` existed carry no `market`, `stack` or `id`. Degrade; do not normalise
+  on read, which would rewrite a saved variable on a login that never scanned anything.
+- Reading it back: `/octoui-ah prices [name]`. Trimming it: `/octoui-ah purge <days>`.
+
+**`Modules/Misc/AuctionHouse.lua` is superseded and parked** (`ENABLED = false`). Its own
+`RecordPrices` still writes the *old, thinner* record to the same table, so flipping that
+switch on would have whichever scanned last clobber the other. The block comment at the top
+of it says which part is worth reviving and which is not.
+
+## Three recurring traps
+
+**A `<Script>` with a subdirectory path in it does not load.** `<Script file="Tabs\Search.lua"/>`
+resolves for the language server, for `luaparse.py`, for `checkrefs.py` and for anyone reading
+the file — and the client silently skips it. Every other file in the same XML loads, so the
+symptom is one feature missing with no error anywhere. **Subfolders are reached with
+`<Include file="Sub\Load_Sub.xml"/>` and flat `<Script>` entries inside it**, which is what
+every other module does. Cost most of a session on the auction house Search tab, which drew
+"this tab has not been built yet" because its builder file never ran.
+
+Worth knowing alongside it: **XML comments cannot contain `--`**, and an invalid XML file
+fails the same silent way. `python -c "import glob,xml.etree.ElementTree as ET; [ET.parse(p) for p in glob.glob('**/*.xml',recursive=True)]"`
+checks all 84 of them in a second.
+
+## Two more
 
 **Skinning races the thing that builds the widget.** A frame's `OnShow` fires before or after
 its owner's own builder depending on load order, so styling from outside silently misses.

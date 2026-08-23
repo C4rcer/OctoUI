@@ -302,7 +302,11 @@ function E:SpecRoleReport()
 end
 
 --Bare command toggles the window; "status" says why it will not open, which is
---almost always that aux is loaded and owns the auction house.
+--almost always that aux is loaded and owns the auction house. "prices [name]"
+--and "purge <days>" read and trim the scanned price database.
+--
+--Passed through with its case intact: "prices Copper Ore" carries an item name,
+--and A:Command lowercases the verb on its own.
 function E:AuctionCommand(msg)
 	local A = E:GetModule("Auction", true)
 	if not (A and A.Command) then
@@ -310,7 +314,7 @@ function E:AuctionCommand(msg)
 		return
 	end
 
-	A:Command(msg and string.lower(msg) or "")
+	A:Command(msg or "")
 end
 
 function E:RecipeFinderCommand(msg)

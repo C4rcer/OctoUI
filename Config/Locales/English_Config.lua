@@ -1386,13 +1386,23 @@ L["No changes waiting. What is ticked here is what is running."] = true
 L["%d change(s) waiting for a reload."] = true
 L["Apply every change on this page now."] = true
 
+--Modules/Auction. The "Auction House" label itself is already in Locales/English_UI.lua
+--as the window title, and both files write the same AceLocale table, so it is not
+--repeated here -- a key defined twice is a key that can end up translated once.
+L["Auction Scan Pages"] = true;
+L["AUCTION_SCAN_PAGES_DESC"] = "A ceiling on how many pages one Scan All reads. ZERO, the default, means no limit: the scan runs to the end on its own and Cancel is always available. Set a number only if your machine struggles, because the real cost of a scan is the game client caching item data for every unique item a page returns, and that has run this client out of memory before. Hitting the ceiling stops the scan and the button offers to carry on from where it left off. Restarting the game before a very large scan is real advice here, not hygiene."
+
+L["AUCTION_HOUSE_DESC"] = "Replace Blizzard's auction window with OctoUI's own. Searching walks every page of the result and lists what is out there sorted by price per unit, which is the number a stack hides, and every price it sees is saved so it can be shown on the item's tooltip anywhere in the world. Off by default, and it refuses to run at all while aux, Auctioneer or AuctionLite is loaded -- only one addon can drive the auction house's query throttle, and two scanners leave both with results that are silently wrong."
+
 --Modules/Misc/AuctionHouse.lua
 L["Auction Unit Prices"] = true;
 L["AUCTION_UNIT_PRICE_DESC"] = "On the auction house browse list, show each row's bid and buyout per unit as 'bid / buyout ea', draw the cheaper of each in green, and say so when an auction has no buyout. Compares within the page on screen only."
 
 --Modules/Tooltip/Tooltip.lua
 L["Auction Price"] = true;
-L["AUCTION_PRICE_DESC"] = "Show what the auction house is charging for an item next to what the vendor pays, so 'list it or vendor it' can be answered without walking to the auctioneer. Only covers items an auction house scan has actually seen, and the figure is the cheapest per unit before the auction house's cut."
+L["AUCTION_PRICE_DESC"] = "Show what the auction house is charging for an item next to what the vendor pays, so 'list it or vendor it' can be answered without walking to the auctioneer. Only covers items an auction house scan has actually seen -- search for an item at the auction house to record it, and /octoui-ah prices <name> to see what is stored. The headline figure is the cheapest per unit; a second line gives the typical price where the two differ. Needs Item Price switched on, since that is what puts the price block on the tooltip at all."
+L["Auction Price Age Limit"] = true;
+L["AUCTION_PRICE_MAX_AGE_DESC"] = "Stop showing a scanned price once it is this many days old. Zero, the default, shows every reading with its age beside it -- and any reading over a week old is drawn in orange whatever this is set to. Use /octoui-ah purge <days> to delete old readings rather than merely hiding them."
 
 --Modules/Misc/MailTools.lua
 L["Mail Take All"] = true;

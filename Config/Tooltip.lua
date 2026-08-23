@@ -85,8 +85,19 @@ E.Options.args.tooltip = {
 					type = "toggle",
 					name = L["Auction Price"],
 					desc = L["AUCTION_PRICE_DESC"],
-					--Parked with the feature itself, see Modules/Misc/AuctionHouse.lua
-					hidden = true
+					--Greyed rather than hidden when Item Price is off. TT:SetPrice is what
+					--reaches the auction lines, and every call site gates on itemPrice, so
+					--this toggle genuinely does nothing without it. Saying so in the UI
+					--beats a toggle that silently fails.
+					disabled = function() return not E.db.tooltip.itemPrice end
+				},
+				auctionPriceMaxAge = {
+					order = 7.2,
+					type = "range",
+					name = L["Auction Price Age Limit"],
+					desc = L["AUCTION_PRICE_MAX_AGE_DESC"],
+					min = 0, max = 90, step = 1,
+					disabled = function() return not (E.db.tooltip.itemPrice and E.db.tooltip.auctionPrice) end
 				},
 				spellID = {
 					order = 8,

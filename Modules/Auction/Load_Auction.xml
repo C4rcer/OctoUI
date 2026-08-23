@@ -3,9 +3,12 @@
 	     E:GetModule at load time. Tabs register themselves into A.tabBuilders,
 	     so a tab is added by adding a file rather than by editing Window.lua. -->
 	<Script file="Auction.lua"/>
+	<Script file="Prices.lua"/>
 	<Script file="Listing.lua"/>
 	<Script file="Scan.lua"/>
 	<Script file="Buy.lua"/>
 	<Script file="Window.lua"/>
-	<Script file="Tabs\Search.lua"/>
+	<!-- Include, not <Script file="Tabs\Search.lua"/>. A Script with a subdirectory
+	     path silently fails to load on this client; see Tabs\Load_Tabs.xml. -->
+	<Include file="Tabs\Load_Tabs.xml"/>
 </Ui>

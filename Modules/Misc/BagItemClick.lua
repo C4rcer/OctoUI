@@ -39,6 +39,35 @@ function M:LoadBagItemClick()
 		return AuctionFrame and AuctionFrame:IsShown() and AuctionFrameAuctions and AuctionFrameAuctions:IsShown()
 	end
 
+	--[[
+		OctoUI's own auction window, when it is the one in front.
+
+		Every check above tests Blizzard's AuctionFrame, and OctoUI's auction module
+		hides that frame outright -- so all three go false at exactly the moment this
+		feature is most wanted, and right-clicking a bag item at the auction house
+		quietly does nothing. Asking our window which tab it is showing is the same
+		question, put to the frame that is actually on screen.
+
+		Resolved on each call rather than cached: the auction module is optional, is
+		off by default, and stands down entirely when aux is loaded.
+	]]
+	local OctoAuctionTab = function()
+		local A = E:GetModule("Auction", true)
+		local window = A and A.window
+		if not (window and window:IsShown()) then return nil end
+		return window.currentTab
+	end
+
+	local ItemName = function(bag, slot)
+		local link = GetContainerItemLink(bag, slot)
+		if not link then return nil end
+
+		local open, close = find(link, "%["), find(link, "%]")
+		if not (open and close) then return nil end
+
+		return sub(link, open + 1, close - 1)
+	end
+
 	--overwrite use/trade logic unless shift is pressed
 	local origUseContainerItem = UseContainerItem
 	_G.UseContainerItem = function(bag, slot)
@@ -53,6 +82,20 @@ function M:LoadBagItemClick()
 			if tradeSlot then ClickTradeButton(tradeSlot) end
 			if CursorHasItem() then
 				ClearCursor()
+			end
+		elseif OctoAuctionTab() == "search" and not IsShiftKeyDown() then
+			--Exact name, because the player has pointed at one specific item. The
+			--server matches substrings, so the tab filters the results down.
+			local A = E:GetModule("Auction", true)
+			local name = ItemName(bag, slot)
+			if not (name and A and A.SearchFor and A:SearchFor(name)) then
+				origUseContainerItem(bag, slot)
+			end
+		elseif OctoAuctionTab() == "post" and not IsShiftKeyDown() then
+			--Into OctoUI's sell slot, which also prices it against the scanned market.
+			local A = E:GetModule("Auction", true)
+			if not (A and A.SellFromBags and A:SellFromBags(bag, slot)) then
+				origUseContainerItem(bag, slot)
 			end
 		elseif IsAuctionBrowsing() and not IsShiftKeyDown() then
 			--search item in auction house
@@ -79,6 +122,7 @@ function M:LoadBagItemClick()
 	GameTooltip.SetBagItem = function(self, container, slot)
 		if E.db.general.bagItemClick then
 			showHelperNextTooltip = IsTrading() or IsAuctionBrowsing() or IsAuctionSelling()
+				or OctoAuctionTab() ~= nil
 		end
 		return origSetBagItem(self, container, slot)
 	end

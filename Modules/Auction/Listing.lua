@@ -33,8 +33,11 @@ local CreateFrame = CreateFrame
 	never finishes loading.
 ]]
 
-local ROW_HEIGHT = 14
-local HEADER_HEIGHT = 16
+--Rows were 14 tall with 10pt text, which is small enough that a long item name
+--wrapped onto a second line and spilled into the row below it. Height and font go
+--together: raising one without the other just centres small text in a big gap.
+local ROW_HEIGHT = 18
+local HEADER_HEIGHT = 18
 
 local function SortRows(listing)
 	local column = listing.columns[listing.sortColumn]
@@ -48,8 +51,24 @@ local function SortRows(listing)
 
 		if compare then return compare(a, b, descending) end
 
-		--nil sorts last whichever way the column is pointing, so an auction with
-		--no buyout never displaces a real price at the top of the list.
+		--[[
+			Nothing sorts last, whichever way the column points, so an auction with no
+			buyout never displaces a real price at the top of the list.
+
+			"Nothing" means nil OR zero on a column marked emptyLast. The original code
+			only handled nil, and prices are stored as 0 rather than nil precisely so
+			that "no buyout" cannot read as "free" -- with the result that sorting by
+			cheapest buyout put every unbuyable auction FIRST, which is the exact
+			failure the zero was chosen to avoid.
+		]]
+		if column.emptyLast then
+			local aEmpty = (av == nil or av == 0)
+			local bEmpty = (bv == nil or bv == 0)
+			if aEmpty and bEmpty then return false end
+			if aEmpty then return false end
+			if bEmpty then return true end
+		end
+
 		if av == nil and bv == nil then return false end
 		if av == nil then return false end
 		if bv == nil then return true end
@@ -60,9 +79,29 @@ local function SortRows(listing)
 end
 
 local function LayoutColumns(listing)
-	--Fallback keeps a column layout possible before the frame has a resolved size.
-	local width = listing:GetWidth()
-	if not width or width <= 0 then width = listing.fallbackWidth or 600 end
+	--[[
+		THE WIDEST OF THE THREE ANSWERS WINS, and that is not paranoia.
+
+		Measured on this client: a window 780 wide, a page anchored inside it at +8/-8,
+		and a listing anchored to that page at 0/0 -- and the listing reports a width of
+		382. Exactly half. So does its parent. Whatever causes that, GetWidth cannot be
+		trusted as the authority here, and trusting it laid every column into the left
+		half of the frame with the prices truncated and the right half empty.
+
+		The CALLER knows the answer. It anchored the frame, so it knows the space the
+		listing occupies, and it passes that in as fallbackWidth. Taking the largest of
+		measured, parent and caller means a genuine measurement still wins when the frame
+		is bigger than expected, while a short reading cannot squash the layout.
+	]]
+	local width = listing:GetWidth() or 0
+
+	local parent = listing:GetParent()
+	local parentWidth = (parent and parent.GetWidth and parent:GetWidth()) or 0
+	if parentWidth > width then width = parentWidth end
+
+	local declared = listing.fallbackWidth or 600
+	if declared > width then width = declared end
+
 	width = width - 16 --slider gutter
 
 	local weight = 0
@@ -112,20 +151,35 @@ function A:CreateListing(parent, columns, rowCount, fallbackWidth)
 		local button = CreateFrame("Button", nil, header)
 		E:Height(button, HEADER_HEIGHT)
 		button.text = button:CreateFontString(nil, "OVERLAY")
-		E:FontTemplate(button.text, nil, 10, "NONE")
+		E:FontTemplate(button.text, nil, 11, "NONE")
 		button.text:SetAllPoints()
 		button.text:SetJustifyH(column.justify or "LEFT")
 		button.text:SetText(column.label or "")
 		button.text:SetTextColor(0.8, 0.8, 0.8)
 		button.index = index
 
+		--[[
+			The column is looked up by index, NOT captured from the loop.
+
+			Capturing it read nil by the time the handler ran, so clicking any header
+			other than the current sort threw "attempt to index a nil value" from
+			`column.defaultDescending`. Clicking the CURRENT one took the toggle branch
+			and never touched it, which is why sorting appeared to work at all.
+
+			`this.index` is set on the button itself and is always right, and the columns
+			table is the listing's own. Neither depends on what a closure created inside
+			a loop body kept hold of.
+		]]
 		button:SetScript("OnClick", function()
+			local col = listing.columns[this.index]
+
 			if listing.sortColumn == this.index then
 				listing.sortDescending = not listing.sortDescending
 			else
 				listing.sortColumn = this.index
-				listing.sortDescending = column.defaultDescending and true or false
+				listing.sortDescending = (col and col.defaultDescending) and true or false
 			end
+
 			listing:Refresh()
 		end)
 		button:SetScript("OnEnter", function() this.text:SetTextColor(unpack(E.media.rgbvaluecolor)) end)
@@ -144,6 +198,10 @@ function A:CreateListing(parent, columns, rowCount, fallbackWidth)
 		end
 		E:Point(row, "RIGHT", listing, "RIGHT", -16, 0)
 
+		--Buttons only listen for the left button by default, so a right click never
+		--reached OnClick and the second action on a row was unreachable.
+		row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+
 		row.highlight = row:CreateTexture(nil, "BACKGROUND")
 		row.highlight:SetAllPoints()
 		row.highlight:SetTexture(E.media.normTex)
@@ -153,8 +211,11 @@ function A:CreateListing(parent, columns, rowCount, fallbackWidth)
 		row.cells = {}
 		for index, column in ipairs(columns) do
 			local cell = row:CreateFontString(nil, "OVERLAY")
-			E:FontTemplate(cell, nil, 10, "NONE")
+			E:FontTemplate(cell, nil, 12, "NONE")
 			cell:SetJustifyH(column.justify or "LEFT")
+			--Fixed height, so a name too long for its column is clipped rather than
+			--wrapped onto a second line that overlaps the next row.
+			E:Height(cell, ROW_HEIGHT)
 			row.cells[index] = cell
 		end
 
@@ -209,16 +270,70 @@ function A:CreateListing(parent, columns, rowCount, fallbackWidth)
 		self:Refresh()
 	end
 
+	--[[
+		Same data, new rows appended, WITHOUT jumping back to the top.
+
+		A scan that only shows its results at the end is twenty seconds of empty list
+		on a forty-page search, and the answer is usually on the first page. So each
+		page refreshes the listing as it lands -- but SetData resets the scroll offset,
+		and a list that snapped back to the top every 0.4s while somebody was reading
+		it would be worse than showing nothing at all.
+
+		Refresh re-sorts, so a row can still move under the cursor as cheaper auctions
+		arrive. That is the list being correct rather than the list being unstable:
+		the sort is the entire point of it, and a scan is over in seconds.
+	]]
+	function listing:UpdateData(rows)
+		self.data = rows
+		self:Refresh()
+	end
+
 	function listing:Scroll(delta)
-		local total = self.data and getn(self.data) or 0
+		local total = self.view and getn(self.view) or 0
 		local maxOffset = max(0, total - self.visibleRows)
 		self.offset = min(maxOffset, max(0, self.offset + delta))
 		self.slider:SetValue(self.offset)
 		self:UpdateRows()
 	end
 
+	--[[
+		The rows actually on screen, after `filter`.
+
+		Kept as a separate array rather than by pruning `data`, because the scan owns
+		`data` and keeps appending to it while a scan runs -- and because the price
+		database is fed from every row scanned, not merely the ones being displayed. A
+		filter is a view of the results, never a decision about what was collected.
+
+		Reused in place across refreshes. A search that refreshes on every page would
+		otherwise throw away and rebuild an array of two thousand entries forty times.
+	]]
+	local function BuildView(self)
+		local data = self.data
+		if not data then self.view = nil return end
+
+		if not self.filter then
+			self.view = data
+			return
+		end
+
+		local view = (self.view ~= data) and self.view or {}
+		local n = 0
+
+		for i = 1, getn(data) do
+			local entry = data[i]
+			if self.filter(entry) then
+				n = n + 1
+				view[n] = entry
+			end
+		end
+
+		for i = getn(view), n + 1, -1 do view[i] = nil end
+
+		self.view = view
+	end
+
 	function listing:UpdateRows()
-		local data = self.data or {}
+		local data = self.view or {}
 		for r = 1, self.visibleRows do
 			local row = self.rows[r]
 			local entry = data[r + self.offset]
@@ -248,6 +363,7 @@ function A:CreateListing(parent, columns, rowCount, fallbackWidth)
 
 	function listing:Refresh()
 		SortRows(self)
+		BuildView(self)
 		LayoutColumns(self)
 
 		for index, column in ipairs(self.columns) do
@@ -258,7 +374,7 @@ function A:CreateListing(parent, columns, rowCount, fallbackWidth)
 			self.headers[index].text:SetText((column.label or "")..arrow)
 		end
 
-		local total = self.data and getn(self.data) or 0
+		local total = self.view and getn(self.view) or 0
 		local maxOffset = max(0, total - self.visibleRows)
 		if self.offset > maxOffset then self.offset = maxOffset end
 		self.slider:SetMinMaxValues(0, maxOffset)

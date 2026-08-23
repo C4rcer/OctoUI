@@ -946,10 +946,32 @@ end
 --A fully resisted tick fires no damage event, so `seen` can run low and the estimate long.
 --It is clamped against the declared schedule so it can never claim more time than the
 --effect could possibly have left.
-function lib:TickTimeLeft(guid, effect)
+function lib:TickTimeLeft(guid, effect, spellID)
 	if not (guid and effect and lib.ticks[guid]) then return end
 
-	for spellID, rec in pairs(lib.ticks[guid]) do
+	--EXACT BY SPELL ID WHEN WE HAVE ONE. The tick table is keyed by the id we
+	--actually cast, so an id from the icon matches our record or it does not --
+	--no name in the middle. Ranks are separate ids, so this alone tells our
+	--Corruption apart from another warlock's whenever the ranks differ.
+	--
+	--Falling back to the name is still right for a client with no SuperWoW, where
+	--UnitDebuff has no id to give: it is what this did for every icon before.
+	if spellID then
+		local exact = lib.ticks[guid][spellID]
+		if not exact then return end
+
+		local left = exact.total - exact.seen
+		if left <= 0 then return end
+
+		local remaining = left * exact.interval
+		local ceiling = (exact.start + (exact.total * exact.declared)) - GetTime()
+		if ceiling > 0 and remaining > ceiling then remaining = ceiling end
+		if remaining <= 0 then return end
+
+		return exact.total * exact.interval, remaining, "player"
+	end
+
+	for _, rec in pairs(lib.ticks[guid]) do
 		if rec.effect == effect then
 			local left = rec.total - rec.seen
 			if left <= 0 then return end
@@ -1038,13 +1060,13 @@ function lib:CasterProvenance(unitname, unitlevel, effect, guid)
 	return "store", why..(entry.caster and (" says "..tostring(entry.caster)) or " has no caster")
 end
 
-function lib:GetTimeLeft(unitname, unitlevel, effect, guid)
+function lib:GetTimeLeft(unitname, unitlevel, effect, guid, spellID)
 	if not effect then return end
 
 	--Counted ticks beat a table lookup whenever we have them. Only our own periodic
 	--effects get counted, so everything else falls straight through to the logic below and
 	--behaves exactly as it did before.
-	local tickDuration, tickLeft, tickCaster = lib:TickTimeLeft(guid, effect)
+	local tickDuration, tickLeft, tickCaster = lib:TickTimeLeft(guid, effect, spellID)
 	if tickLeft then return tickDuration, tickLeft, tickCaster end
 
 	--Known to be ours even when nothing can time it -- an effect this realm added that the
@@ -1092,6 +1114,37 @@ function lib:GetTimeLeft(unitname, unitlevel, effect, guid)
 		caster = nil
 	end
 
+	--CORROBORATION. entry.caster is a claim written at some point in the past by
+	--one of several handlers, and every ownership bug this library has had was a
+	--handler writing "player" when it should not have. So where better evidence
+	--exists, the claim has to agree with it.
+	--
+	--With a spell id from SuperWoW we can ask two questions the server has
+	--already answered:
+	--
+	--  lib.ticks[guid][spellID]  -- created when WE cast it and fed only by
+	--                               SPELL_DAMAGE_EVENT_SELF, which the server
+	--                               sends for our own damage and nobody else's
+	--  lib.ownspell[guid][effect] -- the id of the spell we cast on this mob
+	--
+	--Neither answering means we have no record of casting this spell on this mob,
+	--so it is not ours however confidently the store says otherwise. That is the
+	--case that actually costs damage: a dot you do NOT have showing as yours, so
+	--you skip the recast and Dark Harvest accelerates one fewer dot. Two of your
+	--own icons being confused with each other is cosmetic by comparison, because
+	--the timer on either is still your own tick count.
+	--
+	--Only applied when a spell id is available. Without SuperWoW there is nothing
+	--to corroborate against and this would refuse everything.
+	if caster == "player" and spellID and guid then
+		local ticked = lib.ticks[guid] and lib.ticks[guid][spellID]
+		local cast = lib.ownspell[guid] and lib.ownspell[guid][effect]
+		if not (ticked or (cast and cast == spellID)) then
+			caster = nil
+			if lib.NoteRefusal then lib:NoteRefusal(guid, effect, spellID) end
+		end
+	end
+
 	return entry.duration, entry.start + entry.duration - GetTime(), caster
 end
 
@@ -1114,7 +1167,8 @@ function lib:UnitDebuff(unit, id)
 	--SuperWoW returns the GUID as UnitExists' second value; without it this degrades to the
 	--old name lookup rather than failing.
 	local _, guid = UnitExists(unit)
-	local duration, timeleft, caster = lib:GetTimeLeft(UnitName(unit), UnitLevel(unit), effect, guid)
+	local duration, timeleft, caster = lib:GetTimeLeft(UnitName(unit), UnitLevel(unit),
+		effect, guid, spellID)
 
 	--One green border per debuff, not one per icon carrying that name. Tagged "uf" because
 	--unit frames sort and filter their icons, so their index numbering is not the nameplate's.
@@ -1415,7 +1469,18 @@ lib:SetScript("OnEvent", function()
 			effect = lib:AnyPending()
 		end
 		if not (effect and durations and durations[effect]) then
-			effect = lastspell and lastspell.effect or nil
+			--ONLY IF THE LAST WRITE WAS OURS. lastspell is set by every AddEffect,
+			--including the ones that record somebody else's debuff with no caster,
+			--so this fallback used to adopt whatever happened to be written most
+			--recently. Measured 2026-08-22 from the ownership log: a mob's Mind Flay
+			--and a Bloodaxe Worg's Demoralizing Shout were both claimed as the
+			--player's, purely because they were the last thing stored when a channel
+			--started.
+			--
+			--Checking the caster keeps the case this fallback exists for -- a
+			--re-channel of your own spell, where nampower queued the cast and the
+			--hooks never saw it -- because that write was yours.
+			effect = (lastspell and lastspell.caster == "player") and lastspell.effect or nil
 		end
 
 		if ms and ms > 0 and effect and durations and durations[effect] then

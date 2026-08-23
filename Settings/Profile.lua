@@ -82,7 +82,13 @@ P["general"] = {
 	--with results that are silently wrong.
 	["auction"] = {
 		["enable"] = false,
-		["rowsPerPage"] = 22
+		["rowsPerPage"] = 22,
+		--Hard ceiling on how many pages one full-house scan reads. ZERO IS NO LIMIT,
+		--and is the default: a scan that stops half way and waits to be pressed again
+		--is a chore rather than a safeguard. The setting exists because the client can
+		--run out of memory caching item data on a very large scan -- see the note in
+		--Modules/Auction/Scan.lua -- so anyone whose machine struggles can bound it.
+		["scanPages"] = 0
 	},
 
 	["minimap"] = {
@@ -772,8 +778,13 @@ P["tooltip"] = {
 	["guildRanks"] = true,
 	["inspectInfo"] = true,
 	["itemPrice"] = true,
-	--Needs an auction house scan to have seen the item; see Modules/Misc/AuctionHouse.lua
+	--Needs an auction house scan to have seen the item; see Modules/Auction/Prices.lua.
+	--Reached from TT:SetPrice, so it also needs itemPrice on.
 	["auctionPrice"] = true,
+	--Days after which a stored price stops being shown at all. Zero shows every
+	--reading with its age attached, which is the honest default: the player
+	--collected it, and withholding it silently is worse than dating it.
+	["auctionPriceMaxAge"] = 0,
 	["itemCount"] = "BAGS_ONLY",
 	["spellID"] = true,
 	["itemLevel"] = true,
