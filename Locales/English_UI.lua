@@ -803,6 +803,7 @@ L["Buy %s for %s?"] = true;
 L["Bought %s x%d for %s."] = true;
 L["Bought %s x%d."] = true;
 L["That auction is gone -- it sold or expired. Search again."] = true;
+L["AUCTION_ALREADY_SOLD"] = "That one has already sold. Search again for what is still up."
 L["That auction is gone."] = true;
 L["Checking that %s is still there..."] = true;
 L["This tab has not been built yet."] = true;

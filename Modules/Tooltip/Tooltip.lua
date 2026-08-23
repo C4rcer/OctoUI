@@ -373,8 +373,22 @@ function TT:SetAuctionPrice(tt, id, count, vendorPrice)
 	if not E.db.tooltip.auctionPrice then return end
 	if not (id and E.global and E.global.auctionPrices) then return end
 
-	local name = GetItemInfo(id)
+	local name, _, quality = GetItemInfo(id)
 	if not name then return end
+
+	--[[
+		Grey items are skipped outright.
+
+		Poor quality has no use beyond the vendor -- it cannot be crafted with,
+		disenchanted or reagent-anything -- so a grey item on the auction house is
+		somebody trolling or somebody who forgot. The prices that come back are
+		accordingly nonsense, and a nonsense figure presented next to a real vendor
+		price is worse than no figure at all: it invites the exact "list it or vendor
+		it" mistake this line exists to prevent.
+
+		The vendor price above still shows, which is the only number a grey item has.
+	]]
+	if quality == 0 then return end
 
 	local record = E.global.auctionPrices[name]
 	if not record then return end

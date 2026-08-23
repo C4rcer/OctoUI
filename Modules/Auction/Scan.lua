@@ -395,7 +395,7 @@ local function CollectPage()
 			--the same way either way, so a search still teaches it what it saw.
 			if scan.full then
 				--Folded in and forgotten. Nothing about this row outlives the loop.
-				A:RecordRow(name, count, unitBid, unitBuyout, nil)
+				A:RecordRow(name, count, unitBid, unitBuyout, nil, quality)
 			else
 				--The link is the only place an item ID is available here --
 				--GetAuctionItemInfo does not return one. It is nil for a row whose item
@@ -408,7 +408,7 @@ local function CollectPage()
 					itemID = id and tonumber(id) or nil
 				end
 
-				A:RecordRow(name, count, unitBid, unitBuyout, itemID)
+				A:RecordRow(name, count, unitBid, unitBuyout, itemID, quality)
 
 				tinsert(scan.results, {
 					name = name,

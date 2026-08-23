@@ -149,8 +149,22 @@ end
 
 --One auction. Takes loose values rather than a row table so a scan that is not
 --building a list never has to allocate one.
-function A:RecordRow(name, count, unitBid, unitBuyout, itemID)
+function A:RecordRow(name, count, unitBid, unitBuyout, itemID, quality)
 	if not (recording and name) then return end
+
+	--[[
+		Grey items are never banked, and this is the one place that decides it.
+
+		Poor quality has no use past the vendor -- not craftable, not disenchantable,
+		not a reagent for anything -- so a grey on the auction house is a troll or a
+		mistake, and the price is noise. Noise costs the same to store as signal: a
+		name, a record, and thirty daily points once history lands, for something
+		nobody will ever look up.
+
+		The scan still COLLECTS them, so they appear in search results where somebody
+		can see what is actually listed. They simply never reach the database.
+	]]
+	if quality == 0 then return end
 
 	count = count or 1
 	unitBid = unitBid or 0

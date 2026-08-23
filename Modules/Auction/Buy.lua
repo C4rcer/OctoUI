@@ -85,7 +85,21 @@ local function Matches(entry, index)
 	return true
 end
 
-local function FindAndBuy()
+--[[
+	Buy from the page the client is holding RIGHT NOW, if the auction is on it.
+
+	Returns true when it bought. This is the whole speed of the thing: the query gate
+	on this server is a flat five seconds, so a re-query costs five seconds every
+	single purchase -- and the page already loaded is very often the right one. A
+	single-page search never leaves it, and a bulk buy walks auctions that mostly
+	share a page.
+
+	It is exactly as safe as the slow path, because safety here has never come from
+	the re-query itself. It comes from Matches, which reads the LIVE row at that index
+	and checks the name, stack size, buyout and opening bid before a copper is
+	committed. A stale index simply fails to match.
+]]
+local function TryBuyFromCurrentPage()
 	local batch = GetNumAuctionItems("list")
 	batch = batch or 0
 
@@ -105,13 +119,21 @@ local function FindAndBuy()
 			end
 
 			if done then done(true, entry) end
-			return
+			return true
 		end
 	end
 
+	return false
+end
+
+--Reached only when the page had to be fetched. By this point the auction has been
+--looked for on the page the client held AND on a freshly requested one.
+local function FindAndBuy()
+	if TryBuyFromCurrentPage() then return end
+
 	local done = buy.onDone
 	Stop()
-	E:Print(L["That auction is gone -- it sold or expired. Search again."])
+	E:Print(L["AUCTION_ALREADY_SOLD"])
 	A:SetStatus(L["That auction is gone."])
 	if done then done(false) end
 end
@@ -209,6 +231,11 @@ function A:ConfirmedBuy(entry, amount, isBid, onDone)
 	buy.isBid = isBid
 	buy.onDone = onDone
 	buy.active = true
+
+	--Try what is already loaded before paying five seconds to ask for it again. Most
+	--purchases land here and complete instantly.
+	if TryBuyFromCurrentPage() then return end
+
 	buy.queryPending = true
 	buy.awaitingPage = false
 
