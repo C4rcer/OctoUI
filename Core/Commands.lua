@@ -1522,6 +1522,187 @@ function E:CCWatchReport(msg)
 	E:Print("Usage: /octoui-cc [test / add <spell> / remove <spell>]")
 end
 
+--The summon list. The window only exists for warlocks, so on anything else this is the only
+--way to see that the trigger word is being heard and relayed at all.
+function E:WarlockSummonCommand(msg)
+	local M = E:GetModule("Misc")
+
+	if not M.GetSummonRequests then
+		E:Print("The summon list is not loaded yet. Exit WoW.exe fully and start it again -- a /reload cannot pick up a file that was not there at login.")
+		return
+	end
+
+	--Nothing is built on any other class, so there is no list to report, no frame to toggle
+	--and no options page to open. One gate here rather than one per subcommand.
+	if E.myclass ~= "WARLOCK" then
+		E:Print(L["WARLOCKSUMMON_NOT_WARLOCK"])
+		return
+	end
+
+	local action, rest = match(msg or "", "^%s*(%S*)%s*(.-)%s*$")
+	action = lower(action or "")
+
+	--Names are case sensitive, so `rest` is taken exactly as typed.
+	if action == "add" or action == "remove" then
+		if rest == "" then
+			E:Print(format("Usage: /octoui-summon %s <player name>", action))
+			return
+		end
+
+		if action == "add" then
+			if M:AddSummonRequest(rest) then
+				E:Print(format("%s added to the list.", rest))
+			else
+				E:Print(format("%s is already on the list, or is you.", rest))
+			end
+		else
+			if M:RemoveSummonRequest(rest, true) then
+				E:Print(format("%s taken off the list.", rest))
+			else
+				E:Print(format("%s was not on the list.", rest))
+			end
+		end
+		return
+	end
+
+	if action == "show" then
+		local held = M:ToggleWarlockSummon()
+		if held == nil then
+			E:Print("|cffff3333The list frame was never built.|r /ocstatus reports module load errors.")
+		elseif held then
+			E:Print("Summon list held open. It stays up while empty; /octoui-summon show again releases it. /moveui to position it.")
+		else
+			E:Print("Summon list released. It now appears only when somebody asks for a summon.")
+		end
+		return
+	end
+
+	--Opens the options straight at this page. The standalone addon had its own settings
+	--window; here that window is a tab in /oc, so this deep-links rather than duplicating it.
+	if action == "settings" or action == "config" then
+		E:ToggleConfig()
+
+		local ACD = LibStub and LibStub("AceConfigDialog-3.0")
+		if E.ConfigLoaded and ACD and ACD.OpenFrames and ACD.OpenFrames[E.ConfigAppName] then
+			ACD:SelectGroup(E.ConfigAppName, "general", "warlockSummon")
+		end
+		return
+	end
+
+	--The four on/off switches the standalone addon had, kept as slash commands because
+	--flipping one mid-raid is faster than opening the options for it.
+	local toggles = {
+		zone = "zone", whisper = "whisper", shards = "shards", sound = "sound"
+	}
+
+	if toggles[action] then
+		local db = E.db.general.warlockSummon
+		if not db then
+			E:Print("|cffff3333No saved settings|r -- LoadWarlockSummon has not run.")
+			return
+		end
+
+		local key = toggles[action]
+		db[key] = not db[key]
+		E:Print(format("%s: %s", action, db[key] and "|cff44ff44enabled|r" or "|cffff3333disabled|r"))
+
+		--Hearing it is the point of switching it on, and it saves a second command.
+		if key == "sound" and db.sound and M.PlayWarlockSummonAlert then
+			M:PlayWarlockSummonAlert()
+		end
+		return
+	end
+
+	--Plays the alert on demand. PlaySoundFile is silent on a path that does not resolve, so
+	--"I heard nothing" has three causes -- switched off, unresolvable name, or the file
+	--genuinely making no sound -- and only printing the path separates them.
+	--`rest` is taken exactly as typed: sound names are multi-word and file paths are case
+	--sensitive to read even where the client does not care.
+	if action == "play" then
+		local db = E.db.general.warlockSummon
+		if db and not db.sound and rest == "" then
+			E:Print("The alert is switched off. /octoui-summon sound turns it back on.")
+			return
+		end
+
+		local path = M.PlayWarlockSummonAlert and M:PlayWarlockSummonAlert(rest ~= "" and rest or nil)
+		if path then
+			E:Print(format("Played |cff44ff44%s|r", path))
+			if rest ~= "" then
+				E:Print(format("  Silence means that file does not exist -- PlaySoundFile says nothing either way. Keep it with /octoui-summon alert %s", rest))
+			end
+		else
+			E:Print("|cffff3333Nothing to play.|r Not a registered sound name, and not shaped like a file path.")
+		end
+		return
+	end
+
+	--Setting it from chat is the only way to keep a raw client path; the options dropdown
+	--can only offer what LibSharedMedia knows, which here is OctoUI's own files.
+	if action == "alert" then
+		if rest == "" then
+			E:Print(format("Alert sound: |cff44ff44%s|r", (E.db.general.warlockSummon and E.db.general.warlockSummon.soundFile) or "?"))
+			E:Print("Usage: /octoui-summon alert <LibSharedMedia name or file path>")
+			return
+		end
+
+		local path = M.SetWarlockSummonAlert and M:SetWarlockSummonAlert(rest)
+		if path then
+			E:Print(format("Alert sound set to |cff44ff44%s|r (%s)", rest, path))
+		else
+			E:Print(format("|cffff3333%s|r is not a registered sound and does not look like a file path. Nothing changed.", rest))
+		end
+		return
+	end
+
+	if action == "help" then
+		E:Print("Summon list commands:")
+		E:Print("  |cff9482c9/octoui-summon|r -- who is waiting, and what state everything is in")
+		E:Print("  |cff9482c9show|r -- show or hide the list window")
+		E:Print("  |cff9482c9settings|r -- open the options at this page")
+		E:Print("  |cff9482c9zone|r / |cff9482c9whisper|r / |cff9482c9shards|r / |cff9482c9sound|r -- flip that switch")
+		E:Print("  |cff9482c9play|r [sound or path] -- play the alert, or audition any file")
+		E:Print("  |cff9482c9alert|r <sound or path> -- keep the one you just auditioned")
+		E:Print("  |cff9482c9add|r / |cff9482c9remove|r <name> -- put a row up or take one down by hand")
+		E:Print("Left-click a row summons, Ctrl-click only targets, right-click drops it. /moveui positions the list.")
+		return
+	end
+
+	local requests = M:GetSummonRequests()
+	local n = getn(requests)
+
+	if n == 0 then
+		E:Print(L["WARLOCKSUMMON_EMPTY"])
+	else
+		E:Print(format(L["WARLOCKSUMMON_WAITING"], n, concat(requests, ", ")))
+	end
+
+	--Read straight off the module, not defaulted, so a missing table reads as missing
+	--rather than as the value it would have had.
+	local db = E.db.general.warlockSummon
+	if db then
+		E:Print(format("  trigger: %s -- announce: %s", tostring(db.trigger), tostring(db.announce)))
+	else
+		E:Print("  |cffff3333no saved settings|r -- LoadWarlockSummon has not run.")
+	end
+
+	local frame = M.GetWarlockSummonFrame and M:GetWarlockSummonFrame()
+	if frame then
+		E:Print(format("  list frame: built, currently %s", frame:IsShown() and "shown" or "hidden"))
+	else
+		E:Print("  list frame: |cffff3333never built|r -- Misc:Initialize did not reach it. /ocstatus reports module load errors.")
+	end
+
+	--The list is raid-only by design, and testing it solo shows nothing at all: you cannot
+	--add yourself, and nothing is broadcast outside a raid. Say so rather than let an empty
+	--list read as a broken one.
+	if GetNumRaidMembers() == 0 then
+		E:Print("  not in a raid -- requests are only relayed in one. Use /octoui-summon add <name> to put a test row up.")
+	end
+
+	E:Print("Usage: /octoui-summon [help / show / settings / zone / whisper / shards / sound / play / alert / add <name> / remove <name>]")
+end
+
 --Lua snippets that load themselves. Adding one from chat is impractical -- a multi-line
 --function does not fit a slash command -- so this lists, runs and removes, and the options
 --page is where the code is pasted.
@@ -1837,6 +2018,10 @@ function E:LoadCommands()
 	self:RegisterChatCommand("octoui-roll", "AutoRollCommand")
 	self:RegisterChatCommand("octoui-mountgear", "MountGearReport")
 	self:RegisterChatCommand("octoui-cc", "CCWatchReport")
+	self:RegisterChatCommand("octoui-summon", "WarlockSummonCommand")
+	--The name the standalone addon answered to, kept for muscle memory. Harmless now that
+	--it is gone; if it is still installed the two fight over this and it should be removed.
+	self:RegisterChatCommand("warlocksummon", "WarlockSummonCommand")
 	self:RegisterChatCommand("octoui-lua", "LuaMacroCommand")
 	self:RegisterChatCommand("octoui-auras", "AuraReport")
 	self:RegisterChatCommand("octoui-dismount", "DismountReport")

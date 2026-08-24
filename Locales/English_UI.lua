@@ -636,6 +636,44 @@ L["Removes it from the list, whether it was one of yours or one of the built-in 
 L["Rows"] = true;
 L["CC_LOOSE"] = "LOOSE"
 
+--Modules/Misc/WarlockSummon.lua -- the raid summon list
+L["Summon List"] = true;
+L["A raider types the trigger word in chat and every warlock in the raid gets a clickable row. Left-click summons them, Ctrl-click only targets them, right-click drops the row. Summoning takes the row off everyone's list."] = true;
+L["The word a raider types to ask for a summon. Matched at the start of the line only."] = true;
+L["Announce In"] = true;
+L["Where the summon is announced. Say reaches the people standing at the stone, which is usually who needs to see it."] = true;
+L["Whisper Target"] = true;
+L["Also whispers the person being summoned, so they know to click."] = true;
+L["Include Zone"] = true;
+L["Adds where you are summoning to, which is the one thing a raider cannot see from the dialog."] = true;
+L["Include Shard Count"] = true;
+L["Adds how many soul shards you have left to the announcement."] = true;
+L["Sound On Request"] = true;
+L["Plays a sound when somebody joins the list."] = true;
+--Kept short on purpose: the row is 120px wide and the FontString is anchored on both sides,
+--so anything longer wraps onto a second line inside a 16px row. Grey is what says "empty".
+L["WARLOCKSUMMON_EMPTY_ROW"] = "Summon List"
+L["Alert Sound"] = true;
+L["Which sound. The dropdown plays each one as you move through it, which is the only reliable way to hear what a file does on this client."] = true;
+L["Use /moveui to position the list. /octoui-summon shows it and reports who is waiting."] = true;
+L["Say"] = true;
+L["Raid"] = true;
+L["None"] = true;
+--Sent to the raid, so these are plain sentences rather than anything OctoUI-branded.
+L["WARLOCKSUMMON_SAY"] = "Summoning %s"
+L["WARLOCKSUMMON_WHISPER"] = "Summoning you"
+L["WARLOCKSUMMON_TO_ZONE"] = "to %s"
+L["WARLOCKSUMMON_SHARDS"] = "[%d shards left]"
+L["WARLOCKSUMMON_EVILTWIN_WHISPER"] = "Cannot summon you while you have Evil Twin -- you need to die or run it yourself."
+--These go to your own chat frame through E:Print, which prefixes them with OctoUI.
+L["WARLOCKSUMMON_EVILTWIN"] = "%s has |cffff0000Evil Twin|r and cannot be summoned."
+L["WARLOCKSUMMON_IN_RANGE"] = "%s is already |cff44ff44in range|r -- taken off the list."
+L["WARLOCKSUMMON_IN_COMBAT"] = "Cannot summon %s: one of you is in combat."
+L["WARLOCKSUMMON_NOT_IN_RAID"] = "%s is not in the raid -- taken off the list."
+L["WARLOCKSUMMON_WAITING"] = "Waiting for a summon (%d): %s"
+L["WARLOCKSUMMON_EMPTY"] = "Nobody is waiting for a summon."
+L["WARLOCKSUMMON_NOT_WARLOCK"] = "The summon list is warlock only, and nothing is loaded on this character."
+
 --Modules/Misc/LuaMacros.lua -- Lua that loads itself so a macro can call it
 L["Lua Macros"] = true;
 L["Lua that is compiled and run every time the UI loads, so a macro can call it by name. A 255 character macro cannot hold a function; this is where the function lives. Call it with /run YourFunction()"] = true;

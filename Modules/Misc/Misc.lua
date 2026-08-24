@@ -200,6 +200,7 @@ function M:Initialize()
 	--Reads AutoDismount's mount check, so it is loaded after it.
 	if self.LoadMountGear then self:LoadMountGear() end
 	if self.LoadCCWatch then self:LoadCCWatch() end
+	if self.LoadWarlockSummon then self:LoadWarlockSummon() end
 	if self.LoadLuaMacros then self:LoadLuaMacros() end
 	self:LoadEnergyTick()
 	self:LoadCombatFeedback()
