@@ -56,6 +56,10 @@ local function BuildRow(index, page)
 	bidAmount = bidAmount or 0
 	local buyout = buyoutPrice or 0
 
+	--Captured on arrival for the same reason as the Auctions tab: the index is into
+	--the page the server last sent, and a hover happens long after that.
+	local itemString, itemID = A:CaptureItem("bidder", index)
+
 	return {
 		name = name,
 		count = count,
@@ -63,6 +67,8 @@ local function BuildRow(index, page)
 		level = level,
 		page = page,
 		index = index,
+		itemString = itemString,
+		itemID = itemID,
 		minBid = minBid,
 		bid = bidAmount,
 		buyout = buyout,
@@ -338,7 +344,9 @@ A.tabBuilders["bids"] = function(page)
 
 	listing.OnEnter = function(entry, row)
 		GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
-		GameTooltip:AddLine(entry.name)
+		--The item itself. Whether to raise a bid turns on what the thing is at least
+		--as much as on what it currently costs.
+		A:ItemTooltip(GameTooltip, entry)
 		if entry.count > 1 then
 			GameTooltip:AddLine(format(L["Stack of %d"], entry.count), 1, 1, 1)
 		end

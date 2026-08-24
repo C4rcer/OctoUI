@@ -1426,11 +1426,26 @@ function B:ContructContainerFrame(name, isBank)
 		f.vendorGraysButton:SetScript("OnLeave", self.Tooltip_Hide)
 		f.vendorGraysButton:SetScript("OnClick", B.VendorGrayCheck)
 
+		--[[
+			Hidden by default, because selling greys happens on its own the moment a
+			merchant window opens. A button whose whole job has already been done by the
+			time you can press it is clutter.
+
+			A hidden frame still occupies its anchor, so the hearthstone has to be
+			re-anchored past it or the row keeps a 21px hole where the coin used to be.
+		]]
+		local showGrays = E.db.bags.vendorGrays.showButton
+		if not showGrays then f.vendorGraysButton:Hide() end
+
 		--Hearthstone
 		f.hearthButton = CreateFrame("Button", name.."HearthButton", f.holderFrame)
 		E:Size(f.hearthButton, 16 + E.Border)
 		E:SetTemplate(f.hearthButton)
-		E:Point(f.hearthButton, "RIGHT", f.vendorGraysButton, "LEFT", -5, 0)
+		if showGrays then
+			E:Point(f.hearthButton, "RIGHT", f.vendorGraysButton, "LEFT", -5, 0)
+		else
+			E:Point(f.hearthButton, "RIGHT", f.bagsButton, "LEFT", -5, 0)
+		end
 		f.hearthButton:SetNormalTexture("Interface\\ICONS\\INV_Misc_Rune_01")
 		f.hearthButton:GetNormalTexture():SetTexCoord(unpack(E.TexCoords))
 		E:SetInside(f.hearthButton:GetNormalTexture())

@@ -300,8 +300,13 @@ end
 --Put the auction house back on the first page of the search. A scan ends
 --wherever the last page was, and leaving it there looks exactly like the search
 --broke. Gated like every other query, so it queues rather than fires.
+--
+--A category browse has no name and still has a result set to restore, so the test
+--is "was there a query at all" rather than "was something typed". A full scan has
+--nothing to go back to and is skipped.
 local function RestoreFirstPage()
-	if not scan.name or scan.name == "" then return end
+	if scan.full then return end
+	if not (scan.name and scan.name ~= "") and not scan.class then return end
 	scan.restorePending = true
 	Pump():SetScript("OnUpdate", scan.onUpdate)
 end
@@ -401,11 +406,21 @@ local function CollectPage()
 				--GetAuctionItemInfo does not return one. It is nil for a row whose item
 				--the client has not cached yet, which is ordinary rather than an error,
 				--so everything downstream treats both the link and the id as optional.
+				--
+				--The item STRING is kept as well as the id, and that is not redundant:
+				--GetAuctionItemLink returns the whole formatted link, and
+				--GameTooltip:SetHyperlink on this client only accepts the payload out of
+				--it. Extracting once here rather than in an OnEnter handler means the
+				--tooltip does no string work per hover. See A:ItemTooltip in Listing.lua
+				--for what passing the wrong one looks like.
 				local link = GetAuctionItemLink and GetAuctionItemLink("list", i) or nil
-				local itemID = nil
+				local itemID, itemString = nil, nil
 				if link then
 					local _, _, id = find(link, "item:(%d+)")
 					itemID = id and tonumber(id) or nil
+
+					local _, _, payload = find(link, "(item:[%-%d:]+)")
+					itemString = payload
 				end
 
 				A:RecordRow(name, count, unitBid, unitBuyout, itemID, quality)
@@ -420,6 +435,7 @@ local function CollectPage()
 					owner = owner,
 					link = link,
 					itemID = itemID,
+					itemString = itemString,
 					timeLeft = GetAuctionItemTimeLeft and GetAuctionItemTimeLeft("list", i) or nil,
 					minBid = minBid or 0,
 					bid = bid,
@@ -506,9 +522,20 @@ local function CollectPage()
 	local capped = cap and (not lastPage) and read >= cap
 
 	if lastPage or capped or (not scan.full and collected >= scan.total) then
-		--Where the next pass picks up. Cleared on a clean finish so pressing the
-		--button again after a completed scan starts over rather than off the end.
-		A.scanResume = capped and (scan.page + 1) or nil
+		--[[
+			Where the next FULL pass picks up. Cleared on a clean finish so pressing the
+			button again after a completed scan starts over rather than off the end.
+
+			Guarded on scan.full because a search can be capped too -- at 40 pages -- and
+			that used to write the resume point as well. Browsing a category makes hitting
+			that cap ordinary rather than rare, and the consequence was that the Scan All
+			button started reading "Scan All (resume)" and would then resume a whole-house
+			scan at page 40 of somebody else's search. A page number only means anything
+			inside the result set it came from.
+		]]
+		if scan.full then
+			A.scanResume = capped and (scan.page + 1) or nil
+		end
 		Finish(capped and "capped" or "done")
 	else
 		scan.page = scan.page + 1
@@ -530,7 +557,8 @@ local function OnUpdate()
 	if scan.restorePending then
 		if CanSendAuctionQuery() then
 			scan.restorePending = false
-			QueryAuctionItems(scan.name, scan.minLevel, scan.maxLevel, nil, nil, nil, 0, nil, nil)
+			QueryAuctionItems(scan.name, scan.minLevel, scan.maxLevel,
+				scan.invType, scan.class, scan.subclass, 0, scan.usable, scan.quality)
 			this:SetScript("OnUpdate", nil)
 		end
 		return
@@ -551,7 +579,7 @@ local function OnUpdate()
 			scan.lastQueryAt = GetTime()
 			scan.gateSeen = false
 			QueryAuctionItems(scan.name, scan.minLevel, scan.maxLevel,
-				nil, nil, nil, scan.page, nil, nil)
+				scan.invType, scan.class, scan.subclass, scan.page, scan.usable, scan.quality)
 		end
 	elseif scan.awaitingPage and scan.pageArrived then
 		--The page is here but its seller names may not be. CollectPage returns without
@@ -626,11 +654,28 @@ end
 	Passed in per scan, they cannot collide. Only one scan runs at a time either
 	way, which is the real constraint, and now that constraint is the only one.
 ]]
-local function Begin(name, minLevel, maxLevel, full, fromPage, handlers)
+--[[
+	`filters` is the category browse: the three indices Blizzard's own browse list
+	produces, plus quality and the usable flag. They are simply the remaining
+	arguments of QueryAuctionItems, held on the scan so that every page of one walk
+	asks the same question -- changing a dropdown mid-scan must not make page 7 of a
+	cloth search return leather.
+
+	Nil throughout is the whole auction house, which is what a full scan wants and
+	what a name-only search has always sent.
+]]
+local function Begin(name, minLevel, maxLevel, full, fromPage, handlers, filters)
+	filters = filters or {}
+
 	scan.results = {}
 	scan.name = name
 	scan.minLevel = minLevel
 	scan.maxLevel = maxLevel
+	scan.class = filters.class
+	scan.subclass = filters.subclass
+	scan.invType = filters.invType
+	scan.quality = filters.quality
+	scan.usable = filters.usable
 	scan.full = full and true or false
 	scan.handlers = handlers
 	scan.page = fromPage or 0
@@ -652,7 +697,7 @@ local function Begin(name, minLevel, maxLevel, full, fromPage, handlers)
 	Pump():SetScript("OnUpdate", scan.onUpdate)
 end
 
-function A:StartScan(name, minLevel, maxLevel, handlers)
+function A:StartScan(name, minLevel, maxLevel, handlers, filters)
 	if scan.active then
 		self:CancelScan()
 		return false
@@ -663,12 +708,30 @@ function A:StartScan(name, minLevel, maxLevel, handlers)
 		return false
 	end
 
-	if not name or name == "" then
-		E:Print(L["Auction house: type something to search for."])
+	--[[
+		A NAME **OR** A CATEGORY.
+
+		Refusing an empty box was right while the box was the only filter there was:
+		an unfiltered search is the whole auction house, which is a full scan wearing
+		a search's clothes and would run into the 40-page cap having answered nothing.
+
+		It is wrong the moment there is a category to browse. "Level 32 cloth" is not
+		a name -- there is nothing to type -- and it is precisely the question the Min
+		and Max boxes were already sitting there to ask. Anything that narrows the
+		query counts, so a quality or a usable-only browse is accepted on the same
+		terms.
+	]]
+	local narrowed = filters and (filters.class or filters.quality or filters.usable)
+	if (not name or name == "") and not narrowed then
+		E:Print(L["AUCTION_SEARCH_NEEDS_TERM"])
 		return false
 	end
 
-	Begin(name, minLevel, maxLevel, false, nil, handlers)
+	--Nil, never an empty string. The client treats the two differently and "" comes
+	--back with nothing at all -- the same trap StartFullScan documents below.
+	if name == "" then name = nil end
+
+	Begin(name, minLevel, maxLevel, false, nil, handlers, filters)
 	return true
 end
 

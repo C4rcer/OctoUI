@@ -3,13 +3,14 @@ local A = E:GetModule("Auction");
 
 --Cache global variables
 --Lua functions
-local ipairs, type, unpack = ipairs, type, unpack
+local ipairs, type, unpack, tonumber = ipairs, type, unpack, tonumber
 local sort, getn, tinsert = table.sort, table.getn, table.insert
-local format = string.format
+local format, find = string.format, string.find
 local floor, max, min = math.floor, math.max, math.min
 local mod = math.mod
 --WoW API / Variables
 local CreateFrame = CreateFrame
+local GetAuctionItemLink = GetAuctionItemLink
 
 --[[
 	The sortable column list every auction tab draws into.
@@ -404,4 +405,96 @@ function A:Money(copper)
 	local text = parts[1]
 	for i = 2, getn(parts) do text = text.." "..parts[i] end
 	return text
+end
+
+--[[
+	The real item tooltip for a listing row.
+
+	WHY EVERY AUCTION TOOLTIP WAS A BARE NAME. `GameTooltip:SetHyperlink` on this
+	client takes the item STRING -- `item:12345:0:0:0` -- and nothing else. Hand it
+	the whole formatted link that GetAuctionItemLink returns,
+	`|cff1eff00|Hitem:12345:0:0:0|h[Name]|h|r`, and it is accepted and does nothing:
+	no error, no lines, an empty tooltip that the caller then adds its own price
+	lines underneath. So a search result showed a price and no stats, which is the
+	one thing a tooltip on an auction row exists to show. Modules/Misc/LootRoll.lua
+	already extracts before calling; so does the chat hyperlink handler. This is the
+	same fix in the one place all four tabs can share it.
+
+	THREE SOURCES, in descending order of trust:
+
+	  1. the item string captured when the row was scanned,
+	  2. the item id, for a row that resolved a link but did not keep the string,
+	  3. the id the price database recorded against this name -- which is how a row
+	     whose item the client had not cached at scan time still gets a real tooltip
+	     once anything has seen it since.
+
+	Nothing here calls GetItemInfoByName. That polyfill walks 24,283 item ids on a
+	miss, and an OnEnter handler is the last place that belongs.
+]]
+function A:ItemString(entry)
+	if not entry then return nil end
+	if entry.itemString then return entry.itemString end
+	if entry.itemID then return "item:"..entry.itemID..":0:0:0" end
+
+	local prices = E.global and E.global.auctionPrices
+	local record = entry.name and prices and prices[entry.name]
+	if record and record.id then return "item:"..record.id..":0:0:0" end
+
+	return nil
+end
+
+--[[
+	Fill `tooltip` with the item, and say whether that worked.
+
+	The success test is NumLines rather than hope. An item this client has genuinely
+	never seen answers SetHyperlink with nothing at all, and a tooltip carrying the
+	bid lines and no name is worse than one that never tried -- so a silent failure
+	falls back to the name and required level, which is what the tabs used to draw
+	unconditionally.
+
+	Callers own SetOwner and Show; this only fills the middle.
+]]
+function A:ItemTooltip(tooltip, entry)
+	local itemString = self:ItemString(entry)
+
+	if itemString then
+		tooltip:SetHyperlink(itemString)
+		if tooltip.NumLines and tooltip:NumLines() > 0 then return true end
+		tooltip:ClearLines()
+	end
+
+	tooltip:AddLine(entry.name or "?")
+	if entry.level and entry.level > 1 then
+		tooltip:AddLine(format(L["AUCTION_ITEM_REQUIRES_LEVEL"], entry.level), 1, 1, 1)
+	end
+
+	return false
+end
+
+--[[
+	The item string and id for one row of a client auction result set.
+
+	`listType` is "list" (the browse), "owner" (your postings) or "bidder" (what you
+	have bid on) -- three separate result sets, each with its own indices, and all
+	three answered by the same call.
+
+	BOTH RETURNS ARE OPTIONAL. An item this client has never cached answers with no
+	link at all, which is ordinary on a first search rather than an error, so
+	everything downstream treats a missing id the same way it treats a missing owner
+	name: degrade, do not fail.
+
+	The STRING is what a tooltip wants and the ID is what the price database wants,
+	and they are extracted together because the link is a string allocation either
+	way. See A:ItemTooltip for why the raw link is no use to SetHyperlink.
+]]
+function A:CaptureItem(listType, index)
+	if not GetAuctionItemLink then return nil, nil end
+
+	local link = GetAuctionItemLink(listType, index)
+	if not link then return nil, nil end
+
+	local _, _, payload = find(link, "(item:[%-%d:]+)")
+	local _, _, id = find(link, "item:(%d+)")
+
+	return payload, id and tonumber(id) or nil
 end

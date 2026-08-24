@@ -260,8 +260,23 @@ P["bags"] = {
 			["questItem"] = {r = 1, g = 0.30, b = 0.30}
 		}
 	},
+	--[[
+		On by default. Grey items are vendor fodder by definition -- not craftable,
+		not disenchantable, not a reagent for anything -- so carrying them to a
+		merchant and then pressing a button to sell them is a step that exists only
+		because somebody made it a step. Misc.lua's MERCHANT_SHOW does it the moment
+		the window opens.
+
+		The bag button is NOT redundant: away from a vendor it offers to DELETE greys
+		instead, which is the only way to clear them when there is no merchant.
+	]]
 	["vendorGrays"] = {
-		["enable"] = false,
+		["enable"] = true,
+		--The coin icon on the bag frame. Off, because with the above on it has nothing
+		--to do at a vendor -- the selling has already happened by the time the bags are
+		--open. Its other job survives for anyone who wants it: away from a vendor it
+		--offers to DELETE greys, which is the only route to that.
+		["showButton"] = false,
 		["interval"] = 0.2,
 		["details"] = false,
 		["progressBar"] = true

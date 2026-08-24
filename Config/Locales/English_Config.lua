@@ -484,6 +484,8 @@ L["Automatically repair using the following method when visiting a merchant."] =
 L["Automatically scale the User Interface based on your screen resolution"] = true
 L["Automatically select greed or disenchant (when available) on green quality items. This will only work if you are the max level."] = true
 L["Automatically vendor gray items when visiting a vendor."] = true
+L["Show Bag Button"] = true
+L["VENDOR_GRAYS_BUTTON_DESC"] = "Show the coin icon on the bag frame. Off by default: with automatic vendoring on it has nothing left to do at a merchant, because the selling has already happened by the time you open your bags. Turn it on if you want its other job - away from a vendor it offers to DELETE grey items, which is the only way to clear them with no merchant around. Takes a reload."
 L["Bottom Panel"] = true
 L["Change Language"] = true
 L["Change the ElvUI option to a different language."] = "Change the OctoUI option to a different language."
@@ -1266,11 +1268,11 @@ L["Character Stats"] = true
 L["A panel beside the character sheet showing the stats the 1.12 paperdoll has no row for. Values are read from your gear, buffs and talents."] = true
 L["Which side of the character sheet the panel attaches to."] = true
 L["Rows"] = true
-L["Which stats the panel lists. A stat left on still shows when it is zero -- an empty row is an answer."] = true
+L["Which stats the panel lists. A stat left on still shows when it is zero - an empty row is an answer."] = true
 
 --Nameplate power bar
 L["Power Bar"] = true
-L["Sits between the health bar and the cast bar. Only units with a mana pool get one -- rage and energy mobs sit at 0 and say nothing useful."] = true
+L["Sits between the health bar and the cast bar. Only units with a mana pool get one - rage and energy mobs sit at 0 and say nothing useful."] = true
 
 --Unit frame aura timers
 L["Aura Timer Position"] = true
@@ -1293,7 +1295,7 @@ L["Healing"] = true
 L["Merge Pet Damage"] = true
 L["Count a pet's damage towards whoever summoned it, rather than giving the pet its own row."] = true
 L["Credit Damage Shields to the Caster"] = true
-L["A damage shield is normally credited to whoever is wearing it, which is what the game reports and what other meters show. Turn this on to credit it to whoever applied it instead -- an imp's Fire Shield on a tank counting as the warlock's damage. Approximate: it follows the last aura a group member cast on that unit."] = true
+L["A damage shield is normally credited to whoever is wearing it, which is what the game reports and what other meters show. Turn this on to credit it to whoever applied it instead - an imp's Fire Shield on a tank counting as the warlock's damage. Approximate: it follows the last aura a group member cast on that unit."] = true
 
 
 --Strings that reached the options tree and the chat frame without ever having a
@@ -1392,7 +1394,7 @@ L["Apply every change on this page now."] = true
 L["Auction Scan Pages"] = true;
 L["AUCTION_SCAN_PAGES_DESC"] = "A ceiling on how many pages one Scan All reads. ZERO, the default, means no limit: the scan runs to the end on its own and Cancel is always available. Set a number only if your machine struggles, because the real cost of a scan is the game client caching item data for every unique item a page returns, and that has run this client out of memory before. Hitting the ceiling stops the scan and the button offers to carry on from where it left off. Restarting the game before a very large scan is real advice here, not hygiene."
 
-L["AUCTION_HOUSE_DESC"] = "Replace Blizzard's auction window with OctoUI's own. Searching walks every page of the result and lists what is out there sorted by price per unit, which is the number a stack hides, and every price it sees is saved so it can be shown on the item's tooltip anywhere in the world. Off by default, and it refuses to run at all while aux, Auctioneer or AuctionLite is loaded -- only one addon can drive the auction house's query throttle, and two scanners leave both with results that are silently wrong."
+L["AUCTION_HOUSE_DESC"] = "Replace Blizzard's auction window with OctoUI's own. Searching walks every page of the result and lists what is out there sorted by price per unit, which is the number a stack hides, and every price it sees is saved so it can be shown on the item's tooltip anywhere in the world. Off by default, and it refuses to run at all while aux, Auctioneer or AuctionLite is loaded - only one addon can drive the auction house's query throttle, and two scanners leave both with results that are silently wrong."
 
 --Modules/Misc/AuctionHouse.lua
 L["Auction Unit Prices"] = true;
@@ -1400,12 +1402,12 @@ L["AUCTION_UNIT_PRICE_DESC"] = "On the auction house browse list, show each row'
 
 --Modules/Tooltip/Tooltip.lua
 L["Auction Price"] = true;
-L["AUCTION_PRICE_DESC"] = "Show what the auction house is charging for an item next to what the vendor pays, so 'list it or vendor it' can be answered without walking to the auctioneer. Only covers items an auction house scan has actually seen -- search for an item at the auction house to record it, and /octoui-ah prices <name> to see what is stored. The headline figure is the cheapest per unit; a second line gives the typical price where the two differ. Needs Item Price switched on, since that is what puts the price block on the tooltip at all."
+L["AUCTION_PRICE_DESC"] = "Show what the auction house is charging for an item next to what the vendor pays, so 'list it or vendor it' can be answered without walking to the auctioneer. Only covers items an auction house scan has actually seen - search for an item at the auction house to record it, and /octoui-ah prices <name> to see what is stored. The headline figure is the cheapest per unit; a second line gives the typical price where the two differ. Needs Item Price switched on, since that is what puts the price block on the tooltip at all."
 L["Auction Price Age Limit"] = true;
-L["AUCTION_PRICE_MAX_AGE_DESC"] = "Stop showing a scanned price once it is this many days old. Zero, the default, shows every reading with its age beside it -- and any reading over a week old is drawn in orange whatever this is set to. Use /octoui-ah purge <days> to delete old readings rather than merely hiding them."
+L["AUCTION_PRICE_MAX_AGE_DESC"] = "Stop showing a scanned price once it is this many days old. Zero, the default, shows every reading with its age beside it - and any reading over a week old is drawn in orange whatever this is set to. Use /octoui-ah purge <days> to delete old readings rather than merely hiding them."
 
 --Modules/Misc/MailTools.lua
 L["Mail Take All"] = true;
 L["Take All Interval"] = true;
 L["MAIL_TAKEALL_DESC"] = "Add a Take All button to the mailbox that empties every letter of its money and attachments. Cash-on-delivery letters are always skipped, because taking one pays the sender out of your own gold."
-L["MAIL_TAKEALL_INTERVAL_DESC"] = "Seconds to wait between mail actions. This is a floor on top of waiting for the server to confirm each one, not a replacement for it -- raise it if attachments are being missed."
+L["MAIL_TAKEALL_INTERVAL_DESC"] = "Seconds to wait between mail actions. This is a floor on top of waiting for the server to confirm each one, not a replacement for it - raise it if attachments are being missed."

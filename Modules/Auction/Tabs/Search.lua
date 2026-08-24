@@ -12,6 +12,10 @@ local CreateFrame = CreateFrame
 local GetItemQualityColor = GetItemQualityColor
 local PlaceAuctionBid = PlaceAuctionBid
 local GameTooltip = GameTooltip
+local GetAuctionItemClasses = GetAuctionItemClasses
+local GetAuctionItemSubClasses = GetAuctionItemSubClasses
+local GetAuctionInvTypes = GetAuctionInvTypes
+local getglobal = getglobal
 
 --[[
 	The search tab: type a name, walk every page, list what is out there by price
@@ -31,7 +35,11 @@ local GameTooltip = GameTooltip
 	that index now, which is how people buy the wrong auction.
 ]]
 
-local ROWS = 19
+--One row fewer than before, because the category browse takes a second filter
+--row and the page is a fixed 400 tall: header, gap and 18 rows is 344 of the 348
+--that are left. Nineteen overflowed the page and drew the last row over the
+--status line.
+local ROWS = 18
 
 local function QualityColor(entry)
 	local r, g, b = GetItemQualityColor(entry.quality or 1)
@@ -118,6 +126,139 @@ local function LevelBox(page, label, anchor, x)
 	return box
 end
 
+--[[
+	THE CATEGORY BROWSE.
+
+	Blizzard's browse pane is a two-level list down the left of the auction house:
+	a class, its subclasses, and for equipment the slots inside one. Replacing all
+	of that with a single name box removed a whole way of shopping rather than
+	simplifying it -- "level 32 cloth" is not a name, so there is nothing to type,
+	and no amount of searching finds it. These are the same three indices that list
+	produces and they go into the same three QueryAuctionItems arguments.
+
+	MENUS RATHER THAN A TREE, for one reason that is not taste: the window is 780
+	wide and a category column costs 150 of them off the results, which is where the
+	three money columns already have nothing to spare -- see the column weight note
+	above, where a truncated price does not read as truncated, it reads as a
+	different number. Three buttons on a second filter row cost eighteen pixels of
+	height and nothing at all horizontally.
+
+	READ ONCE AND CACHED ON THE MODULE. The class tables are static client data, so
+	rebuilding them per click is pure waste, and they are read lazily because the
+	tab is built the first time the window opens rather than at login.
+]]
+local function ClassList()
+	if not A.itemClasses then
+		A.itemClasses = GetAuctionItemClasses and {GetAuctionItemClasses()} or {}
+	end
+	return A.itemClasses
+end
+
+local function SubClassList(class)
+	if not (class and GetAuctionItemSubClasses) then return nil end
+
+	A.itemSubClasses = A.itemSubClasses or {}
+	if not A.itemSubClasses[class] then
+		A.itemSubClasses[class] = {GetAuctionItemSubClasses(class)}
+	end
+	return A.itemSubClasses[class]
+end
+
+--[[
+	The equipment slots within one subclass -- Head, Shoulder, Chest and so on.
+
+	GUARDED ON THE FUNCTION EXISTING, unlike the two above. GetAuctionItemClasses and
+	GetAuctionItemSubClasses are already relied on by Modules/Bags/Sort.lua and are
+	therefore known to be here; GetAuctionInvTypes has never been measured on this
+	client. If it is absent the slot button simply never offers anything and the
+	other two levels still work, which is a browse that is narrower than Blizzard's
+	rather than a tab that fails to build.
+
+	It answers with the NAMES of global strings ("INVTYPE_HEAD"), not with text.
+]]
+local function InvTypeList(class, subclass)
+	if not (class and subclass and GetAuctionInvTypes) then return nil end
+
+	A.itemInvTypes = A.itemInvTypes or {}
+	local key = class..":"..subclass
+	if not A.itemInvTypes[key] then
+		A.itemInvTypes[key] = {GetAuctionInvTypes(class, subclass)}
+	end
+	return A.itemInvTypes[key]
+end
+
+local function InvTypeLabel(token)
+	if not token then return nil end
+	return getglobal(token) or token
+end
+
+--Quality reads as its own colour, which is the only labelling anybody actually
+--uses when picking one. Zero is a real index (Poor), so callers must test against
+--nil rather than truthiness.
+local function QualityLabel(index)
+	local text = getglobal("ITEM_QUALITY"..index.."_DESC")
+	if not text then return nil end
+
+	local r, g, b = GetItemQualityColor(index)
+	if not r then return text end
+
+	return format("|cff%02x%02x%02x%s|r", floor(r * 255), floor(g * 255), floor(b * 255), text)
+end
+
+--[[
+	One menu entry, built by a FUNCTION CALL rather than inside the loop body.
+
+	A closure created in a loop has been measured on this client reading the loop's
+	own variable as nil when it later ran -- the column header handlers in
+	Listing.lua carry the worked example and the symptom, which is an "attempt to
+	index a nil value" from a handler that looks perfectly ordinary. A parameter is
+	unambiguously fresh per call and cannot have that problem, so every entry below
+	is made through here rather than written out where the loop can reach it.
+]]
+local function MenuEntry(label, apply, value)
+	return {text = label, func = function() apply(value) end}
+end
+
+--[[
+	A button that shows what it is currently filtering on.
+
+	Grey placeholder for "not filtering", value colour for a live filter, so the
+	state of the whole browse reads at a glance without opening anything. An
+	unavailable level -- a subclass with no class chosen, or slots on a client with
+	no GetAuctionInvTypes -- is darker still and swallows its own clicks, rather
+	than opening a menu with one entry in it.
+]]
+local function FilterButton(page, width, placeholder)
+	local button = CreateFrame("Button", nil, page)
+	E:Size(button, width, 18)
+	E:SetTemplate(button, "Transparent")
+
+	button.text = button:CreateFontString(nil, "OVERLAY")
+	E:FontTemplate(button.text, nil, 11, "NONE")
+	button.text:SetAllPoints()
+	button.placeholder = placeholder
+	button.available = true
+
+	function button:SetValue(text)
+		if text then
+			self.text:SetText(text)
+			self.text:SetTextColor(unpack(E.media.rgbvaluecolor))
+		else
+			self.text:SetText(self.placeholder)
+			self.text:SetTextColor(self.available and 0.45 or 0.25,
+				self.available and 0.45 or 0.25, self.available and 0.45 or 0.25)
+		end
+	end
+
+	button:SetScript("OnEnter", function()
+		if this.available then this:SetBackdropBorderColor(1, 1, 1) end
+	end)
+	button:SetScript("OnLeave", function() E:SetTemplate(this, "Transparent") end)
+	button:SetValue(nil)
+
+	return button
+end
+
 A.tabBuilders = A.tabBuilders or {}
 
 A.tabBuilders["search"] = function(page)
@@ -192,8 +333,201 @@ A.tabBuilders["search"] = function(page)
 	buyButton.text:SetAllPoints()
 	buyButton.text:SetText(L["Buy"])
 
+	----------------------------------------------------------------------------
+	-- The second filter row: category, subcategory, slot, quality, usable.
+	----------------------------------------------------------------------------
+
+	--The browse, as the arguments QueryAuctionItems actually takes. Held on the tab
+	--rather than read off the buttons at query time, so one walk asks one question:
+	--changing a dropdown mid-scan must not let page 7 of a cloth search come back
+	--leather.
+	local filters = {}
+
+	--One frame for all four menus. E:DropDown needs a named frame -- it puts the
+	--name into UISpecialFrames so Escape closes it -- and five of them would be five
+	--frames this client will never free.
+	local menu = CreateFrame("Frame", "OctoUI_AuctionFilterMenu", E.UIParent)
+	E:SetTemplate(menu, "Transparent")
+	menu:Hide()
+
+	local classButton = FilterButton(page, 108, L["Category"])
+	E:Point(classButton, "TOPLEFT", search, "BOTTOMLEFT", 0, -8)
+
+	local subButton = FilterButton(page, 118, L["Subcategory"])
+	E:Point(subButton, "LEFT", classButton, "RIGHT", 4, 0)
+
+	local slotButton = FilterButton(page, 108, L["Slot"])
+	E:Point(slotButton, "LEFT", subButton, "RIGHT", 4, 0)
+
+	local qualityButton = FilterButton(page, 90, L["Quality"])
+	E:Point(qualityButton, "LEFT", slotButton, "RIGHT", 4, 0)
+
+	local usableButton = FilterButton(page, 66, L["Usable"])
+	E:Point(usableButton, "LEFT", qualityButton, "RIGHT", 4, 0)
+
+	local clearButton = FilterButton(page, 56, L["Clear"])
+	E:Point(clearButton, "LEFT", usableButton, "RIGHT", 4, 0)
+
+	--Declared before everything that calls it. A local declared after the function
+	--that uses it resolves to a nil global on this client, silently.
+	local function RefreshFilters()
+		local classes = ClassList()
+		classButton:SetValue(filters.class and classes[filters.class] or nil)
+
+		local subs = SubClassList(filters.class)
+		subButton.available = (subs and getn(subs) > 0) and true or false
+		subButton:SetValue(filters.subclass and subs and subs[filters.subclass] or nil)
+
+		local slots = InvTypeList(filters.class, filters.subclass)
+		slotButton.available = (slots and getn(slots) > 0) and true or false
+		slotButton:SetValue(filters.invType and slots and InvTypeLabel(slots[filters.invType]) or nil)
+
+		--Quality 0 is Poor, which is a real filter. Tested against nil rather than
+		--truthiness everywhere it is read.
+		qualityButton:SetValue((filters.quality ~= nil) and QualityLabel(filters.quality) or nil)
+		usableButton:SetValue(filters.usable and L["Usable"] or nil)
+	end
+	RefreshFilters()
+
+	local function OpenMenu(button, list)
+		if not button.available then return end
+		if getn(list) == 0 then return end
+
+		--One frame for five buttons means a menu another button left open has to be
+		--CLOSED rather than toggled: E:DropDown ends in ToggleFrame, so opening the
+		--second menu while the first is up would hide it and leave the click looking
+		--like it did nothing at all.
+		if menu:IsShown() and menu.owner ~= button then menu:Hide() end
+		menu.owner = button
+
+		E:DropDown(list, menu, 0, 0)
+	end
+
+	--Choosing a level clears everything under it. A subclass index only means
+	--anything inside its class, so carrying "Cloth" over from Armor into Weapon
+	--would query subclass 2 of Weapon -- a different thing entirely, and one that
+	--returns results, which is what makes it worth being careful about.
+	local function SetClass(index)
+		filters.class = index
+		filters.subclass = nil
+		filters.invType = nil
+		RefreshFilters()
+	end
+
+	local function SetSubClass(index)
+		filters.subclass = index
+		filters.invType = nil
+		RefreshFilters()
+	end
+
+	local function SetInvType(index)
+		filters.invType = index
+		RefreshFilters()
+	end
+
+	local function SetQuality(index)
+		filters.quality = index
+		RefreshFilters()
+	end
+
+	classButton:SetScript("OnClick", function()
+		local classes = ClassList()
+		local list = {MenuEntry(L["All categories"], SetClass, nil)}
+		for i = 1, getn(classes) do
+			tinsert(list, MenuEntry(classes[i], SetClass, i))
+		end
+		OpenMenu(this, list)
+	end)
+
+	subButton:SetScript("OnClick", function()
+		local subs = SubClassList(filters.class)
+		if not subs then return end
+
+		local list = {MenuEntry(L["All subcategories"], SetSubClass, nil)}
+		for i = 1, getn(subs) do
+			tinsert(list, MenuEntry(subs[i], SetSubClass, i))
+		end
+		OpenMenu(this, list)
+	end)
+
+	slotButton:SetScript("OnClick", function()
+		local slots = InvTypeList(filters.class, filters.subclass)
+		if not slots then return end
+
+		local list = {MenuEntry(L["All slots"], SetInvType, nil)}
+		for i = 1, getn(slots) do
+			tinsert(list, MenuEntry(InvTypeLabel(slots[i]), SetInvType, i))
+		end
+		OpenMenu(this, list)
+	end)
+
+	qualityButton:SetScript("OnClick", function()
+		local list = {MenuEntry(L["Any quality"], SetQuality, nil)}
+		--Poor through Legendary. Artifact exists as a quality and as nothing you can
+		--put in an auction house.
+		for i = 0, 5 do
+			local label = QualityLabel(i)
+			if label then tinsert(list, MenuEntry(label, SetQuality, i)) end
+		end
+		OpenMenu(this, list)
+	end)
+
+	usableButton:SetScript("OnClick", function()
+		--1 or nil, not true or false: this reaches QueryAuctionItems as the checkbox
+		--value Blizzard's own browse hands it.
+		filters.usable = (not filters.usable) and 1 or nil
+		RefreshFilters()
+	end)
+	usableButton:SetScript("OnEnter", function()
+		this:SetBackdropBorderColor(1, 1, 1)
+		GameTooltip:SetOwner(this, "ANCHOR_BOTTOM")
+		GameTooltip:AddLine(L["Usable"])
+		GameTooltip:AddLine(L["AUCTION_FILTER_USABLE_TIP"], 1, 1, 1, 1)
+		GameTooltip:Show()
+	end)
+	usableButton:SetScript("OnLeave", function()
+		E:SetTemplate(this, "Transparent")
+		GameTooltip:Hide()
+	end)
+
+	clearButton:SetScript("OnClick", function()
+		filters.class, filters.subclass, filters.invType = nil, nil, nil
+		filters.quality, filters.usable = nil, nil
+		minLevel:SetText("")
+		maxLevel:SetText("")
+		RefreshFilters()
+	end)
+	clearButton:SetScript("OnEnter", function()
+		this:SetBackdropBorderColor(1, 1, 1)
+		GameTooltip:SetOwner(this, "ANCHOR_BOTTOM")
+		GameTooltip:AddLine(L["Clear"])
+		GameTooltip:AddLine(L["AUCTION_FILTER_CLEAR_TIP"], 1, 1, 1, 1)
+		GameTooltip:Show()
+	end)
+	clearButton:SetScript("OnLeave", function()
+		E:SetTemplate(this, "Transparent")
+		GameTooltip:Hide()
+	end)
+
+	--What the progress line calls this search. A category browse has nothing typed,
+	--and "Searching for ..." with an empty space after it reads as a broken string
+	--rather than as a search of everything in a category.
+	local function Describe(name)
+		if name and name ~= "" then return name end
+
+		local classes = ClassList()
+		local text = filters.class and classes[filters.class] or nil
+
+		local subs = SubClassList(filters.class)
+		if text and filters.subclass and subs and subs[filters.subclass] then
+			text = text.." > "..subs[filters.subclass]
+		end
+
+		return text or L["everything"]
+	end
+
 	local listing = A:CreateListing(page, COLUMNS, ROWS, 740)
-	E:Point(listing, "TOPLEFT", page, "TOPLEFT", 0, -26)
+	E:Point(listing, "TOPLEFT", page, "TOPLEFT", 0, -52)
 	E:Point(listing, "BOTTOMRIGHT", page, "BOTTOMRIGHT", 0, 0)
 	--Cheapest per unit first is the question the tab exists to answer.
 	listing.sortColumn = 4
@@ -226,15 +560,27 @@ A.tabBuilders["search"] = function(page)
 		if exact then
 			local wanted = exact
 			listing.filter = function(entry) return entry.name == wanted end
+
+			--[[
+				An exact search is for ONE named item, so it must not arrive narrowed by
+				a category left over from browsing. Right-clicking a bag item while
+				"Armor > Cloth" was selected would otherwise ask the server for that item
+				*within cloth armour* and come back with nothing -- with the reason sitting
+				one row above the empty list in plain sight, and no message saying so.
+			]]
+			filters.class, filters.subclass, filters.invType = nil, nil, nil
+			filters.quality, filters.usable = nil, nil
+			RefreshFilters()
 		else
 			listing.filter = nil
 		end
 
 		local name = search:GetText()
-		if A:StartScan(name, tonumber(minLevel:GetText()), tonumber(maxLevel:GetText()), handlers) then
+		if A:StartScan(name, tonumber(minLevel:GetText()), tonumber(maxLevel:GetText()),
+			handlers, filters) then
 			listing:SetData({})
 			button.text:SetText(L["Cancel"])
-			A:SetProgress(0, nil, format(L["Searching for %s..."], name))
+			A:SetProgress(0, nil, format(L["Searching for %s..."], Describe(name)))
 		end
 	end
 
@@ -264,16 +610,18 @@ A.tabBuilders["search"] = function(page)
 	listing.OnEnter = function(entry, row)
 		GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
 
-		--The real item tooltip where the scan managed to capture a link, so the
-		--stats, the level requirement and the stack limit are all there for the
-		--decision being made. A link is absent for any row whose item the client
-		--had not cached at scan time, which is ordinary on a first search -- hence
-		--the hand-built header rather than an empty tooltip.
-		if entry.link then
-			GameTooltip:SetHyperlink(entry.link)
-		else
-			GameTooltip:AddLine(entry.name)
-		end
+		--[[
+			The real item tooltip: stats, the level requirement, the stack limit --
+			everything the buying decision actually turns on, which is the entire point
+			of hovering a row.
+
+			This used to hand SetHyperlink the whole formatted link and got an empty
+			tooltip back for its trouble, so a search result showed prices and no item
+			at all. A:ItemTooltip owns that fix, owns the three places an item string
+			can come from, and owns the fallback for a row whose item this client has
+			genuinely never cached. See Listing.lua.
+		]]
+		A:ItemTooltip(GameTooltip, entry)
 
 		if entry.count > 1 then
 			GameTooltip:AddLine(format(L["Stack of %d"], entry.count), 1, 1, 1)
@@ -500,6 +848,11 @@ A.tabBuilders["search"] = function(page)
 			A:SetStatus(format(L["Timed out. %d auctions found."], collected))
 		elseif reason == "cancelled" then
 			A:SetStatus(format(L["Cancelled. %d auctions found."], collected))
+		elseif reason == "capped" then
+			--Ordinary now rather than pathological: a whole category routinely runs past
+			--the 40-page search cap, so the count has to say it is the first 2000 of
+			--something larger instead of reading as the complete answer.
+			A:SetStatus(format(L["AUCTION_SEARCH_CAPPED"], collected))
 		else
 			A:SetStatus(format(L["%d auctions found."], collected))
 		end

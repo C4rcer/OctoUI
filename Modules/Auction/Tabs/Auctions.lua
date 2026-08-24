@@ -53,6 +53,11 @@ local function BuildRow(index, page)
 	local bid = (bidAmount and bidAmount > 0) and bidAmount or (minBid or 0)
 	local buyout = buyoutPrice or 0
 
+	--Captured here rather than on hover: the indices belong to the page the server
+	--last sent, so by the time anybody mouses over a row the only way back to the
+	--item is what was kept when it arrived.
+	local itemString, itemID = A:CaptureItem("owner", index)
+
 	return {
 		name = name,
 		count = count,
@@ -60,6 +65,8 @@ local function BuildRow(index, page)
 		level = level,
 		page = page,
 		index = index,
+		itemString = itemString,
+		itemID = itemID,
 		minBid = minBid or 0,
 		bid = bid,
 		buyout = buyout,
@@ -367,7 +374,9 @@ A.tabBuilders["auctions"] = function(page)
 
 	listing.OnEnter = function(entry, row)
 		GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
-		GameTooltip:AddLine(entry.name)
+		--The item itself, not just its name. Deciding whether to cancel an auction
+		--and relist it wants the same information as deciding whether to buy one.
+		A:ItemTooltip(GameTooltip, entry)
 		if entry.count > 1 then
 			GameTooltip:AddLine(format(L["Stack of %d"], entry.count), 1, 1, 1)
 		end

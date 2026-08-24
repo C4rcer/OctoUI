@@ -12,18 +12,33 @@ local PADDING = 10
 local BUTTON_HEIGHT = 16
 local BUTTON_WIDTH = 135
 
-local function OnClick(btn)
-	btn.func()
+--[[
+	`this`, not a parameter.
 
-	btn:GetParent():Hide()
+	Script handlers on this client are called with NO arguments -- the widget arrives
+	as the global `this`, and OnClick puts the mouse button in `arg1`. Declared with a
+	parameter, all three of these read nil, so the first click on any menu built here
+	threw "attempt to index a nil value" from inside a handler nothing else calls. The
+	menu opened, the entries highlighted nothing, and clicking one did nothing: a
+	helper that looks like it works right up until it is used.
+
+	Everywhere else in the codebase that wants a named handler wraps it --
+	`SetScript("OnEnter", function() OnEnter(this) end)` in Modules/Auras/Auras.lua is
+	the pattern. This file is upstream code that predates the port and was never
+	converted.
+]]
+local function OnClick()
+	this.func()
+
+	this:GetParent():Hide()
 end
 
-local function OnEnter(btn)
-	btn.hoverTex:Show()
+local function OnEnter()
+	this.hoverTex:Show()
 end
 
-local function OnLeave(btn)
-	btn.hoverTex:Hide()
+local function OnLeave()
+	this.hoverTex:Hide()
 end
 
 function E:DropDown(list, frame, xOffset, yOffset)

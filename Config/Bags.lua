@@ -587,6 +587,16 @@ E.Options.args.bags = {
 					name = L["Enable"],
 					desc = L["Automatically vendor gray items when visiting a vendor."]
 				},
+				showButton = {
+					order = 2.5,
+					type = "toggle",
+					name = L["Show Bag Button"],
+					desc = L["VENDOR_GRAYS_BUTTON_DESC"],
+					set = function(info, value)
+						E.db.bags.vendorGrays.showButton = value
+						E:StaticPopup_Show("PRIVATE_RL")
+					end
+				},
 				interval = {
 					order = 3,
 					type = "range",

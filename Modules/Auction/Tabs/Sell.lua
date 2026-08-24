@@ -10,6 +10,7 @@ local tonumber, tostring, unpack = tonumber, tostring, unpack
 local format, find, sub, lower = string.format, string.find, string.sub, string.lower
 local getn, tinsert = table.getn, table.insert
 local floor, ceil, max, min = math.floor, math.ceil, math.max, math.min
+local time = time
 --WoW API / Variables
 local GetTime = GetTime
 local CreateFrame = CreateFrame
@@ -69,6 +70,21 @@ local DURATIONS = {
 --or two or are not going to. Three seconds a stage with three retries meant a single
 --stuck step cost nine seconds and a run of five stacks felt broken long before it
 --reported anything.
+--[[
+	How long a live price check stays good for.
+
+	Selecting an item runs a scan, and on this server every query waits five seconds on
+	the auction house gate. Posting a second stack of something means selecting it
+	again, and paying five seconds to re-read a market that was read moments ago is
+	time spent for no information: prices do not move in the gap between putting up a
+	20-stack and putting up a 10.
+
+	Five minutes is long enough to cover a posting session and short enough that a
+	genuinely stale figure is not passed off as current. "Check now" ignores this
+	entirely, which is what it is for.
+]]
+local PRICE_FRESH_FOR = 300
+
 local POST_TIMEOUT = 5      --seconds to wait for the server to confirm one auction
 local PLACE_TIMEOUT = 1     --seconds to wait for an item to move
 
@@ -950,6 +966,18 @@ A.tabBuilders["post"] = function(page)
 	end
 
 	local function Select(name, itemID, texture)
+		--[[
+			A different item makes the last message stale before anything else happens,
+			and the price check cannot be relied on to clear it: CheckPrices refuses
+			while another scan is already running, so on that path nothing ever starts
+			the progress bar that normally does the clearing.
+
+			Only for a REAL selection. Select(nil) is also how OnPostFinished drops an
+			item whose stack has just gone up in its entirety, and clearing there would
+			wipe "Posted 3 auction(s)." in the same frame it was written.
+		]]
+		if name then A:SetStatus("") end
+
 		selected.name = name
 		if itemID then selected.id = itemID end
 		if texture then selected.texture = texture end
@@ -995,7 +1023,15 @@ A.tabBuilders["post"] = function(page)
 		--is all there is and the summary says how old it is.
 		if selected.market then ApplyUndercut() else Refresh() end
 
-		if not CheckPrices(name) then SetPostState("idle") end
+		--Skip the check when the reading in hand is recent. The age is on screen either
+		--way, in the "scanned N ago" line under the summary.
+		local age = selected.marketWhen and (time() - selected.marketWhen)
+
+		if age and age < PRICE_FRESH_FOR then
+			SetPostState("idle")
+		elseif not CheckPrices(name) then
+			SetPostState("idle")
+		end
 	end
 
 	E.PopupDialogs["OCTOUI_AUCTION_POST"] = {

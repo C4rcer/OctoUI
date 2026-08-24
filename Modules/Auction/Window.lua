@@ -332,6 +332,24 @@ function A:SetProgress(page, pages, label)
 	progress.bar:SetValue(fraction)
 	progress.text:SetText(label or "")
 
+	--[[
+		A RUN THAT IS STARTING INVALIDATES THE LAST RUN'S RESULT.
+
+		The bar and the status line share this strip, so HideProgress does not reveal
+		nothing -- it reveals whatever the previous operation left behind. Post an
+		auction, pick the next item, let its price check run, and the instant the bar
+		goes away "Posted 1 auction(s)." is sitting there again, attached for anyone
+		reading it to the scan that has just finished rather than to a post several
+		actions ago. The line was true when it was written and is a lie by the time it
+		is read a second time.
+
+		Cleared on the way IN rather than on the way out, so anything that finishes
+		with something to say still writes it after HideProgress and is seen. Only on
+		the transition, because SetProgress is called per page and clearing every time
+		would be pointless work.
+	]]
+	if not progress:IsShown() then self:SetStatus("") end
+
 	if self.window.status then self.window.status:Hide() end
 	progress:Show()
 end
