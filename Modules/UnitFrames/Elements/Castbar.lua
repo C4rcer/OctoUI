@@ -3,10 +3,13 @@ local UF = E:GetModule("UnitFrames");
 
 --Cache global variables
 --Lua functions
-local unpack = unpack
+local unpack, tonumber = unpack, tonumber
 local abs, min = abs, math.min
+local getn = table.getn
 --WoW API / Variables
 local CreateFrame = CreateFrame
+local GetTime = GetTime
+local UnitExists = UnitExists
 local UnitIsPlayer = UnitIsPlayer
 local UnitClass = UnitClass
 local UnitReaction = UnitReaction
@@ -302,4 +305,162 @@ function UF:PostCastStart(name)
 		local _, _, _, alpha = self.backdrop:GetBackdropColor()
 		self.backdrop:SetBackdropColor(r * 0.58, g * 0.58, b * 0.58, alpha)
 	end
+end
+
+--------------------------------------------------------------------------------
+-- Cast bars for units other than the player
+--------------------------------------------------------------------------------
+
+--[[
+	THE TARGET CAST BAR WAS BUILT AND THEN NEVER FED.
+
+	Units/Target.lua constructs a Castbar, Configure_Castbar sizes and anchors it, and
+	the options page offers every setting for it. It still cannot appear, because oUF
+	registers the cast events for exactly one unit:
+
+		if(unit == "player") then
+			self:RegisterEvent("SPELLCAST_START", SPELLCAST_START)
+			...
+
+	That is oUF being honest rather than broken. 1.12's SPELLCAST_* events describe the
+	player's own casts and nothing else -- vanilla has no event for what your target is
+	casting, so upstream had nothing to register. Everything downstream is fine: the
+	element's OnUpdate is installed for every unit, so a bar only needs its fields set.
+
+	SuperWoW's UNIT_CASTEVENT is the replacement, and it is the same one the nameplates
+	already use (Modules/NamePlates/Elements/CastBar.lua) -- which is exactly why plates
+	show a cast bar while the target frame does not. It reports the caster's GUID, so a
+	cast maps to a unit by comparing GUIDs rather than by matching names:
+
+		arg1  caster GUID      arg4  spell ID
+		arg2  target GUID      arg5  cast time, in milliseconds
+		arg3  "START" | "CAST" | "CHANNEL" | "FAIL"
+
+	Without SuperWoW there is no cast information on this client at all, so the bar
+	stays hidden exactly as it does now and this costs nothing.
+
+	THE PLAYER IS DELIBERATELY ABSENT below. oUF already drives it from the real
+	events, which carry the spell name directly and are authoritative for your own
+	casts; driving it twice would fight over the same fields.
+]]
+
+local castDriver = CreateFrame("Frame", "OctoUI_UnitCastEvents")
+
+local CAST_UNITS = {
+	{unit = "target", global = "ElvUF_Target"},
+	{unit = "focus", global = "ElvUF_Focus"},
+	{unit = "pet", global = "ElvUF_Pet"},
+	{unit = "targettarget", global = "ElvUF_TargetTarget"}
+}
+
+--Resolved per event rather than cached: the frames do not exist when this file loads,
+--a unit can be switched off in the options at any time, and a unit with no castbar
+--block in its settings is simply skipped.
+local function FrameFor(entry)
+	local frame = _G[entry.global]
+	if not (frame and frame.Castbar) then return nil end
+
+	local units = E.db.unitframe and E.db.unitframe.units
+	local db = units and units[entry.unit]
+	if not (db and db.castbar and db.castbar.enable) then return nil end
+
+	return frame
+end
+
+--The field contract is oUF's own, copied from SPELLCAST_START and
+--SPELLCAST_CHANNEL_START rather than invented: a channel counts DOWN, so it starts
+--full and its duration is measured from startTime plus the cast length.
+local function StartCast(frame, spellID, castTime, channel)
+	local element = frame.Castbar
+
+	--SpellInfo is SuperWoW's. Guarded, because a spell it does not know still deserves
+	--a bar -- only the name and the icon are lost.
+	local name, icon
+	if SpellInfo then name, _, icon = SpellInfo(spellID) end
+
+	--Reported in milliseconds. The same normalisation the nameplate path uses, so both
+	--agree about what a cast time means.
+	castTime = tonumber(castTime) or 0
+	if castTime > 100 then castTime = castTime / 1000 end
+	if castTime <= 0 then return end
+
+	element.startTime = GetTime()
+	element.max = castTime
+	element.delay = 0
+	element.holdTime = 0
+
+	if channel then
+		element.casting = nil
+		element.channeling = true
+		element.duration = element.startTime + castTime
+		element:SetMinMaxValues(0, castTime)
+		element:SetValue(castTime)
+	else
+		element.channeling = nil
+		element.casting = true
+		element.duration = element.startTime
+		element:SetMinMaxValues(0, castTime)
+		element:SetValue(0)
+	end
+
+	if element.Text then element.Text:SetText(name or "") end
+	if element.Time then element.Time:SetText("") end
+	if element.Icon then
+		element.Icon:SetTexture(icon or [[Interface\Icons\INV_Misc_QuestionMark]])
+	end
+
+	element:Show()
+end
+
+local function StopCast(frame)
+	local element = frame and frame.Castbar
+	if not element then return end
+
+	element.casting = nil
+	element.channeling = nil
+	element:Hide()
+end
+
+castDriver:SetScript("OnEvent", function()
+	--[[
+		A cast belongs to the unit that was in the slot when it started, not to whatever
+		is there now. Without this the previous target's bar keeps counting down on the
+		new one, which reads as the new target casting something it is not.
+	]]
+	if event == "PLAYER_TARGET_CHANGED" then
+		StopCast(_G["ElvUF_Target"])
+		return
+	end
+
+	local caster, castType, spellID, castTime = arg1, arg3, arg4, arg5
+	if not caster or caster == "" then return end
+
+	for i = 1, getn(CAST_UNITS) do
+		local entry = CAST_UNITS[i]
+		local frame = FrameFor(entry)
+
+		if frame then
+			--SuperWoW's UnitExists answers with the GUID as its second return. Comparing
+			--those is what makes this exact: two mobs of the same name in the same pull
+			--cannot be confused for one another.
+			local _, guid = UnitExists(entry.unit)
+
+			if guid and guid == caster then
+				if castType == "START" or castType == "CAST" then
+					StartCast(frame, spellID, castTime, false)
+				elseif castType == "CHANNEL" then
+					StartCast(frame, spellID, castTime, true)
+				elseif castType == "FAIL" then
+					StopCast(frame)
+				end
+			end
+		end
+	end
+end)
+
+--Only when SuperWoW is present. The event does not exist otherwise, and registering a
+--name this client does not know throws -- the same guard the nameplate driver carries.
+if SUPERWOW_VERSION then
+	castDriver:RegisterEvent("UNIT_CASTEVENT")
+	castDriver:RegisterEvent("PLAYER_TARGET_CHANGED")
 end
