@@ -855,6 +855,17 @@ L["AUCTION_BULK_SHORT"] = "Only %d available of the %d you asked for - buy those
 L["AUCTION_BULK_PROGRESS"] = "Buying %d of %d..."
 L["AUCTION_BULK_DONE"] = "Bought %d %s for %s."
 L["AUCTION_BULK_STOPPED"] = "Stopped after %d %s (%s spent). The market moved - search again."
+L["AUCTION_BULK_MISSED"] = "Bought %d %s for %s. %d auction(s) had already sold and were skipped."
+L["AUCTION_BULK_STOPPED_MISSED"] = "Stopped after %d %s (%s spent) - %d auction(s) in a row had gone. The market moved; search again."
+L["AUCTION_BUYLOG_HINT"] = "Run /octoui-ah buylog to see what happened to each one."
+L["AUCTION_BUYLOG_EMPTY"] = "Auction buy log: nothing bought yet this session."
+L["Lvl"] = true;
+L["AUCTION_QUERY_NONE"] = "Auction query: nothing has been searched yet this session."
+L["AUCTION_QUERY_SENT"] = "Sent: name=%s class=%s subclass=%s invType=%s min=%s max=%s quality=%s usable=%s page=%s"
+L["AUCTION_QUERY_ANSWER"] = "Answered: %d row(s) on the page, %d total, after %.2fs"
+L["AUCTION_QUERY_NO_ANSWER"] = "Answered: nothing at all - the query was accepted and never served."
+L["AUCTION_BUYLOG_HEADER"] = "Auction buy log: %d attempt(s), oldest first."
+L["AUCTION_BUYLOG_ROW"] = "%d. %s x%d at %s - scan page %d, asked page %d - %s"
 L["That auction has no buyout."] = true;
 L["Buy %s for %s?"] = true;
 L["Bought %s x%d for %s."] = true;

@@ -16,6 +16,7 @@ local GetAuctionItemClasses = GetAuctionItemClasses
 local GetAuctionItemSubClasses = GetAuctionItemSubClasses
 local GetAuctionInvTypes = GetAuctionInvTypes
 local getglobal = getglobal
+local UnitLevel = UnitLevel
 
 --[[
 	The search tab: type a name, walk every page, list what is out there by price
@@ -47,6 +48,21 @@ local function QualityColor(entry)
 end
 
 --[[
+	Required level, red when you cannot use it yet.
+
+	The whole point of browsing a slot is finding what you can wear NOW, and a list
+	that shows nothing but prices makes you hover every row to find out. Red is the
+	one piece of information that turns a scan of the column into a decision.
+]]
+local function LevelColor(entry)
+	local level = entry.level or 0
+	local mine = UnitLevel and UnitLevel("player") or 0
+
+	if level > 0 and mine > 0 and level > mine then return 1, 0.3, 0.3 end
+	return 0.9, 0.9, 0.9
+end
+
+--[[
 	Column weights are relative, and the three money columns are deliberately generous.
 
 	They have to fit the widest price this client can produce -- 9999g 99s 99c, thirteen
@@ -56,7 +72,22 @@ end
 	which holds the maximum with room to spare.
 ]]
 local COLUMNS = {
-	{key = "name", label = L["Item"], width = 26, color = QualityColor},
+	{key = "name", label = L["Item"], width = 22, color = QualityColor},
+	--[[
+		REQUIRED level, which is the same number Min and Max filter on -- so the column
+		and the filter agree, rather than the column showing an item level the boxes
+		never looked at.
+
+		Sortable like every other header, which is the point: narrowing to 10-20 still
+		leaves the list ordered by price, and "what is the best thing I can wear at 14"
+		wants the level as the sort key. Zero means no requirement, which is a real
+		answer rather than missing data, so it renders as a dash instead of a 0.
+	]]
+	{key = "level", label = L["Lvl"], width = 5, justify = "RIGHT", color = LevelColor,
+		format = function(v)
+			if not v or v <= 0 then return "|cff808080-|r" end
+			return v
+		end},
 	{key = "count", label = L["Qty"], width = 5, justify = "RIGHT"},
 	{key = "unitBid", label = L["Bid/ea"], width = 17, justify = "RIGHT",
 		format = function(v) return A:Money(v) end},
@@ -79,8 +110,17 @@ local COLUMNS = {
 			local text = {"30m", "2h", "8h", "24h"}
 			return v and text[v] or ""
 		end},
-	{key = "owner", label = L["Seller"], width = 12}
+	{key = "owner", label = L["Seller"], width = 11}
 }
+
+--Which column holds a given key. Used for the default sort so that inserting a
+--column never silently re-points it at a neighbour.
+local function ColumnIndex(key)
+	for i = 1, getn(COLUMNS) do
+		if COLUMNS[i].key == key then return i end
+	end
+	return 1
+end
 
 local function BuildSearch(page)
 	local search = CreateFrame("EditBox", "OctoUI_AuctionSearchBox", page)
@@ -529,8 +569,16 @@ A.tabBuilders["search"] = function(page)
 	local listing = A:CreateListing(page, COLUMNS, ROWS, 740)
 	E:Point(listing, "TOPLEFT", page, "TOPLEFT", 0, -52)
 	E:Point(listing, "BOTTOMRIGHT", page, "BOTTOMRIGHT", 0, 0)
-	--Cheapest per unit first is the question the tab exists to answer.
-	listing.sortColumn = 4
+	--[[
+		Cheapest per unit first is the question the tab exists to answer.
+
+		BY KEY, NOT BY NUMBER. This was a literal 4, which meant "buyout per unit" only
+		for as long as nothing was inserted to the left of it -- and adding the Lvl
+		column silently moved it onto the bid column instead. A default sort landing one
+		column off is invisible: the list is still sorted, still by a price, and still
+		plausible. Looking the index up by key cannot drift.
+	]]
+	listing.sortColumn = ColumnIndex("unitBuyout")
 	listing.sortDescending = false
 
 	--Handlers for this tab's own scans, passed to StartScan rather than parked on
@@ -544,6 +592,23 @@ A.tabBuilders["search"] = function(page)
 		if A:IsScanning() then
 			A:CancelScan()
 			return
+		end
+
+		--[[
+			`exact` IS AN ITEM NAME, and the only caller that supplies one is A:SearchFor.
+
+			A mouse button string is not an item, and mistaking one for an item is not a
+			cosmetic error: the branch below treats a non-nil `exact` as "the player named
+			exactly one thing" and clears the whole category browse before searching. So
+			handing this "LeftButton" wipes Weapon > Daggers and then refuses the search
+			for having no category selected, which is precisely what browsing did.
+
+			The wrapper on the button below is the real fix. This is the guard that makes
+			it impossible to reintroduce by attaching Go somewhere else.
+		]]
+		if exact == "LeftButton" or exact == "RightButton" or exact == "MiddleButton"
+			or exact == "Button4" or exact == "Button5" then
+			exact = nil
 		end
 
 		--[[
@@ -600,7 +665,16 @@ A.tabBuilders["search"] = function(page)
 		end
 	end
 
-	button:SetScript("OnClick", Go)
+	--[[
+		WRAPPED, never passed straight to SetScript.
+
+		Script handlers on this client take no arguments and read `this` and `arg1` as
+		globals -- but OnClick is the one that carries the mouse button, and Go's first
+		parameter is an item name. Passing the function directly is exactly the mistake
+		HANDOFF.md records as "passing a method straight to SetScript fails; wrap it",
+		and Modules/Auras/Auras.lua wraps for the same reason.
+	]]
+	button:SetScript("OnClick", function() Go() end)
 	scanAll:SetScript("OnClick", GoAll)
 	search:SetScript("OnEnterPressed", function()
 		this:ClearFocus()
@@ -672,14 +746,33 @@ A.tabBuilders["search"] = function(page)
 				function(index, total)
 					A:SetProgress(index - 1, total, format(L["AUCTION_BULK_PROGRESS"], index, total))
 				end,
-				function(bought, spent, stopped)
+				function(bought, spent, stopped, missed)
 					A:HideProgress()
 					buyButton.text:SetText(L["Buy"])
 
-					local message = format(stopped and L["AUCTION_BULK_STOPPED"] or L["AUCTION_BULK_DONE"],
-						bought, pending.name, A:Money(spent))
+					--Three outcomes, not two. A run that skipped past auctions somebody else
+					--bought first delivered less than was agreed to, and saying only "bought
+					--12" leaves the player to work out why it was not 28.
+					local message
+					if stopped and missed and missed > 0 then
+						message = format(L["AUCTION_BULK_STOPPED_MISSED"], bought, pending.name,
+							A:Money(spent), missed)
+					elseif stopped then
+						message = format(L["AUCTION_BULK_STOPPED"], bought, pending.name, A:Money(spent))
+					elseif missed and missed > 0 then
+						message = format(L["AUCTION_BULK_MISSED"], bought, pending.name, A:Money(spent), missed)
+					else
+						message = format(L["AUCTION_BULK_DONE"], bought, pending.name, A:Money(spent))
+					end
+
 					A:SetStatus(message)
 					E:Print(message)
+
+					--Anything short says where to read what happened, rather than leaving the
+					--number to be reported back as a sentence with no evidence behind it.
+					if stopped or (missed and missed > 0) then
+						E:Print(L["AUCTION_BUYLOG_HINT"])
+					end
 				end)
 		end,
 		OnCancel = function() A.pendingBulk = nil end,

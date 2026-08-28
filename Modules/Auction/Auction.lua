@@ -185,6 +185,20 @@ function A:Command(msg)
 		return
 	end
 
+	--What the last buy actually did, auction by auction. A run that comes up short
+	--is otherwise a sentence with no evidence behind it.
+	if verb == "buylog" then
+		if self.BuyLogReport then self:BuyLogReport() end
+		return
+	end
+
+	--What the last search actually asked the server, and what it answered. A browse
+	--that returns nothing is otherwise indistinguishable from one that was never sent.
+	if verb == "query" then
+		if self.QueryReport then self:QueryReport() end
+		return
+	end
+
 	if verb == "status" then
 		local other = self:CompetingAddon()
 		E:Print(format(L["OctoUI auction house: %s."],
@@ -480,6 +494,11 @@ end
 --One page arrives at a time and a buy is never in flight with a scan, so the
 --buy gets first refusal: it is the one with money riding on it.
 function A:AUCTION_ITEM_LIST_UPDATE()
+	--A new snapshot, so the record of which rows have already been bought out of the
+	--old one is meaningless -- and worse than meaningless, because those indices now
+	--name different auctions. Cleared first, before anything reads the page.
+	if self.ForgetBoughtRows then self:ForgetBoughtRows() end
+
 	if self.BuyPageArrived and self:BuyPageArrived() then return end
 	if self.AuctionListUpdated then self:AuctionListUpdated() end
 end

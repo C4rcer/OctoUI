@@ -377,6 +377,15 @@ local function CollectPage()
 	scan.total = total or 0
 	scan.awaitingPage = false
 
+	--The first answer to the query recorded above. Later pages overwrite it, which is
+	--what you want: the last page read is the one worth looking at when a walk stops
+	--somewhere surprising.
+	if A.lastQuery then
+		A.lastQuery.batch = batch
+		A.lastQuery.total = scan.total
+		A.lastQuery.answeredAt = GetTime()
+	end
+
 	--Read before it is cleared: whether THIS page needed re-sending is the whole
 	--signal the pacing learns from.
 	if (scan.retries or 0) > 0 then PageWasDropped() else PageWasClean() end
@@ -578,6 +587,32 @@ local function OnUpdate()
 			scan.deadline = GetTime() + SCAN_TIMEOUT
 			scan.lastQueryAt = GetTime()
 			scan.gateSeen = false
+			--[[
+				EXACTLY WHAT WENT OUT, kept so a search that comes back empty can be read
+				rather than guessed at.
+
+				A category browse returning nothing has two completely different causes and
+				no way to tell them apart from the screen: either this addon put the wrong
+				values in the arguments, or the server declined to answer a query shaped
+				this way. One of those is a bug here and the other is a fact about the
+				client, and every round of reasoning about it without the numbers has been
+				wrong. `/octoui-ah query` prints this next to what came back.
+			]]
+			A.lastQuery = {
+				name = scan.name,
+				minLevel = scan.minLevel,
+				maxLevel = scan.maxLevel,
+				invType = scan.invType,
+				class = scan.class,
+				subclass = scan.subclass,
+				page = scan.page,
+				usable = scan.usable,
+				quality = scan.quality,
+				sentAt = GetTime(),
+				batch = nil,
+				total = nil
+			}
+
 			QueryAuctionItems(scan.name, scan.minLevel, scan.maxLevel,
 				scan.invType, scan.class, scan.subclass, scan.page, scan.usable, scan.quality)
 		end
@@ -727,9 +762,24 @@ function A:StartScan(name, minLevel, maxLevel, handlers, filters)
 		return false
 	end
 
-	--Nil, never an empty string. The client treats the two differently and "" comes
-	--back with nothing at all -- the same trap StartFullScan documents below.
-	if name == "" then name = nil end
+	--[[
+		AN EMPTY NAME IS PASSED THROUGH AS "", NOT CONVERTED TO NIL.
+
+		This used to convert it, on the strength of the note StartFullScan carries below:
+		a whole-house scan must send nil, because "" came back with nothing at all. That
+		reading was over-generalised. It was measured for a query with EVERY filter nil,
+		and it does not follow that the same is true once a class is set.
+
+		Blizzard's own browse is the evidence for the other direction. Its search passes
+		`BrowseName:GetText()` straight through, which is "" when the box is empty, and
+		clicking a category with nothing typed works in the stock UI. So "" plus a class
+		filter is a shape the server is known to answer, and nil plus a class filter is
+		one nobody here has ever tested.
+
+		The conversion could only ever apply to a filtered browse anyway -- an unfiltered
+		empty search is refused above -- so it was wrong in every case it reached.
+		`/octoui-ah query` prints what went out and what came back.
+	]]
 
 	Begin(name, minLevel, maxLevel, false, nil, handlers, filters)
 	return true
@@ -794,5 +844,59 @@ function A:AuctionListUpdated()
 	if scan.active and scan.awaitingPage then
 		scan.pageArrived = true
 		CollectPage()
+	end
+end
+
+
+--[[
+	The last query this addon sent, and what the server said to it.
+
+	Exists because a category browse that returns nothing looks identical whether the
+	arguments were wrong or the server ignored them, and the difference decides whether
+	the fix is here or in how the query is shaped. Printed by `/octoui-ah query`, which
+	also lists the class and subclass indices so the numbers below can be read against
+	the names they are supposed to mean.
+]]
+function A:QueryReport()
+	local q = self.lastQuery
+
+	if not q then
+		E:Print(L["AUCTION_QUERY_NONE"])
+		return
+	end
+
+	local function show(v)
+		if v == nil then return "nil" end
+		return tostring(v)
+	end
+
+	E:Print(format(L["AUCTION_QUERY_SENT"],
+		show(q.name), show(q.class), show(q.subclass), show(q.invType),
+		show(q.minLevel), show(q.maxLevel), show(q.quality), show(q.usable), show(q.page)))
+
+	if q.batch == nil then
+		E:Print(L["AUCTION_QUERY_NO_ANSWER"])
+	else
+		E:Print(format(L["AUCTION_QUERY_ANSWER"], q.batch, q.total or 0,
+			(q.answeredAt and q.sentAt) and (q.answeredAt - q.sentAt) or 0))
+	end
+
+	--The index tables, so a class number above can be read as a name. These are the
+	--same lists the Search tab's menus are built from, so a mismatch between what the
+	--menu shows and what went out would be visible here.
+	if not GetAuctionItemClasses then return end
+
+	local classes = {GetAuctionItemClasses()}
+	for i = 1, getn(classes) do
+		local mark = (q.class == i) and " <--" or ""
+		E:Print(format("  class %d = %s%s", i, classes[i], mark))
+
+		if q.class == i and GetAuctionItemSubClasses then
+			local subs = {GetAuctionItemSubClasses(i)}
+			for j = 1, getn(subs) do
+				local submark = (q.subclass == j) and " <--" or ""
+				E:Print(format("     sub %d = %s%s", j, subs[j], submark))
+			end
+		end
 	end
 end
