@@ -1000,9 +1000,15 @@ function CH:ChatFrame_OnEvent(self, event, arg1, arg2, arg3, arg4, arg5, arg6, a
 					arg1 = gsub(arg1, "%%s %%s", "%%s")
 					body = format(_G["CHAT_"..type.."_GET"]..arg1, pflag..arg2)
 
-					-- Add raid boss emote message
+					--Add raid boss emote message. RaidBossEmoteFrame is TBC-era and is not
+					--present on this client -- the same absence that took down
+					--M:PVPMessageEnhancement -- so this is the identical fallback rather
+					--than a guard that silently drops the message.
 					if type == "RAID_BOSS_EMOTE" then
-						RaidBossEmoteFrame:AddMessage(body, info.r, info.g, info.b, 1.0)
+						local notice = RaidWarningFrame or RaidBossEmoteFrame or UIErrorsFrame
+						if notice and notice.AddMessage then
+							notice:AddMessage(body, info.r, info.g, info.b, 1.0)
+						end
 						PlaySound("RaidBossEmoteWarning")
 					end
 				end

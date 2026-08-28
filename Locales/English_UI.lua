@@ -860,6 +860,18 @@ L["AUCTION_BULK_STOPPED_MISSED"] = "Stopped after %d %s (%s spent) - %d auction(
 L["AUCTION_BUYLOG_HINT"] = "Run /octoui-ah buylog to see what happened to each one."
 L["AUCTION_BUYLOG_EMPTY"] = "Auction buy log: nothing bought yet this session."
 L["Lvl"] = true;
+
+--Modules/DataTexts/DataTexts.lua -- the battleground scoreboard on the chat panels
+L["Battleground"] = true;
+L["Killing Blows"] = true;
+L["Honorable Kills"] = true;
+L["Deaths"] = true;
+L["Honor Gained"] = true;
+L["DT_BG_WAITING"] = "Scoreboard..."
+L["DT_BG_HONOR"] = "Honor: %d"
+L["DT_BG_KILLS"] = "KB: %d  HK: %d"
+L["DT_BG_DEATHS"] = "Deaths: %d"
+L["DT_BG_CLICK_HIDE"] = "Click to show your normal datatexts instead."
 L["AUCTION_QUERY_NONE"] = "Auction query: nothing has been searched yet this session."
 L["AUCTION_QUERY_SENT"] = "Sent: name=%s class=%s subclass=%s invType=%s min=%s max=%s quality=%s usable=%s page=%s"
 L["AUCTION_QUERY_ANSWER"] = "Answered: %d row(s) on the page, %d total, after %.2fs"

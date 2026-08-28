@@ -113,12 +113,35 @@ function M:DisbandRaidGroup()
 	LeaveParty()
 end
 
+--[[
+	Battleground system messages, shown large instead of buried in chat.
+
+	`RaidNotice_AddMessage` AND `RaidBossEmoteFrame` are both TBC-era and neither
+	exists on this client, so this threw "attempt to call global
+	`RaidNotice_AddMessage` (a nil value)" on the first objective message of any
+	battleground. Carried over from upstream unchanged and unreachable outside a
+	battleground, which is why it sat here undetected.
+
+	1.12 has RaidWarningFrame, which is an ordinary MessageFrame, so AddMessage on it
+	does the same job. UIErrorsFrame is the last resort: still prominent, still on
+	screen, and it exists in every build.
+]]
 function M:PVPMessageEnhancement()
 	if not E.db.general.enhancedPvpMessages then return end
+
 	local _, instanceType = IsInInstance()
-	if instanceType == "pvp" then
-		RaidNotice_AddMessage(RaidBossEmoteFrame, arg1, ChatTypeInfo["RAID_BOSS_EMOTE"])
-	--	RaidNotice_AddMessage(RaidBossEmoteFrame, arg1, ChatTypeInfo["RAID_BOSS_EMOTE"])
+	if instanceType ~= "pvp" then return end
+	if not arg1 then return end
+
+	local r, g, b = 1, 0.5, 0
+	local info = ChatTypeInfo and ChatTypeInfo["RAID_BOSS_EMOTE"]
+	if info then r, g, b = info.r, info.g, info.b end
+
+	local frame = RaidWarningFrame or RaidBossEmoteFrame
+	if frame and frame.AddMessage then
+		frame:AddMessage(arg1, r, g, b, 1.0)
+	elseif UIErrorsFrame and UIErrorsFrame.AddMessage then
+		UIErrorsFrame:AddMessage(arg1, r, g, b, 1.0)
 	end
 end
 

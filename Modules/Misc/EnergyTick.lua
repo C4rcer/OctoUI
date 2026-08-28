@@ -67,6 +67,42 @@ local function OnEvent()
 	end
 end
 
+--[[
+	TRAVEL COMES FROM THE BAR'S EDGES, NOT FROM GetWidth.
+
+	GetWidth on a frame stretched between two anchors reports HALF its real width on
+	this client. That is the trap HANDOFF.md records against the auction listing, where
+	a page anchored inside a 780-wide window measured 382 -- and `tick:SetAllPoints(bar)`
+	is exactly that shape. The spark was told the bar was half as wide as it is and
+	duly stopped in the middle of every tick, which reads as the tick never completing.
+
+	GetLeft and GetRight are not affected, because they are positions rather than a
+	derived size. They can be nil before a frame's rect has resolved, so GetWidth stays
+	as a fallback and the LARGEST answer wins: a short reading can then never win, and
+	all three describe the same rectangle so the largest cannot overshoot the bar.
+
+	Nothing here is per-frame. It is measured once per tick, because a power bar only
+	changes width when the unitframe is resized.
+]]
+local function BarWidth(frame)
+	local width = frame:GetWidth() or 0
+
+	local left, right = frame:GetLeft(), frame:GetRight()
+	if left and right and (right - left) > width then
+		width = right - left
+	end
+
+	--The parent IS the bar, since the tick is anchored to all four of its sides, so
+	--this is the same rectangle read a third way rather than a wider one.
+	local parent = frame:GetParent()
+	if parent and parent.GetWidth then
+		local parentWidth = parent:GetWidth() or 0
+		if parentWidth > width then width = parentWidth end
+	end
+
+	return width
+end
+
 local function OnUpdate()
 	if this.target then
 		this.start, this.max = GetTime(), this.target
@@ -79,11 +115,17 @@ local function OnUpdate()
 
 	if this.current > this.max then
 		this.start, this.max, this.current = GetTime(), 2, 0
+		--Re-measure once a tick, so resizing the unitframe corrects itself within two
+		--seconds without costing anything on the frames in between.
+		this.barWidth = nil
 	end
 
-	--Derive travel from the live bar width rather than a fixed 120
-	local width = this:GetWidth()
-	if not width or width <= 0 then return end
+	local width = this.barWidth
+	if not width or width <= 0 then
+		width = BarWidth(this)
+		this.barWidth = width
+	end
+	if width <= 0 then return end
 
 	local pos = width * (this.current / this.max)
 	this.spark:SetPoint("LEFT", pos - (SPARK_WIDTH / 2), 0)

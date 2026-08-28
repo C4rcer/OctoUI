@@ -7,10 +7,14 @@ local TT = E:GetModule("Tooltip");
 --Cache global variables
 --Lua functions
 local pairs, type, error = pairs, type, error
-local len = string.len
+local len, format = string.len, string.format
 --WoW API / Variables
 local CreateFrame = CreateFrame
 local IsInInstance = IsInInstance
+local UnitName = UnitName
+local GetNumBattlefieldScores = GetNumBattlefieldScores
+local GetBattlefieldScore = GetBattlefieldScore
+local RequestBattlefieldScoreData = RequestBattlefieldScoreData
 
 function DT:Initialize()
 	E.DataTexts = DT
@@ -229,6 +233,100 @@ function DT:AssignPanelToDataText(panel, data)
 	else
 		panel:SetScript("OnLeave", DT.Data_OnLeave)
 	end
+end
+
+--------------------------------------------------------------------------------
+-- The battleground scoreboard, on the chat datatext panels
+--------------------------------------------------------------------------------
+
+--[[
+	NEVER PORTED, AND ONLY REACHABLE INSIDE A BATTLEGROUND.
+
+	LoadDataTexts swaps the chat panels for personal scoreboard stats on entering a
+	battleground, and referenced three functions upstream ElvUI defines and this port
+	never brought across: UPDATE_BATTLEFIELD_SCORE, BattlegroundStats and
+	HideBattlegroundTexts. Two of the three were only ever handed to SetScript, which
+	takes nil without complaint, so those halves were quietly dead. The third is
+	CALLED, and it threw "attempt to call field 'UPDATE_BATTLEFIELD_SCORE' (a nil
+	value)" the moment anyone zoned into a battleground.
+
+	It survived every checker in the project because they verify loader references and
+	Lua syntax, and neither can see a table field that nothing ever assigns.
+
+	DECLARED WITH A DOT, NOT A COLON. LoadDataTexts calls this as
+	`DT.UPDATE_BATTLEFIELD_SCORE(panel)`, so a colon would bind the panel to `self` and
+	leave the parameter nil. As an OnEvent handler it is called with no arguments at
+	all and the frame arrives as `this`. One parameter plus a `this` fallback covers
+	both entry points.
+]]
+
+--This client's score row for the player: killing blows, honorable kills, deaths,
+--honor. Nil when the scoreboard has not arrived yet, which is the normal state for
+--the first moments in a battleground.
+local function PlayerScore()
+	if not (GetNumBattlefieldScores and GetBattlefieldScore) then return nil end
+
+	local me = UnitName("player")
+	for i = 1, (GetNumBattlefieldScores() or 0) do
+		local name, killingBlows, honorableKills, deaths, honorGained = GetBattlefieldScore(i)
+		if name and name == me then
+			return killingBlows or 0, honorableKills or 0, deaths or 0, honorGained or 0
+		end
+	end
+
+	return nil
+end
+
+function DT.UPDATE_BATTLEFIELD_SCORE(panel)
+	panel = panel or this
+	if not (panel and panel.text) then return end
+
+	local kb, hk, deaths, honor = PlayerScore()
+
+	if not kb then
+		--The scoreboard is requested, never pushed. Ask for it; the event this is
+		--registered for brings us straight back here once it lands.
+		if RequestBattlefieldScoreData then RequestBattlefieldScoreData() end
+		panel.text:SetText(L["DT_BG_WAITING"])
+		return
+	end
+
+	--One stat per panel point, so three points read as a scoreboard instead of three
+	--copies of the same string.
+	local index = panel.pointIndex or 1
+	if index == 1 then
+		panel.text:SetText(format(L["DT_BG_HONOR"], honor))
+	elseif index == 2 then
+		panel.text:SetText(format(L["DT_BG_KILLS"], kb, hk))
+	else
+		panel.text:SetText(format(L["DT_BG_DEATHS"], deaths))
+	end
+end
+
+function DT.BattlegroundStats()
+	local panel = this
+	if not (panel and DT.tooltip) then return end
+
+	local kb, hk, deaths, honor = PlayerScore()
+	if not kb then return end
+
+	DT:SetupTooltip(panel)
+	DT.tooltip:AddLine(L["Battleground"])
+	DT.tooltip:AddDoubleLine(L["Killing Blows"], kb, 1, 1, 1, 1, 1, 1)
+	DT.tooltip:AddDoubleLine(L["Honorable Kills"], hk, 1, 1, 1, 1, 1, 1)
+	DT.tooltip:AddDoubleLine(L["Deaths"], deaths, 1, 1, 1, 1, 1, 1)
+	DT.tooltip:AddDoubleLine(L["Honor Gained"], honor, 1, 1, 1, 1, 1, 1)
+	DT.tooltip:AddLine(" ")
+	DT.tooltip:AddLine(L["DT_BG_CLICK_HIDE"], 0.6, 0.6, 0.6)
+	DT.tooltip:Show()
+end
+
+--Put the ordinary datatexts back for this battleground. LoadDataTexts reads the flag
+--on the way in and clears it on the way out, so this is a one-shot rather than a
+--setting -- which is why /octoui also clears it (Core/Commands.lua).
+function DT.HideBattlegroundTexts()
+	DT.ForceHideBGStats = true
+	DT:LoadDataTexts()
 end
 
 function DT:LoadDataTexts()
