@@ -618,6 +618,330 @@ local function BuildOptions()
 	}
 end
 
+--------------------------------------------------------------------------------
+-- The same machinery, on the water
+--------------------------------------------------------------------------------
+
+--[[
+	SWIM GEAR, built on everything above rather than beside it.
+
+	Same problem, same answer: a set you declare for the state, a set you declare for
+	the way back, and the swap done through the cursor with every step checked. It
+	reuses ItemMatches, FindInBags, EquipFromBag and UnequipToBags unchanged, which is
+	the whole reason this lives in this file instead of its own.
+
+	NOTHING IS DETECTED. An earlier attempt scanned bag tooltips for the word "swim" and
+	picked its own trinkets, and it did nothing at all -- but even working it was the
+	wrong shape, because it could not know what you want ON when you climb out. You name
+	both sets. The one for dry land is declared rather than inferred for exactly the
+	reason the mount version says: what happened to be displaced is only the right thing
+	to put back if you were already wearing the right thing when you jumped in.
+
+	SWIMMING IS POLLED, because no event fires for entering water. Twice a second, and
+	the check is one boolean.
+
+		IsSwimming()        ClassicAPI.dll
+		PlayerIsSwimming()  nampower 2.36+
+
+	Measured on this client before any of this was written: on land false/nil, swimming
+	true/1. Both are guarded anyway, and either alone is enough. The breath MirrorTimer
+	was measured at the same time and is nil in BOTH states -- it only runs with your
+	head under water, so it cannot tell surface swimming from standing on the shore.
+
+	MOUNTED WINS. Deep water dismounts you in this client so the two barely overlap, but
+	where they do the mount owns the slots -- otherwise two systems would swap the same
+	trinkets against each other every half second.
+]]
+local SWIM_POLL = 0.5
+
+local swimming
+local swimApplying
+local swimFrame
+local swimResults = {}
+
+local function SwimStore()
+	local db = E.db.general
+
+	--[[
+		TYPE-CHECKED, not just nil-checked.
+
+		An earlier version of this feature shipped `general.swimGear` as a plain boolean
+		toggle. Anybody who ticked it has `swimGear = true` written into their profile,
+		and removing the default from Settings/Profile.lua does not remove a saved value
+		-- it only stops it being defaulted. `if not db.swimGear` then passes straight
+		over a `true` and every read below indexes a boolean.
+
+		Any key that changes shape between versions needs this. Nil is the easy case; the
+		wrong type is the one that actually ships.
+	]]
+	if type(db.swimGear) ~= "table" then
+		db.swimGear = {}
+	end
+
+	local sg = db.swimGear
+	--Off by default, for the same reason the mount version is.
+	if sg.enable == nil then sg.enable = false end
+	--What goes on in the water.
+	if not sg.slots then sg.slots = {} end
+	--What was displaced, so a reload while wet does not lose track of it.
+	if not sg.saved then sg.saved = {} end
+	--What you want on when you climb out, declared rather than inferred.
+	if not sg.land then sg.land = {} end
+
+	return sg
+end
+
+function M:SwimGearIsSwimming()
+	if type(_G["IsSwimming"]) == "function" then
+		return _G["IsSwimming"]() and true or false
+	end
+	if type(_G["PlayerIsSwimming"]) == "function" then
+		return _G["PlayerIsSwimming"]() and true or false
+	end
+	return false
+end
+
+local function SwimRecord(def, ok, detail)
+	tinsert(swimResults, {slot = def.label, ok = ok and true or false, detail = detail})
+end
+
+--Wear `wanted`; remember what it displaced in `memory` so the other direction can undo it.
+local function SwimSwap(wanted, memory)
+	swimApplying = true
+	swimResults = {}
+
+	for _, def in ipairs(SLOTS) do
+		local entry = wanted[def.key]
+		if entry and (entry.id or entry.name) then
+			local invSlot = GetInventorySlotInfo(def.key)
+			local current = GetInventoryItemLink("player", invSlot)
+
+			if ItemMatches(entry, current) then
+				--Already on, so nothing is written down and the way back leaves it alone.
+				SwimRecord(def, true, L["MOUNTGEAR_ALREADY_ON"])
+			else
+				local bag, slot = FindInBags(entry)
+				if not bag then
+					SwimRecord(def, false, L["MOUNTGEAR_NOT_IN_BAGS"])
+				else
+					--Only the first displacement is remembered, same as the mount version:
+					--running again mid-swim must not record our own item as the thing owed.
+					if memory and memory[def.key] == nil then
+						memory[def.key] = current or false
+					end
+
+					local ok, why = EquipFromBag(bag, slot, invSlot)
+					SwimRecord(def, ok, why)
+				end
+			end
+		end
+	end
+
+	swimApplying = false
+end
+
+function M:ApplySwimGear()
+	local db = SwimStore()
+	SwimSwap(db.slots, db.saved)
+end
+
+--[[
+	Coming out of the water.
+
+	`land` first, because it is what you SAID you want on. `saved` is the fallback for a
+	slot you never declared: put back whatever we displaced. A slot recorded as `false`
+	was empty before we touched it, so it is emptied again rather than left holding ours.
+]]
+function M:RestoreSwimGear()
+	local db = SwimStore()
+
+	swimApplying = true
+	swimResults = {}
+
+	for _, def in ipairs(SLOTS) do
+		local wanted = db.land[def.key]
+		local displaced = db.saved[def.key]
+
+		if wanted and (wanted.id or wanted.name) then
+			local invSlot = GetInventorySlotInfo(def.key)
+			if not ItemMatches(wanted, GetInventoryItemLink("player", invSlot)) then
+				local bag, slot = FindInBags(wanted)
+				if bag then
+					local ok, why = EquipFromBag(bag, slot, invSlot)
+					SwimRecord(def, ok, why)
+				else
+					SwimRecord(def, false, L["MOUNTGEAR_NOT_IN_BAGS"])
+				end
+			end
+		elseif displaced ~= nil then
+			local invSlot = GetInventorySlotInfo(def.key)
+
+			if displaced == false then
+				local ok, why = UnequipToBags(invSlot)
+				SwimRecord(def, ok, why)
+			else
+				local bag, slot = FindInBags(displaced)
+				if bag then
+					local ok, why = EquipFromBag(bag, slot, invSlot)
+					SwimRecord(def, ok, why)
+				else
+					SwimRecord(def, false, L["MOUNTGEAR_NOT_IN_BAGS"])
+				end
+			end
+		end
+
+		db.saved[def.key] = nil
+	end
+
+	swimApplying = false
+end
+
+local function SwimPoll()
+	if (this.throttle or 0) > GetTime() then return end
+	this.throttle = GetTime() + SWIM_POLL
+
+	local db = SwimStore()
+	if not db.enable then
+		--Switched off while wet: put your own gear back rather than leaving ours on.
+		if swimming then
+			swimming = false
+			if not UnitAffectingCombat("player") then M:RestoreSwimGear() end
+		end
+		return
+	end
+
+	if swimApplying then return end
+
+	local wet = M:SwimGearIsSwimming() and not M:MountGearIsMounted()
+	if wet == swimming then return end
+
+	--Combat holds the transition rather than dropping it. Nothing is swapped mid-fight,
+	--and the state is not latched either, so the check simply comes round again.
+	if UnitAffectingCombat("player") then return end
+
+	swimming = wet
+	if wet then M:ApplySwimGear() else M:RestoreSwimGear() end
+end
+
+function M:GetSwimGearSettings()
+	return SwimStore()
+end
+
+function M:GetSwimGearResults()
+	return swimResults
+end
+
+function M:SetSwimGearItem(slotKey, text)
+	SwimStore().slots[slotKey] = M:ParseMountGearItem(text)
+end
+
+function M:SetSwimLandItem(slotKey, text)
+	SwimStore().land[slotKey] = M:ParseMountGearItem(text)
+end
+
+--Built here rather than in Config/ for the reason BuildOptions gives above: a change in
+--this file needs only /reload, a change in Config/ needs a full exit of the client.
+local function BuildSwimOptions()
+	local general = E.Options and E.Options.args and E.Options.args.general
+	if not general or not general.args then return end
+
+	local args = {
+		intro = {
+			order = 1,
+			type = "description",
+			name = L["SWIMGEAR_INTRO"]
+		},
+		enable = {
+			order = 2,
+			type = "toggle",
+			name = L["Enable"],
+			desc = L["Off by default, because this moves your equipment around on its own."],
+			get = function() return SwimStore().enable and true or false end,
+			set = function(_, value)
+				SwimStore().enable = value and true or false
+				--Forget the transition as well as the setting, so switching off and on
+				--again does not think it is still in the state it was last in.
+				swimming = nil
+			end
+		},
+		combat = {
+			order = 3,
+			type = "description",
+			name = L["Gear cannot be swapped in combat. A change that lands mid-fight is held until the fight ends."]
+		}
+	}
+
+	args.swimHeader = {
+		order = 9,
+		type = "header",
+		name = L["Swimming gear"]
+	}
+
+	for index, def in ipairs(SLOTS) do
+		local key = def.key
+		args[key] = {
+			order = 10 + index,
+			type = "input",
+			width = "full",
+			name = L[def.label],
+			desc = L["The item to wear in this slot while swimming."],
+			get = function()
+				return M:MountGearLabel(SwimStore().slots[key]) or ""
+			end,
+			set = function(_, value)
+				M:SetSwimGearItem(key, value)
+			end
+		}
+	end
+
+	args.landHeader = {
+		order = 20,
+		type = "header",
+		name = L["Land gear"]
+	}
+
+	args.landIntro = {
+		order = 21,
+		type = "description",
+		name = L["SWIMGEAR_LAND_INTRO"]
+	}
+
+	for index, def in ipairs(SLOTS) do
+		local key = def.key
+		args["land"..key] = {
+			order = 21 + index,
+			type = "input",
+			width = "full",
+			name = L[def.label],
+			desc = L["The item to wear in this slot when out of the water."],
+			get = function()
+				return M:MountGearLabel(SwimStore().land[key]) or ""
+			end,
+			set = function(_, value)
+				M:SetSwimLandItem(key, value)
+			end
+		}
+	end
+
+	general.args.swimGear = {
+		--5.5 is Mount Gear, 5.7 CC Watch. This belongs next to the one it shares its
+		--machinery with.
+		order = 5.6,
+		type = "group",
+		name = L["Swim Gear"],
+		args = args
+	}
+end
+
+function M:LoadSwimGear()
+	if swimFrame then return end
+
+	swimFrame = CreateFrame("Frame")
+	swimFrame:SetScript("OnUpdate", SwimPoll)
+
+	BuildSwimOptions()
+end
+
 function M:LoadMountGear()
 	Store()
 	BuildOptions()
@@ -651,4 +975,14 @@ function M:LoadMountGear()
 		--just ended.
 		ScheduleCheck()
 	end)
+
+	--[[
+		LAST, and deliberately so.
+
+		This sat at the top of the function and threw on a profile carrying a stale
+		`swimGear` boolean, which aborted everything below it -- including BuildOptions,
+		so the Mount Gear tab vanished and the swim half looked like it had broken
+		mounting. A feature added alongside another must not be able to take it down.
+	]]
+	M:LoadSwimGear()
 end

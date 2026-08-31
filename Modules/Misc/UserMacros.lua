@@ -216,6 +216,371 @@ if not WarlockPriority then
 end
 
 --[[
+	MULTI-DOT, through Cursive.
+
+	One button that keeps Curse of Shadow, Corruption and Siphon Life rolling on every
+	mob in combat WITHOUT changing your target. Cursive:Multicurse picks the target
+	itself, casts, and returns true; false means every mob already has that dot fresh
+	enough, so the next spell down gets a turn.
+
+	IT IS HERE RATHER THAN IN A MACRO FOR ONE REASON: 1.12 has no clipboard paste. The
+	chained version fits inside the 255 character macro limit at 237, so length is not
+	the obstacle -- but getting 237 characters into the macro editor means typing every
+	one of them by hand, correctly, including the braces and the quotes. A file is
+	edited with a real editor. That is the whole point of this file.
+
+	The macro becomes:
+
+		/run Multidot()
+
+	`refreshtime` is a Cursive option, in seconds: it allows a re-cast when that much
+	time or less is left. Corruption gets 3 because it is the longest of the three and
+	worth refreshing early; the other two get 1.
+
+	ORDER IS PRIORITY. Curse of Shadow first because only one curse can sit on a mob at
+	a time, so a missing curse is the most valuable global. Change the order here rather
+	than in the macro.
+]]
+--[[
+	IT MUST NOT PULL, and by default it does.
+
+	Cursive decides a mob is eligible like this (commands.lua, pickTarget):
+
+		if ignoreInFight or Cursive.filter.infight(guid) or guid == currentTargetGuid then
+
+	The last clause is the problem. Your CURRENT TARGET is always eligible whether or
+	not it is fighting anybody, so pressing this with an unengaged aggressive mob
+	targeted dots it and pulls it. That is Cursive's behaviour and it applies to the
+	plain chained macro exactly as it does here.
+
+	`ignoretarget` on its own is too blunt: the line ABOVE that one reads
+
+		if not options["ignoretarget"] or guid ~= currentTargetGuid then
+
+	which drops the current target from consideration entirely, so your real target
+	would stop receiving dots as well.
+
+	So it is applied CONDITIONALLY -- only while the target is not in combat. Then the
+	only clause an idle mob could have qualified under is gone, and the moment your
+	target is actually fighting it qualifies on its own merits and comes back in. No
+	behaviour is lost; only pulling is.
+]]
+--[[
+	PICKING THE MOBS OURSELVES, because neither of Cursive's two answers is the one
+	wanted here and both have now been measured failing.
+
+	With Cursive's "In Combat" filter ON, a mob is gated on UnitAffectingCombat(guid),
+	which does not answer for anything except your current target on this client. The
+	measured result was a linked pair where spamming the button dotted only the mob that
+	was targeted, then moved on when it died.
+
+	With that filter OFF there is no combat test at all, and the measured result was dots
+	landing on two NEUTRAL mobs standing near the fight -- which pulls them.
+
+	THE POOL CARRIES A BETTER SIGNAL THAN EITHER. Cursive.core.guids maps a guid to the
+	last time it was seen, refreshed from UNIT_COMBAT (core.lua) -- an actual combat event
+	on that unit. Anything swinging at anybody refreshes constantly. An idle mob never
+	does: it is in the pool only because it was targeted or moused over once, and its
+	timestamp stops dead there.
+
+	So the test becomes "seen in a combat event within the last few seconds", derived from
+	events that really happened rather than from a call that does not answer.
+
+	AND HOSTILE ONLY. Cursive's attackable filter passes a neutral mob, because you *can*
+	attack it -- that is what let the boar through. UnitIsEnemy is false for a neutral mob
+	until it is actually fighting you, so it is the test that says "already my enemy"
+	rather than "could be made one".
+
+	Three conditions, each closing a hole the other two cannot:
+
+		hostile   - never dots a yellow mob, so it can never make one
+		recent    - never dots an idle red mob standing near the fight
+		in combat - the guard in Multidot; never opens a fight at all
+
+	Cursive still does the rest. ShouldDisplayGuid applies its exists / alive / attackable
+	/ not-mind-controlled filtering, and Cursive:Curse applies refreshtime, the
+	crowd-control check and the cast. Only the CHOICE of mob is ours.
+
+	Cursive's own "In Combat" filter should stay OFF. It would re-apply the
+	UnitAffectingCombat test inside ShouldDisplayGuid and put us back to target-only.
+]]
+local COMBAT_RECENCY = 5
+
+--Highest health first, matching the HIGHEST_HP priority this replaces.
+local function ByHealth(a, b)
+	return (UnitHealth(a) or 0) > (UnitHealth(b) or 0)
+end
+
+--[[
+	GIVING CURSIVE THE MOBS, because it cannot see them on its own.
+
+	Measured, not reasoned: with a linked pair beating on the player, Cursive.core.guids
+	held the target and a corpse. The second Centurion was never in the pool at all, so
+	every filter argued about above was irrelevant -- there was nothing to filter.
+
+	Cursive acquires from three places (core.lua): PLAYER_TARGET_CHANGED, UNIT_COMBAT and
+	UNIT_MODEL_CHANGED. The first is your target. The second carries a unit TOKEN, and a
+	mob nobody has targeted has no token. So in a raid the pool fills up from everyone
+	else's targets and multicurse works beautifully; solo it contains your target and
+	whatever you happened to mouse over. That is why this macro works for a raiding
+	warlock and not here.
+
+	Nameplates already know the pack. SuperWoW names a plate's parent frame after the
+	unit's GUID -- the same trick OctoUI's own nameplate castbar uses to map a cast to a
+	plate -- so every visible plate is a guid Cursive can be told about. addGuid does its
+	own validation: 0x prefix, exists, not dead, and the pool cap.
+
+	This also fixes Cursive's own multicurse as a side effect, since it is the same pool.
+]]
+local function AcquireFromNameplates()
+	if not (ElvUI and Cursive.core and Cursive.core.addGuid) then return end
+
+	local E = unpack(ElvUI)
+	local NP = E and E.GetModule and E:GetModule("NamePlates", true)
+	local plates = NP and NP.VisiblePlates
+	if not plates then return end
+
+	for frame in pairs(plates) do
+		local parent = frame:GetParent()
+		local guid = parent and parent.GetName and parent:GetName(1)
+
+		if guid and string.sub(guid, 1, 2) == "0x" then
+			Cursive.core.addGuid(guid)
+		end
+	end
+end
+
+local function ActiveGuids()
+	local candidates = {}
+
+	--Acquire first: a mob that is not in the pool cannot be chosen no matter what the
+	--filters below say. This also refreshes the timestamp of everything currently on
+	--screen, which is what keeps the recency test meaningful rather than a proxy for
+	--"is my target" -- a mob whose plate has gone stops being refreshed and ages out.
+	AcquireFromNameplates()
+
+	local guids = Cursive.core and Cursive.core.guids
+	if not guids then return candidates end
+
+	local now = GetTime()
+	for guid, seen in pairs(guids) do
+		if (now - seen) <= COMBAT_RECENCY
+			and Cursive.filter.hostile(guid)
+			and Cursive:ShouldDisplayGuid(guid)
+			--Range, using the check Cursive itself falls back to. A cast at something out
+			--of range costs a global and an error message.
+			and CheckInteractDistance(guid, 4)
+		then
+			table.insert(candidates, guid)
+		end
+	end
+
+	table.sort(candidates, ByHealth)
+	return candidates
+end
+
+if not Multidot then
+	function Multidot()
+		--Guarded rather than assumed: without Cursive this is an "attempt to index a nil
+		--value" on a button somebody presses in combat.
+		if not (Cursive and Cursive.Multicurse) then
+			DEFAULT_CHAT_FRAME:AddMessage("Multidot: Cursive is not loaded.")
+			return
+		end
+
+		--[[
+			OUT OF COMBAT THIS DOES NOTHING, and that is the only safe answer.
+
+			Cursive's own combat filter gives up while you are not fighting (filter.lua):
+
+				-- If the player is not in combat, the "In Combat" filter is a no-op
+				if not UnitAffectingCombat("player") then return true end
+
+			So out of combat EVERY attackable mob in range is eligible, targeted or not.
+			The conditional ignoretarget below closes the "your target is always eligible"
+			clause, but with no target at all there is nothing left to exclude and Cursive
+			will happily pick the biggest thing nearby and pull it -- which is exactly the
+			target-then-untarget case.
+
+			The two guards cover different holes and both are needed: this one for the
+			filter going no-op, the one below for the current-target exemption while you
+			ARE in combat.
+
+			The cost is that this button cannot open a fight. That is correct for what it
+			is -- a button that spreads dots across things already fighting you. Opening is
+			a single-target cast.
+		]]
+		if not UnitAffectingCombat("player") then return end
+
+		local candidates = ActiveGuids()
+
+		--[[
+			THE CURSE PAIR GOES FIRST, AND PER MOB. This is the fix for a resisted Agony.
+
+			Malediction ties the two together: applying Curse of Shadows afflicts the
+			target with Agony as well, so a mob with Shadow normally has Agony and a
+			separate Agony clause looks redundant. It is not -- Agony can resist on its
+			own, and then Shadow is still up, so anything that only asks "does this mob
+			need Shadow" walks straight past a mob missing half its curse.
+
+			IT ALSO HAS TO BE PER MOB, which is what the first version got wrong. Walking
+			spell by spell across every mob spreads Shadow to everything before Agony is
+			considered anywhere -- fine on a single target, useless in the case that
+			actually matters, because on a boss with adds there is nearly always some mob
+			still missing Shadow and the boss's resisted Agony never gets a turn.
+
+			So: for each mob, in health order, make its CURSE whole before moving on. One
+			cast either way, and the mob that most needs a curse gets one.
+		]]
+		for i = 1, table.getn(candidates) do
+			local guid = candidates[i]
+
+			--Shadow first: on a mob with no curse at all this single cast brings Agony too.
+			if Cursive:Curse("Curse of Shadow", guid, {refreshtime = 1}) then return end
+			--Shadow present but Agony missing means it resisted. Cast it directly rather
+			--than re-casting Shadow to piggyback, which would spend a global refreshing a
+			--curse that did not need it.
+			if Cursive:Curse("Curse of Agony", guid, {refreshtime = 1}) then return end
+		end
+
+		--[[
+			The remaining dots stay SPELL by spell, deliberately.
+
+			Curses are one-per-mob and worth completing before moving on; Corruption and
+			Siphon Life are not. Spreading each of those across everything before starting
+			the next is what makes this a multi-dot rather than a rotation that fully dots
+			one mob while the rest stand untouched.
+		]]
+		local spells = {
+			{"Corruption", 3},
+			{"Siphon Life", 1}
+		}
+
+		for spellIndex = 1, table.getn(spells) do
+			local spell, refresh = spells[spellIndex][1], spells[spellIndex][2]
+
+			for i = 1, table.getn(candidates) do
+				if Cursive:Curse(spell, candidates[i], {refreshtime = refresh}) then return end
+			end
+		end
+	end
+end
+
+--[[
+	WHICH SIGNAL ACTUALLY SEPARATES TWO MOBS IN THE SAME FIGHT.
+
+	Three attempts have now been made at "is this mob in combat with me" and all three
+	were reasoned rather than measured:
+
+		UnitAffectingCombat(guid)   - does not answer except for your current target
+		Cursive.core.guids recency  - refreshed from UNIT_COMBAT, which carries a unit
+		                              TOKEN, so a mob that is not your target never
+		                              refreshes and recency collapses to "is my target"
+		threat model `engaged`      - set from OUR damage, so a mob we have not hit yet
+		                              is absent, and hitting it first is the whole job
+
+	So stop guessing. Run this with a linked pair on you, one targeted and one not, and
+	it prints every candidate signal for every mob Cursive is tracking. Whichever column
+	differs between the two mobs is the one to build on -- and if none of them differ,
+	that is worth knowing too, because it means the information is not available and the
+	honest answer is a button that dots your target and says so.
+
+		/run MultidotDebug()
+]]
+if not MultidotDebug then
+	function MultidotDebug()
+		if not (Cursive and Cursive.core and Cursive.core.guids) then
+			DEFAULT_CHAT_FRAME:AddMessage("MultidotDebug: Cursive is not loaded.")
+			return
+		end
+
+		local _, targetGuid = UnitExists("target")
+		local now = GetTime()
+
+		--Acquire first so the listing shows what Multidot would actually see, rather than
+		--the pool as it stood before the button was pressed.
+		AcquireFromNameplates()
+
+		DEFAULT_CHAT_FRAME:AddMessage(string.format(
+			"MultidotDebug: player in combat = %s", tostring(UnitAffectingCombat("player"))))
+		DEFAULT_CHAT_FRAME:AddMessage("name | age | isTarget | affectingCombat | isEnemy | inRange | shouldDisplay")
+
+		local shown = 0
+		for guid, seen in pairs(Cursive.core.guids) do
+			--Mobs only. The pool also holds the player, pets and party members.
+			if UnitExists(guid) and not UnitIsPlayer(guid) then
+				shown = shown + 1
+
+				local ok, display = pcall(Cursive.ShouldDisplayGuid, Cursive, guid)
+
+				DEFAULT_CHAT_FRAME:AddMessage(string.format(
+					"%s | %.1fs | %s | %s | %s | %s | %s",
+					tostring(UnitName(guid)),
+					now - seen,
+					tostring(guid == targetGuid),
+					tostring(UnitAffectingCombat(guid)),
+					tostring(UnitIsEnemy("player", guid)),
+					tostring(CheckInteractDistance(guid, 4) and true or false),
+					tostring(ok and display or "err")))
+			end
+		end
+
+		if shown == 0 then
+			DEFAULT_CHAT_FRAME:AddMessage("  (Cursive is tracking no mobs at all)")
+		end
+	end
+end
+
+--[[
+	IS THE PLAYER SWIMMING, and which call is willing to say so.
+
+	Vanilla has no swim state at all. Two of the injected DLLs claim to add one and
+	neither addon that uses them guards the call, so neither is evidence that it exists
+	on this build:
+
+		IsSwimming()        - ClassicAPI.dll, used unguarded by SuperCleveRoidMacros
+		PlayerIsSwimming()  - nampower 2.36+, documented in its own API notes
+
+	Run this on dry land, then again while swimming, and compare. A function that is
+	absent prints "missing"; one that is present but always returns the same value in
+	both states is present and useless, which is worth knowing before anything is built
+	on it.
+
+		/run SwimCheck()
+
+	MirrorTimer is the fallback and is NOT the same question: the breath bar only appears
+	when the head is UNDER water, so it cannot tell swimming on the surface from walking
+	on the shore. Listed so the difference is visible in the same capture.
+]]
+if not SwimCheck then
+	function SwimCheck()
+		local function report(name, fn)
+			if type(fn) ~= "function" then
+				DEFAULT_CHAT_FRAME:AddMessage(name.." = missing")
+				return
+			end
+
+			local ok, value = pcall(fn)
+			if ok then
+				DEFAULT_CHAT_FRAME:AddMessage(name.." = "..tostring(value))
+			else
+				DEFAULT_CHAT_FRAME:AddMessage(name.." = error: "..tostring(value))
+			end
+		end
+
+		report("IsSwimming()", IsSwimming)
+		report("PlayerIsSwimming()", PlayerIsSwimming)
+
+		--Underwater only, and only while the bar is running.
+		if GetMirrorTimerInfo then
+			local timer, _, _, _, label = GetMirrorTimerInfo(1)
+			DEFAULT_CHAT_FRAME:AddMessage("MirrorTimer 1 = "..tostring(timer)
+				.." ("..tostring(label)..")")
+		end
+	end
+end
+
+--[[
 	THE OTHER HALF OF THE BLOCK AT THE TOP. Anything you write BELOW this will still work,
 	it just will not be listed by name in the options page or by /octoui-lua -- so keep your
 	functions above it.

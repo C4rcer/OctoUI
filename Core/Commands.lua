@@ -317,6 +317,19 @@ function E:AuctionCommand(msg)
 	A:Command(msg or "")
 end
 
+--What the Enchanting slot filter can actually see: the craft list, the slots derived
+--from it, and the search box it drives. A filter that appears to do nothing has two
+--causes that look identical from the outside, and this separates them.
+function E:CraftSlotCommand()
+	local S = E:GetModule("Skins", true)
+	if not (S and S.CraftSlotReport) then
+		E:Print("|cffff0000Open the Enchanting window once first - the craft skin has not loaded.|r")
+		return
+	end
+
+	S:CraftSlotReport()
+end
+
 function E:RecipeFinderCommand(msg)
 	local RF = E:GetModule("RecipeFinder", true)
 	if not (RF and RF.Command) then
@@ -2026,6 +2039,7 @@ function E:LoadCommands()
 	self:RegisterChatCommand("octoui-auras", "AuraReport")
 	self:RegisterChatCommand("octoui-dismount", "DismountReport")
 	self:RegisterChatCommand("octoui-mail", "MailReport")
+	self:RegisterChatCommand("octoui-craft", "CraftSlotCommand")
 	self:RegisterChatCommand("octoui-recipes", "RecipeFinderCommand")
 	self:RegisterChatCommand("octoui-roles", "SpecRoleReport")
 	self:RegisterChatCommand("octoui-ah", "AuctionCommand")

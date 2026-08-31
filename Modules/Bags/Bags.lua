@@ -391,6 +391,69 @@ function B.Slot_OnEnter()
 	end
 end
 
+--[[
+	A LINK WITH NO TEXTURE IS A CACHE MISS, NOT AN EMPTY SLOT.
+
+	GetContainerItemInfo reads the client's item cache. GetContainerItemLink does
+	not. So a slot holding a real item can answer with a link and a nil texture
+	whenever that item is not cached yet -- and SetItemButtonTexture(slot, nil)
+	draws an empty square.
+
+	It then STAYS empty, because nothing fires again for a slot that did not
+	change: BAG_UPDATE reports contents changing, not the cache catching up.
+	Opening the bank is the reliable way to provoke it, since that is when the
+	client is asked for a hundred items at once. Reported twice as "the bag bug",
+	both times right after opening the bank, and both times as a couple of blank
+	squares in an otherwise full row.
+
+	So a slot in that state is re-read shortly afterwards. Retrying is safe --
+	UpdateSlot is idempotent -- and bounded, because an item whose texture never
+	arrives must not schedule work forever.
+]]
+--UpdateSlot is a method on the CONTAINER FRAME, not on the module -- it is called
+--as f:UpdateSlot(...) and reads self.Bags. So the frame has to be carried through
+--the retry: calling B:UpdateSlot would land on a table with no .Bags and hit the
+--guard at the top, which is a fix that silently does nothing.
+local RETRY_DELAY = 0.35
+local RETRY_LIMIT = 4
+local retrying = {}
+local attempts = {}
+
+local function SlotKey(frame, bagID, slotID)
+	local owner = (frame and frame.GetName and frame:GetName()) or "?"
+	return owner.."-"..bagID.."-"..slotID
+end
+
+function B:RetrySlot(key)
+	local pending = retrying[key]
+	if not pending then return end
+
+	retrying[key] = nil
+
+	local frame = pending.frame
+	if frame and frame.UpdateSlot and frame:IsShown() then
+		frame:UpdateSlot(pending.bagID, pending.slotID)
+	end
+end
+
+function B:ScheduleSlotRetry(frame, bagID, slotID)
+	local key = SlotKey(frame, bagID, slotID)
+
+	--Already queued; do not stack a second timer on the same slot.
+	if retrying[key] then return end
+
+	local tried = attempts[key] or 0
+	if tried >= RETRY_LIMIT then return end
+	attempts[key] = tried + 1
+
+	retrying[key] = {frame = frame, bagID = bagID, slotID = slotID}
+	self:ScheduleTimer("RetrySlot", RETRY_DELAY, key)
+end
+
+function B:ClearSlotRetry(frame, bagID, slotID)
+	attempts[SlotKey(frame, bagID, slotID)] = nil
+end
+
 function B:UpdateSlot(bagID, slotID)
 	if (self.Bags[bagID] and self.Bags[bagID].numSlots ~= GetContainerNumSlots(bagID)) or not self.Bags[bagID] or not self.Bags[bagID][slotID] then return end
 
@@ -492,6 +555,15 @@ function B:UpdateSlot(bagID, slotID)
 	SetItemButtonTexture(slot, texture)
 	SetItemButtonCount(slot, count)
 	SetItemButtonDesaturated(slot, locked)
+
+	--The cache miss described above. Checked after drawing rather than before, so
+	--the slot still shows whatever the client could give us in the meantime.
+	if clink and not texture then
+		B:ScheduleSlotRetry(self, bagID, slotID)
+	elseif texture then
+		--Arrived. Clear the count so this slot starts fresh next time.
+		B:ClearSlotRetry(self, bagID, slotID)
+	end
 
 	if GameTooltip:IsOwned(slot) and not slot.hasItem then
 		B:Tooltip_Hide()

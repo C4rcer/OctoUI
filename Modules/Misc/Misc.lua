@@ -4,7 +4,9 @@ E.Misc = M
 
 --Cache global variables
 --Lua functions
-local format, gsub = string.format, string.gsub
+local format, gsub, find = string.format, string.gsub, string.find
+local getn, tinsert = table.getn, table.insert
+local strlower = strlower
 --WoW API / Variables
 local CanMerchantRepair = CanMerchantRepair
 local GetFriendInfo = GetFriendInfo

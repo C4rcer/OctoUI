@@ -602,6 +602,13 @@ L["AUTOROLL_REMOVED"] = "Won %s - taken off the loot roll list."
 
 --Modules/Misc/MountGear.lua -- riding gear that goes on with the mount
 L["Mount Gear"] = true;
+L["Swim Gear"] = true;
+L["Swimming gear"] = true;
+L["Land gear"] = true;
+L["The item to wear in this slot while swimming."] = true;
+L["The item to wear in this slot when out of the water."] = true;
+L["SWIMGEAR_INTRO"] = "Puts swim gear on when you enter the water and your land gear back when you leave it. Leave a box empty to leave that slot alone. Shift-click an item into a box, or type an item id or name."
+L["SWIMGEAR_LAND_INTRO"] = "What to put back on when you leave the water. Leave a box empty and that slot returns whatever it was wearing before you got in, which is only right if it was right at the time."
 L["Puts riding gear on with the mount and your own gear back when it goes. Leave a box empty to leave that slot alone. Shift-click an item into a box, or type an item id or name."] = true;
 L["Off by default, because this moves your equipment around on its own."] = true;
 L["Gear cannot be swapped in combat. A change that lands mid-fight is held until the fight ends."] = true;
@@ -860,6 +867,14 @@ L["AUCTION_BULK_STOPPED_MISSED"] = "Stopped after %d %s (%s spent) - %d auction(
 L["AUCTION_BUYLOG_HINT"] = "Run /octoui-ah buylog to see what happened to each one."
 L["AUCTION_BUYLOG_EMPTY"] = "Auction buy log: nothing bought yet this session."
 L["Lvl"] = true;
+
+--Modules/Skins/Blizzard/Craft.lua -- the slot filter on the Enchanting window
+L["All Slots"] = true;
+
+--Modules/NamePlates -- cross-faction plates
+L["Unflagged Players Are Friendly"] = true;
+L["NP_UNFLAGGED_DESC"] = "This server lets Horde and Alliance group together, so an opposite faction player who is not flagged for PvP cannot be attacked and is shown as friendly. Flagged players still show as hostile. Switch off for vanilla behaviour, where any opposite faction player reads as an enemy."
+L["CRAFT_SLOT_TIP"] = "Left click for the list of slots, right click to step through them one at a time."
 
 --Modules/DataTexts/DataTexts.lua -- the battleground scoreboard on the chat panels
 L["Battleground"] = true;

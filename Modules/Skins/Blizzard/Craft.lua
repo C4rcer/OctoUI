@@ -5,9 +5,12 @@ local S = E:GetModule("Skins");
 --Lua functions
 local _G = _G
 local unpack = unpack
-local find, match = string.find, string.match
+local tostring = tostring
+local find, match, format = string.find, string.match, string.format
+local tinsert, getn, sort = table.insert, table.getn, table.sort
 --WoW API / Variables
 local CreateFrame = CreateFrame
+local GameTooltip = GameTooltip
 local GetItemInfo = GetItemInfo
 local GetItemQualityColor = GetItemQualityColor
 local GetCraftItemLink = GetCraftItemLink
@@ -111,6 +114,246 @@ local function LoadSkin()
 		craftSearchBox:SetPoint("BOTTOMRIGHT", CraftRankFrame, "BOTTOMLEFT", -SEARCH_GAP, 0)
 
 		if S.HandleEditBox then S:HandleEditBox(craftSearchBox) end
+
+		--[[
+			BREAK THE LIST DOWN BY SLOT.
+
+			Enchanting is a Craft, not a TradeSkill, and the Craft API has no equivalent of
+			TradeSkillInvSlotDropDown -- so where a blacksmith can narrow to Bracers, an
+			enchanter gets one flat list of everything they know. At 300 skill that is
+			around a hundred rows, and the only way to find "the bracer enchants" is to
+			read all of them.
+
+			THE SLOTS ARE DERIVED FROM THE RECIPE NAMES, not from a table. A table would go
+			stale the moment this server adds an enchant, and it already carries entries a
+			table would not predict. Every enchant here is named "Enchant <slot> - <effect>",
+			so the slot is the text between the two; anything not of that shape (Runed
+			Arcanite Rod, Smoking Heart of the Mountain) is simply never offered as a slot,
+			which is correct rather than a gap.
+
+			THE FILTERING IS THE CLIENT'S OWN SEARCH BOX, driven rather than reimplemented.
+			Re-ordering or hiding the craft buttons would mean maintaining a display-index
+			to craft-index map, and CraftFrame_SetSelection and DoCraft both take that
+			index -- getting it wrong enchants the wrong thing with someone's materials.
+			Setting the text the box already filters on cannot have that failure.
+		]]
+		local SLOT_WIDTH = 104
+
+		--Room for the new control. The header row is search + skill bar; without this the
+		--three of them together are wider than the frame's usable width.
+		E:Size(CraftRankFrame, 340, 18)
+		CraftRankFrame:ClearAllPoints()
+		CraftRankFrame:SetPoint("TOP",
+			((SEARCH_WIDTH + SEARCH_GAP + SLOT_WIDTH + SEARCH_GAP) / 2) - 10, -38)
+
+		local slotMenu = CreateFrame("Frame", "OctoUI_CraftSlotMenu", E.UIParent)
+		E:SetTemplate(slotMenu, "Transparent")
+		slotMenu:Hide()
+
+		local slotButton = CreateFrame("Button", "OctoUI_CraftSlotButton", CraftFrame)
+		E:SetTemplate(slotButton, "Transparent")
+		E:Width(slotButton, SLOT_WIDTH)
+		E:Point(slotButton, "TOPRIGHT", craftSearchBox, "TOPLEFT", -SEARCH_GAP, 0)
+		E:Point(slotButton, "BOTTOMRIGHT", craftSearchBox, "BOTTOMLEFT", -SEARCH_GAP, 0)
+
+		slotButton.text = slotButton:CreateFontString(nil, "OVERLAY")
+		E:FontTemplate(slotButton.text, nil, 11, "NONE")
+		slotButton.text:SetAllPoints()
+		slotButton:SetScript("OnEnter", function() this:SetBackdropBorderColor(1, 1, 1) end)
+		slotButton:SetScript("OnLeave", function() E:SetTemplate(this, "Transparent") end)
+
+		local function SetLabel(slot)
+			if slot then
+				slotButton.text:SetText(slot)
+				slotButton.text:SetTextColor(unpack(E.media.rgbvaluecolor))
+			else
+				slotButton.text:SetText(L["All Slots"])
+				slotButton.text:SetTextColor(0.7, 0.7, 0.7)
+			end
+		end
+		SetLabel(nil)
+
+		--Read fresh every time the menu opens. The craft list only exists while the window
+		--is open, and a recipe learned this session should appear without a reload.
+		--[[
+			Read out of _G at call time, never cached at file scope.
+
+			Blizzard_CraftUI is load on demand, and this file runs during addon load. A
+			`local GetNumCrafts = GetNumCrafts` at the top of the file therefore captures
+			whatever the name meant BEFORE the craft UI existed, and keeps it forever --
+			the same trap Modules/Auction documents against AuctionFrame. Cheap to avoid
+			and impossible to notice once it bites, because the loop simply never runs.
+		]]
+		local function SlotList()
+			local seen, slots = {}, {}
+			local numCrafts = _G["GetNumCrafts"]
+			local craftInfo = _G["GetCraftInfo"]
+			if not (numCrafts and craftInfo) then return slots end
+
+			for i = 1, (numCrafts() or 0) do
+				local name = craftInfo(i)
+				if name then
+					local slot = match(name, "^Enchant%s+(.-)%s+%-")
+					if slot and slot ~= "" and not seen[slot] then
+						seen[slot] = true
+						tinsert(slots, slot)
+					end
+				end
+			end
+
+			sort(slots)
+			return slots
+		end
+
+		--[[
+			WHAT THIS CONTROL ACTUALLY SEES, printed by /octoui-craft.
+
+			The filter has two halves that fail identically from the outside: the menu can
+			come up empty because the craft list was not readable, or it can come up
+			correct and the search box can decline to filter on it. Both look like
+			"nothing happened", and guessing between them has already cost a round trip.
+		]]
+		function S:CraftSlotReport()
+			local numCrafts = _G["GetNumCrafts"]
+			local craftInfo = _G["GetCraftInfo"]
+
+			E:Print(format("GetNumCrafts=%s GetCraftInfo=%s",
+				tostring(numCrafts ~= nil), tostring(craftInfo ~= nil)))
+
+			if not (numCrafts and craftInfo) then
+				E:Print("The craft API is not readable - open the Enchanting window first.")
+				return
+			end
+
+			local total = numCrafts() or 0
+			E:Print(format("crafts listed: %d", total))
+
+			for i = 1, (total > 3 and 3 or total) do
+				local name, _, craftType = craftInfo(i)
+				E:Print(format("  %d. %s  (%s)", i, tostring(name), tostring(craftType)))
+			end
+
+			local slots = SlotList()
+			E:Print(format("slots derived: %d", getn(slots)))
+			for i = 1, getn(slots) do
+				E:Print("  "..slots[i])
+			end
+
+			--Which widget the skin found, what is in it, and whether anything is listening
+			--to it. A box with no OnTextChanged cannot be what filters the list.
+			local boxName = "none"
+			if _G["CraftSearchBox"] then boxName = "CraftSearchBox"
+			elseif _G["CraftFrameSearchBox"] then boxName = "CraftFrameSearchBox"
+			elseif _G["CraftFrameEditBox"] then boxName = "CraftFrameEditBox" end
+
+			--Whether E:DropDown ever built the menu. Zero buttons means the left-click path
+			--never ran or never got as far as filling it, which is a different fault from
+			--the filter declining the text.
+			local menu = _G["OctoUI_CraftSlotMenu"]
+			if menu then
+				E:Print(format("menu: built=%s shown=%s entries=%d",
+					tostring(menu.buttons ~= nil), tostring(menu:IsShown() and true or false),
+					menu.buttons and getn(menu.buttons) or 0))
+			else
+				E:Print("menu: not created")
+			end
+
+			E:Print(format("search box: %s", boxName))
+			if craftSearchBox then
+				E:Print(format("  text now: '%s'", tostring(craftSearchBox:GetText())))
+				E:Print(format("  OnTextChanged=%s OnEnterPressed=%s",
+					tostring(craftSearchBox:GetScript("OnTextChanged") ~= nil),
+					tostring(craftSearchBox:GetScript("OnEnterPressed") ~= nil)))
+			end
+		end
+
+		--SetText fires OnTextChanged on this client, which is what the client's own filter
+		--hangs off, so setting the text IS applying the filter.
+		--[[
+			SetText alone is an assumption. It does fire OnTextChanged on this client, but
+			only if that is where the client hangs its filtering -- a search box that
+			filters on Enter, or through a separate handler, would take the text and do
+			nothing with it, which is indistinguishable from the menu being broken.
+
+			So drive both scripts the box declares. `this` is how a handler on this client
+			reads the widget it fired on, so it has to be set around the call; it is a
+			plain global and is restored immediately.
+		]]
+		local function Fire(script)
+			local handler = craftSearchBox:GetScript(script)
+			if not handler then return end
+
+			local previous = this
+			this = craftSearchBox
+			pcall(handler)
+			this = previous
+		end
+
+		local function Apply(slot)
+			SetLabel(slot)
+			craftSearchBox:SetText(slot or "")
+			Fire("OnTextChanged")
+			Fire("OnEnterPressed")
+			craftSearchBox:ClearFocus()
+		end
+
+		--A function call per entry rather than a closure written inside the loop: a
+		--closure made in a loop has been measured on this client reading the loop's own
+		--variable as nil when it later runs.
+		local function SlotEntry(label, value)
+			return {text = label, func = function() Apply(value) end}
+		end
+
+		--[[
+			TWO WAYS IN, and the second one is not a convenience.
+
+			Left click opens the menu. Right click steps to the next slot directly, with no
+			menu involved at all -- and that matters because E:DropDown is shared code whose
+			only other user in this addon is a menu nobody had confirmed working either. If
+			the menu turns out not to open on this client, right click still delivers the
+			whole feature, and the difference between the two says exactly where the fault
+			is without another round trip.
+
+			The button reports its own state: the label changes the instant a slot is
+			applied, so a click that lands is visible whether or not the list moves.
+		]]
+		slotButton:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+
+		--Where the cycle currently sits. Zero is "All Slots", which is why it is an index
+		--into the list plus one rather than a slot name.
+		local cycleIndex = 0
+
+		slotButton:SetScript("OnClick", function()
+			local slots = SlotList()
+
+			if arg1 == "RightButton" then
+				cycleIndex = cycleIndex + 1
+				if cycleIndex > getn(slots) then cycleIndex = 0 end
+
+				Apply(cycleIndex > 0 and slots[cycleIndex] or nil)
+				return
+			end
+
+			local list = {SlotEntry(L["All Slots"], nil)}
+			for i = 1, getn(slots) do
+				tinsert(list, SlotEntry(slots[i], slots[i]))
+			end
+
+			if slotMenu:IsShown() then slotMenu:Hide() end
+			E:DropDown(list, slotMenu, 0, 0)
+		end)
+
+		slotButton:SetScript("OnEnter", function()
+			this:SetBackdropBorderColor(1, 1, 1)
+			GameTooltip:SetOwner(this, "ANCHOR_BOTTOM")
+			GameTooltip:AddLine(L["All Slots"])
+			GameTooltip:AddLine(L["CRAFT_SLOT_TIP"], 1, 1, 1, 1)
+			GameTooltip:Show()
+		end)
+		slotButton:SetScript("OnLeave", function()
+			E:SetTemplate(this, "Transparent")
+			GameTooltip:Hide()
+		end)
 	end
 
 	CraftCollapseAllButton:SetPoint("LEFT", CraftExpandTabLeft, "RIGHT", -8, 5)

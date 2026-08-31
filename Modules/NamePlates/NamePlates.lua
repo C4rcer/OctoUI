@@ -361,6 +361,46 @@ function mod:GetUnitInfo(frame)
 	end
 end
 
+--[[
+	A PLATE THAT RESOLVES TO A PLAYER CLASS IS A PLAYER. Which KIND depends on the
+	reaction, and that is the whole fix.
+
+	GetUnitInfo reads Blizzard's own bar colour, so the reaction is the client's opinion
+	rather than ours:
+
+		reaction 2 (red)    - hostile. Flagged for PvP, or a battleground.
+		reaction 4 (yellow) - neutral. Opposite faction, NOT flagged.
+
+	This used to send both to ENEMY_PLAYER, which is correct on a normal realm and wrong
+	here: cross-faction grouping means a neutral player is someone who might be in your
+	party, and you cannot attack them any more than you can attack an Alliance player.
+
+	Flagging is still visible. A flagged player's bar is red, the reaction is 2, and this
+	returns ENEMY_PLAYER exactly as before -- battlegrounds included, where everyone is
+	hostile. Nothing that can actually hurt you is coloured as a friend.
+]]
+--Returns the type AND the reaction, because the reaction has to move with it.
+--
+--Name.lua colours a plate with no health bar straight from UnitReaction:
+--
+--	elseif not self.db.units[frame.UnitType].healthbar.enable and not frame.isTarget then
+--		local reactionType = frame.UnitReaction
+--		if reactionType == 4 then ... neutral ...
+--
+--and FRIENDLY_PLAYER has healthbar.enable = false, so that is the branch these plates
+--land in. Changing the type and leaving the reaction at 4 would drop the health bar
+--like a friendly player and keep the name NEUTRAL YELLOW -- the visible half of the
+--change simply not happening. It only escapes that today because the name's
+--useClassColor default is on and takes an earlier branch, which is one toggle away
+--from being wrong again.
+function mod:PlayerTypeForReaction(reaction)
+	if reaction == 4 and mod.db.unflaggedAreFriendly then
+		return "FRIENDLY_PLAYER", 5
+	end
+
+	return "ENEMY_PLAYER", reaction
+end
+
 function mod:OnShow(self, isUpdate)
 	self = self or this
 
@@ -375,6 +415,21 @@ function mod:OnShow(self, isUpdate)
 	self.UnitFrame.UnitType = unitType
 	self.UnitFrame.UnitClass = mod:UnitClass(self.UnitFrame.oldName:GetText(), unitType)
 	self.UnitFrame.UnitReaction = unitReaction
+
+	--[[
+		Decided HERE, not at the end of this function where it used to live.
+
+		Everything below reads unitType: the castbar height that sizes the plate, and the
+		click-through setting that decides whether the plate eats mouse clicks. Reclassifying
+		afterwards left both of them applying the ENEMY_NPC answer to what is actually a
+		player -- survivable while the correction only ever moved between two enemy types,
+		and not survivable now that it can land on a friendly one.
+	]]
+	if unitType == "ENEMY_NPC" and self.UnitFrame.UnitClass then
+		unitType, unitReaction = mod:PlayerTypeForReaction(unitReaction)
+		self.UnitFrame.UnitType = unitType
+		self.UnitFrame.UnitReaction = unitReaction
+	end
 
 	local width, height = mod.db.clickableWidth + ((E.PixelMode and 2) or 6), mod.db.clickableHeight + mod.db.units[unitType].castbar.height + 3
 	self.UnitFrame:SetWidth(width)
@@ -401,11 +456,6 @@ function mod:OnShow(self, isUpdate)
 
 	if not self.UnitFrame.UnitClass then
 		queryList[self.UnitFrame.UnitName] = self.UnitFrame
-	end
-
-	if unitType == "ENEMY_NPC" and self.UnitFrame.UnitClass then
-		unitType = "ENEMY_PLAYER"
-		self.UnitFrame.UnitType = unitType
 	end
 
 	self.UnitFrame.Level:ClearAllPoints()
@@ -803,8 +853,10 @@ function mod:ClassCache_ClassUpdated(_, name, class)
 		local frame = queryList[name]
 
 		if frame.UnitType then
+			--The other way in: the plate appeared before this name was in the class cache,
+			--so it stayed ENEMY_NPC and asked to be told. Same decision as OnShow.
 			if frame.UnitType == "ENEMY_NPC" then
-				frame.UnitType = "ENEMY_PLAYER"
+				frame.UnitType, frame.UnitReaction = self:PlayerTypeForReaction(frame.UnitReaction)
 			end
 			frame.UnitClass = class
 

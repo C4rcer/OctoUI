@@ -251,12 +251,44 @@ end
 
 RF.TRADE_SKILL_UPDATE = RF.TRADE_SKILL_SHOW
 
+--Every candidate for "which profession is this Craft window showing", tried in
+--order and each one guarded. Returns nil when none answer, which is honest --
+--the caller then records nothing rather than filing crafts under a wrong name.
+local function CraftLineName()
+	local candidates = {"GetCraftDisplaySkillLine", "GetCraftName", "GetCraftSkillLine"}
+
+	for i = 1, getn(candidates) do
+		local fn = _G[candidates[i]]
+		if type(fn) == "function" then
+			local ok, name = pcall(fn)
+			if ok and type(name) == "string" and name ~= "" then return name end
+		end
+	end
+
+	--The window's own title, which is the string the player is looking at.
+	local fs = _G["CraftFrameTitleText"]
+	if fs and fs.GetText then
+		local ok, name = pcall(fs.GetText, fs)
+		if ok and type(name) == "string" and name ~= "" then return name end
+	end
+
+	return nil
+end
+
 function RF:CRAFT_SHOW()
-	--Enchanting is a Craft, not a TradeSkill, on this client. This is the same
-	--call Atlas-OctoUI's profession hooks use to name the Craft frame, which is
-	--how it is known to work here.
-	local profession = GetCraftDisplaySkillLine and GetCraftDisplaySkillLine()
-	if not profession then return end
+	--Enchanting is a Craft, not a TradeSkill, on this client.
+	--
+	--GetCraftDisplaySkillLine RETURNS NIL HERE. Atlas-OctoUI calls it, which is
+	--why it was trusted, but a craft-list capture on 2026-08-22 recorded the line
+	--as "?" against 131 real crafts -- so this handler returned early every time
+	--and Enchanting was never recorded for the "unlearned" filter at all.
+	--
+	--NONE OF THE ALTERNATIVES ARE CONFIRMED on this client either, so all of them
+	--are tried and every one is guarded. A name that is not there costs the next
+	--candidate a turn; ASSUMING one exists is what put GetNumMerchantItems in this
+	--file and only blew up when somebody opened a vendor.
+	local profession = CraftLineName()
+	if not profession or profession == "" then return end
 
 	local names = {}
 	for i = 1, GetNumCrafts() do

@@ -529,6 +529,136 @@ function UF.groupPrototype:Update(self)
 	end
 end
 
+--[[
+	WHICH GROUP HEADER SHOULD BE ON SCREEN.
+
+	The profile carries a `visibility` string per header -- things like
+	"[target=raid26,exists] hide;show" -- which are RETAIL MACRO CONDITIONALS fed
+	to RegisterStateDriver. That API does not exist on 1.12, so every call to it
+	in this file is commented out, and the strings have been inert data ever
+	since. Visibility therefore came down to `db.enable` alone, and since raid,
+	raid40 and party are all enabled by default, ALL THREE HEADERS SHOWED AT
+	ONCE. In a raid that draws every player twice, once from the raid header and
+	once from raid40, overlapping -- reported 2026-08-22 with a screenshot of
+	exactly that.
+
+	So evaluate the same rule natively. The three shipped strings say:
+
+	  party   hide when raid6 exists, or when ungrouped   -> show for 1-5
+	  raid    hide when raid6 missing or raid26 exists    -> show for 6-25
+	  raid40  hide when raid26 missing                    -> show for 26+
+
+	"raid6 exists" is simply "the raid has at least six members", which
+	GetNumRaidMembers answers directly. A raid of fewer than six falls to the
+	party header, which is what the party string's second clause is for and what
+	happens when a party is converted without gaining anyone.
+]]
+function UF:HeaderShouldShow(group)
+	local raid = GetNumRaidMembers() or 0
+	local party = GetNumPartyMembers() or 0
+
+	if group == "raid40" then
+		return raid >= 26
+	elseif group == "raid" then
+		return raid >= 6 and raid < 26
+	elseif group == "party" then
+		--A raid under six has no raid header showing, so the party frames are
+		--the ones that must cover it.
+		if raid > 0 then return raid < 6 end
+		return party > 0
+	end
+
+	--Anything else keeps the old behaviour: enabled means shown.
+	return true
+end
+
+--Re-applies the rule above to all three group headers. Kept separate from
+--UpdateHeader so a roster change costs a Show/Hide rather than a full rebuild.
+--
+--Run TWICE, for the reason RebuildGroupHeaders already documents: the roster
+--events arrive before the client can answer for the new member, so a count read
+--now can be one short. The second pass changes nothing when the first was right.
+--[[
+	HIDING IT IS NOT ENOUGH, and reacting faster does not help.
+
+	Hiding the wrong header worked and then did not stay worked: something calls
+	Show on it again and the overlap comes back at random. Chasing the caller is
+	a race that has to be won every time, and losing it once puts every raid
+	member on screen twice.
+
+	So the header is GAGGED rather than merely hidden: while it should not be
+	visible its Show method is replaced with a no-op, which is the same technique
+	Modules\Maps\MinimapButtons.lua uses on SetPoint for collected buttons that
+	re-anchor themselves. Whatever calls Show, and however often, it stays down.
+
+	The gag is always lifted at the top of this function before anything is
+	decided, so a roster change, a config preview or /moveui can bring the header
+	back the moment the rule says it should be up. Nothing here is one-way.
+]]
+function UF:UpdateHeaderVisibility()
+	local groups = {"party", "raid", "raid40"}
+
+	for i = 1, getn(groups) do
+		local group = groups[i]
+		local header = self[group]
+		local db = self.db and self.db.units and self.db.units[group]
+
+		if header and db and db.enable then
+			--Ungag first, unconditionally: the decision below has to be free to go
+			--either way, and a header left gagged could never be shown again.
+			if header.octoRealShow then
+				header.Show = header.octoRealShow
+				header.octoRealShow = nil
+			end
+
+			--The config preview deliberately shows a header with no group to
+			--match, and outranks the roster.
+			if header.isForced or header.blockVisibilityChanges then
+				--left exactly as the preview put it
+			elseif UF:HeaderShouldShow(group) then
+				header:Show()
+			else
+				header:Hide()
+				header.octoRealShow = header.Show
+				header.Show = E.noop
+			end
+		end
+	end
+end
+
+--Its own constant, NOT the REBUILD_RETRY further down this file. A local declared
+--after the function that reads it resolves to a global and is nil at runtime --
+--the trap RebuildGroupHeaders' own comments warn about, and one I walked into
+--writing this.
+local VISIBILITY_RETRY = 0.5
+
+--[[
+	DEBOUNCED, AND DELIBERATELY NOT IMMEDIATE.
+
+	The first version evaluated now AND again half a second later, copying
+	RebuildGroupHeaders' twice-over pattern. That was wrong here, and reported as
+	the raid frames "flickering between normal and overlap".
+
+	RebuildGroupHeaders can afford the early pass because rebuilding twice is
+	harmless -- the second run re-sorts what the first already placed. This is a
+	SHOW OR HIDE, and the early pass reads a roster the client cannot answer for
+	yet. One member short is enough to cross 5/6 or 25/26, so the immediate call
+	shows the wrong header and the delayed one takes it away again: a visible
+	half-second of the overlap, caused by the fix for the overlap.
+
+	A roster change also arrives as a burst of events, so each is cancelled by
+	the next and only the settled state is ever acted on.
+]]
+function UF:RAID_ROSTER_UPDATE()
+	if self.visibilityTimer then
+		self:CancelTimer(self.visibilityTimer, true)
+	end
+
+	self.visibilityTimer = self:ScheduleTimer("UpdateHeaderVisibility", VISIBILITY_RETRY)
+end
+
+UF.PARTY_MEMBERS_CHANGED = UF.RAID_ROSTER_UPDATE
+
 function UF.groupPrototype:AdjustVisibility(self)
 	if not self.isForced then
 		local numGroups = self.numGroups
@@ -728,7 +858,15 @@ function UF:CreateAndUpdateHeaderGroup(group, groupFilter, template, headerUpdat
 		end
 
 		if db.enable then
-			self[group]:Show()
+			--isForced is the config preview, which deliberately shows a header with
+			--no group to match. It must outrank the roster.
+			if self[group].isForced or self[group].blockVisibilityChanges
+				or UF:HeaderShouldShow(group) then
+				self[group]:Show()
+			else
+				self[group]:Hide()
+			end
+
 			if self[group].mover then
 				E:EnableMover(self[group].mover:GetName())
 			end
@@ -826,6 +964,13 @@ function UF:LoadUnits()
 	self.headerstoload = nil
 end
 
+--Re-applied after every full header refresh as well as on roster events: a
+--config change rebuilds headers and would otherwise leave the gag off until the
+--next time somebody joined or left.
+local function ReapplyVisibility()
+	if UF.UpdateHeaderVisibility then UF:UpdateHeaderVisibility() end
+end
+
 function UF:UpdateAllHeaders(event)
 	local _, instanceType = IsInInstance()
 	local ORD = ns.oUF_RaidDebuffs or oUF_RaidDebuffs
@@ -869,6 +1014,11 @@ function UF:UpdateAllHeaders(event)
 			--self:UpdateAuraWatchFromHeader(group)
 		end
 	end
+
+	--LAST, after every header has been updated above. UpdateHeader and Update both
+	--go through the branch that shows a header, so re-applying here is what stops a
+	--profile change or a zone-in quietly putting the wrong one back on screen.
+	ReapplyVisibility()
 end
 
 local hiddenParent = CreateFrame("Frame")
@@ -940,6 +1090,12 @@ function UF:PLAYER_ENTERING_WORLD()
 		--We only want to run Update_AllFrames once when we first log in or /reload
 		self:Update_AllFrames()
 		hasEnteredWorld = true
+
+		--Reloading inside a raid does not reliably produce a roster event, so
+		--without this the headers keep whatever visibility they were created with
+		--until somebody joins or leaves. Delayed for the same reason the roster
+		--handler is: the count is not answerable the instant we get here.
+		self:ScheduleTimer("UpdateHeaderVisibility", 1)
 	else
 		local _, instanceType = IsInInstance()
 		if instanceType ~= "none" then
@@ -962,6 +1118,13 @@ function UF:Initialize()
 
 	self:LoadUnits()
 	self:RegisterEvent("PLAYER_ENTERING_WORLD")
+
+	--Which of party/raid/raid40 belongs on screen. Without these the headers only
+	--re-evaluate when something else rebuilds them, so joining a raid would leave
+	--the party frames up alongside it.
+	self:RegisterEvent("RAID_ROSTER_UPDATE")
+	self:RegisterEvent("PARTY_MEMBERS_CHANGED")
+	self:UpdateHeaderVisibility()
 
 	local ORD = ns.oUF_RaidDebuffs or oUF_RaidDebuffs
 	if not ORD then return end

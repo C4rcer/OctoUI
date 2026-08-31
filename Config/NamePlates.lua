@@ -642,6 +642,17 @@ E.Options.args.nameplate = {
 							name = L["StatusBar Texture"],
 							values = AceGUIWidgetLSMlists.statusbar
 						},
+						unflaggedAreFriendly = {
+							order = 0.5,
+							type = "toggle",
+							name = L["Unflagged Players Are Friendly"],
+							desc = L["NP_UNFLAGGED_DESC"],
+							get = function(info) return E.db.nameplates.unflaggedAreFriendly end,
+							set = function(info, value)
+								E.db.nameplates.unflaggedAreFriendly = value
+								E:StaticPopup_Show("CONFIG_RL")
+							end
+						},
 						motionType = {
 							order = 1,
 							type = "select",

@@ -334,6 +334,18 @@ P["bags"] = {
 
 --NamePlate
 P["nameplates"] = {
+	--[[
+		An opposite-faction player who is NOT flagged for PvP reads as friendly.
+
+		This is a cross-faction server: Horde and Alliance group together, run dungeons
+		together, and until somebody flags you can no more attack them than you can attack
+		your own faction. Vanilla's nameplate colours predate that -- a neutral bar means
+		"other faction", which on any normal realm means "enemy", and the plate says so.
+
+		The moment they flag, their bar goes red and the plate reads hostile again, so
+		nothing about real PvP is hidden. Switch this off to get vanilla's behaviour back.
+	]]
+	["unflaggedAreFriendly"] = true,
 	["statusbar"] = "ElvUI Norm",
 	["font"] = "PT Sans Narrow",
 	["fontSize"] = 11,
