@@ -510,7 +510,9 @@ function RF:UpdateDetail()
 	detail.header:SetTextColor(color[1], color[2], color[3])
 
 	--The selected tab IS the profession; it is no longer stamped onto each record.
-	local sub = self.profession or ""
+	--While searching, the row may belong to any profession, so the detail names the
+	--one it was actually found in rather than whichever tab happens to be selected.
+	local sub = (self.rowProf and self.rowProf[recipe]) or self.profession or ""
 	if recipe.skill then sub = sub..format(" - %s %d", L["skill"], recipe.skill) end
 	if recipe.unsure then sub = sub.." |cffff8000("..L["profession inferred"]..")|r" end
 	detail.sub:SetText(sub)
@@ -549,7 +551,24 @@ function RF:Refresh()
 	local query = search:GetText()
 	if query and query ~= "" then search.hint:Hide() else search.hint:Show() end
 
-	self.filtered = self:Filter(self.profession, query, self.filters)
+	--A query searches every profession; an empty box is the selected tab. Rows from
+	--a cross-profession search arrive wrapped as {recipe=, prof=}, so unwrap them
+	--here and remember which profession each came from for the list and detail.
+	self.searching = (query and query ~= "") and true or false
+	self.rowProf = nil
+
+	if self.searching then
+		local wrapped = self:FilterAll(query, self.filters)
+		local rows, owner = {}, {}
+		for i = 1, getn(wrapped) do
+			rows[i] = wrapped[i].recipe
+			owner[wrapped[i].recipe] = wrapped[i].prof
+		end
+		self.filtered = rows
+		self.rowProf = owner
+	else
+		self.filtered = self:Filter(self.profession, query, self.filters)
+	end
 
 	local total = getn(self.filtered)
 	local maxOffset = max(0, total - VISIBLE_ROWS)
@@ -564,7 +583,15 @@ function RF:Refresh()
 	self.frame.phase:SetActive(self.filters.phase ~= RF.PHASE_ORDER.NAXX)
 	self.frame.phase.text:SetText(RF.PHASE_LABEL[self.filters.phase])
 
-	local status = format(L["%d of %d shown"], total, getn(self:Recipes(self.profession)))
+	--A cross-profession search is counted against everything, not against the tab
+	--it started from: "0 of 106" while the match sits in Blacksmithing is exactly
+	--the report that made this look broken.
+	local status
+	if self.searching then
+		status = format(L["%d found across all professions"], total)
+	else
+		status = format(L["%d of %d shown"], total, getn(self:Recipes(self.profession)))
+	end
 	local known = self:KnownCount(self.profession)
 	if known then
 		status = status..format(" - "..L["%d known"], known)

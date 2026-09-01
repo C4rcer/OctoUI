@@ -317,6 +317,36 @@ end
 -- Filtering
 --------------------------------------------------------------------------------
 
+--[[
+	A SEARCH LOOKS EVERYWHERE, because not knowing the profession is the whole
+	reason for searching.
+
+	The tabs used to scope the search as well as the list, so typing "buckle"
+	while Enchanting was selected answered "0 of 106" -- correct, useless, and
+	indistinguishable from broken. Dragonscale Belt Buckle is a Blacksmithing
+	recipe, and a tool whose purpose is "where do I get this" cannot require you
+	to already know the answer.
+
+	With a query the search spans every profession and each row is tagged with
+	the one it came from, so the list says where it found things. With the box
+	empty it is the selected tab, unchanged.
+]]
+function RF:FilterAll(query, options)
+	local out = {}
+
+	for _, profession in ipairs(self:Professions()) do
+		local rows = self:Filter(profession, query, options)
+		for i = 1, getn(rows) do
+			--Wrapped rather than stamped onto the record: the recipe tables are
+			--shared and shipped, and writing a field per row per keystroke is the
+			--allocation this module already went out of its way to avoid.
+			tinsert(out, {recipe = rows[i], prof = profession})
+		end
+	end
+
+	return out
+end
+
 function RF:Filter(profession, query, options)
 	options = options or {}
 	local rows = self:Recipes(profession)

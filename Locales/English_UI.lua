@@ -1011,3 +1011,4 @@ L["Auction prices: %d reading(s) older than %d day(s) removed."] = true;
 L["AUCTION_PRICE_REPORT_HEADER"] = "Auction prices: %d item(s) stored, oldest reading %s."
 L["AUCTION_PRICE_REPORT_ROW"] = "%s - cheapest %s ea, typical %s ea, usual stack %d, %d auction(s) seen, %s"
 L["AUCTION_PURGE_USAGE"] = "Usage: /octoui-ah purge <days> - removes stored prices older than that many days. Scanning is the only way to get them back."
+L["%d found across all professions"] = true;
