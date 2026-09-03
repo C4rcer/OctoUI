@@ -168,6 +168,39 @@ local function PageWasClean()
 	if scan.cleanPages < CLEAN_PAGES_BEFORE_SPEEDUP then return end
 
 	scan.cleanPages = 0
+
+	--[[
+		THE FLOOR HAS TO COME DOWN TOO. It did not until 2026-09-03, and that was a bug
+		with no way out of it.
+
+		PageWasDropped writes db.scanIntervalFloor and SetInterval clamps every later
+		value back up to it. Nothing lowered it, nothing cleared it, and it lives in
+		E.db.general.auction, which is SAVED. So a single bad session -- a laggy evening,
+		a server hiccup -- ratcheted the pace up permanently for that profile, and about
+		nine dropped pages over its whole lifetime pinned it at INTERVAL_MAX forever.
+		The only recovery was editing ElvDB by hand.
+
+		A floor earned by evidence has to be revisable by evidence, and a run of clean
+		pages is exactly that -- the same evidence that lowers the interval on the line
+		below. Cleared outright once it reaches the minimum, so `rate` goes back to
+		reporting a clean pace rather than a floor of 0.00, which reads as the opposite
+		of what it means.
+
+		Worth knowing before trusting this mechanism at all: HANDOFF item 29 measured 906
+		pages with OctoUI's own interval at ZERO and no dropped queries, so the 5.00s
+		server gate is the entire rate limit here and this whole loop earns nothing on
+		this server. It was kept because it "costs nothing". It cost this.
+	]]
+	local db = A:Settings()
+	if db.scanIntervalFloor then
+		local lowered = db.scanIntervalFloor - INTERVAL_STEP_DOWN
+		if lowered <= INTERVAL_MIN then
+			db.scanIntervalFloor = nil
+		else
+			db.scanIntervalFloor = lowered
+		end
+	end
+
 	SetInterval(LearnedInterval() - INTERVAL_STEP_DOWN)
 end
 
@@ -180,6 +213,28 @@ local function PageWasDropped()
 	db.scanIntervalFloor = at + INTERVAL_STEP_UP
 	scan.cleanPages = 0
 	SetInterval(at + INTERVAL_STEP_UP)
+end
+
+--[[
+	Throw away everything the pacing has learned, for `/octoui-ah rate reset`.
+
+	Needed because the floor is a saved variable that could only ever rise until
+	2026-09-03. A profile already carrying a maxed floor recovers on its own now, but
+	only at INTERVAL_STEP_DOWN per four clean pages, which is a long scan spent slow
+	for no reason. CLAUDE.md also records that removing a default does NOT delete a
+	value already saved, so there has to be a path that clears it outright.
+
+	Returns what was discarded so the caller can say what it did rather than printing
+	a bare acknowledgement.
+]]
+function A:ResetLearnedPace()
+	local db = self:Settings()
+	local was, floorWas = db.scanInterval, db.scanIntervalFloor
+
+	db.scanInterval = nil
+	db.scanIntervalFloor = nil
+
+	return was, floorWas
 end
 
 local function FullScanCap()

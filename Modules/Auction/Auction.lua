@@ -181,6 +181,15 @@ function A:Command(msg)
 	--Measured pacing, so the scan interval can be set from evidence rather than from
 	--a guess about what a server considers polite.
 	if verb == "rate" then
+		--A floor that only ever rose was saved per profile until 2026-09-03, so some
+		--profiles are carrying one that no longer reflects anything. Clearing it is the
+		--recovery path; the report above is how you find out you need it.
+		if lower(rest or "") == "reset" then
+			local was, floorWas = self:ResetLearnedPace()
+			E:Print(format(L["AUCTION_RATE_RESET"], was or 0, floorWas or 0))
+			return
+		end
+
 		self:ScanRateReport()
 		return
 	end
@@ -464,8 +473,23 @@ function A:AUCTION_HOUSE_SHOW()
 	end
 
 	if not self.window then
-		--Nothing of ours to show. Hand the player back Blizzard's auction house rather
-		--than leaving them standing at an auctioneer that does nothing at all.
+		--[[
+			Nothing of ours to show. Hand the player back Blizzard's auction house rather
+			than leaving them standing at an auctioneer that does nothing at all.
+
+			STOP DISMISSING FIRST, or this hands back a frame we then immediately hide
+			again. DismissBlizzardFrame is not a single Hide: it arms an OnUpdate that
+			re-hides AuctionFrame every frame for DISMISS_BUDGET afterwards, because on
+			the first visit of a session Blizzard_AuctionUI is still loading and the
+			frame arrives late. That loop is still running here, so a ShowUIPanel on this
+			path lived for one frame and the player was left with NO auction house of any
+			kind -- the exact outcome the comment above and the block at AUCTION_HOUSE_SHOW
+			both say must never happen, with the fallback that was supposed to prevent it
+			cancelling itself out. Found 2026-09-03 by reading; it needs BuildWindow to
+			fail before it can bite, which is why it had not been seen.
+		]]
+		StopDismissing()
+
 		if _G.AuctionFrame and ShowUIPanel then
 			E:Print(L["AUCTION_FELL_BACK"])
 			ShowUIPanel(_G.AuctionFrame)

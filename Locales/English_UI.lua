@@ -912,6 +912,7 @@ L["AUCTION_RATE_LINE"] = "%s: %d samples, min %.2fs, avg %.2fs, max %.2fs"
 L["AUCTION_RATE_NONE"] = "No scan timings yet. Run a search or Scan All, then /octoui-ah rate."
 L["AUCTION_RATE_LEARNED"] = "Learned pace: %.2fs between pages, held at or above %.2fs because that dropped queries."
 L["AUCTION_RATE_LEARNED_CLEAN"] = "Learned pace: %.2fs between pages. No pace has dropped a query yet - the server gate is doing all of it."
+L["AUCTION_RATE_RESET"] = "Learned pace cleared (was %.2fs between pages, floor %.2fs). The next scan starts from the default again."
 L["AUCTION_RATE_LAST"] = "Last %s: %d page(s), %d of %d auctions, ended '%s'."
 L["AUCTION_RATE_RUNNING"] = "Still scanning: page %d, %d of %d auctions so far."
 L["full scan"] = true;
