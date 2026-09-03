@@ -689,11 +689,52 @@ local function OnUpdate()
 			The budget is spent as several short attempts instead of one long wait, so
 			a dropped first query costs seconds rather than the whole scan.
 		]]
-		if scan.retries < SCAN_RETRIES then
+		--[[
+			THE END OF THE RESULTS IS ANNOUNCED BY SILENCE ON THIS SERVER. Measured
+			2026-09-03, and it had been reported as a timeout ever since.
+
+			A browse for Armor > Cloth > Head at levels 58-60 was served a full page of
+			50 and then reported a TOTAL LARGER THAN THAT, so the walk asked for page 1.
+			The server never answered: not an empty page, no page at all. Four attempts
+			later a search that had already returned every matching auction announced
+			"Timed out. 50 auctions found." -- the data was complete and correct and the
+			status called it a failure.
+
+			Two facts about this server come out of that, and neither is guessable. Its
+			reported total can EXCEED what it will actually serve, which is the same
+			disagreement CLAUDE.md records for the owner list, now seen on the browse
+			query as well. And a query whose result set is empty is answered with
+			nothing rather than with an empty page, which is why `batch < PAGE_SIZE`
+			never gets the chance to stop the walk.
+
+			So once there are rows in hand and we are past the page the scan started on,
+			silence is the end of the results and finishing clean is the truthful answer.
+			One retry rather than three there: the walk cannot learn the end any other
+			way, so this silence is the ORDINARY case and spending four attempts on it
+			puts twenty seconds on the end of every search that lands on a page boundary.
+			A single genuine drop is still covered.
+
+			On the FIRST page it stays a timeout. Silence there is either a dropped query
+			or a search that matched nothing, this cannot tell them apart, and claiming a
+			clean finish for a query that may never have been served would be the same
+			over-reach in the other direction.
+		]]
+		--SEARCHES ONLY, deliberately. A full scan discovers its end the honest way --
+		--the last page of a whole-house walk is a SHORT page, which stops it cleanly --
+		--so silence part way through one is far likelier to be a genuinely dropped
+		--query than the end of anything. Concluding done there would abandon the rest
+		--of a walk that takes an hour and three quarters, to save ten seconds at the
+		--end of it. It keeps the full three attempts and still reports a timeout.
+		local settled = (not scan.full) and scan.collected > 0 and scan.page > scan.firstPage
+		local budget = settled and 1 or SCAN_RETRIES
+
+		if scan.retries < budget then
 			scan.retries = scan.retries + 1
 			scan.awaitingPage = false
 			scan.queryPending = true
 			scan.nextQuery = GetTime() + LearnedInterval()
+		elseif settled then
+			Finish("done")
 		else
 			--Out of attempts. Keep what was collected: a partial answer is worth more
 			--than none, and the alternative is throwing away nine good pages because
@@ -951,6 +992,37 @@ function A:QueryReport()
 			for j = 1, getn(subs) do
 				local submark = (q.subclass == j) and " <--" or ""
 				E:Print(format("     sub %d = %s%s", j, subs[j], submark))
+
+				--[[
+					AND THE SLOTS, which this report did not print until 2026-09-03.
+
+					It verified class and subclass against the client's own tables and left
+					invType as a bare number with nothing to check it against -- so a browse
+					that went unanswered could be read all the way down to "and invType was
+					1", with no way to say whether 1 meant Head or meant nothing at all.
+					That is the single value here worth doubting: GetAuctionItemClasses and
+					GetAuctionItemSubClasses are relied on by Modules/Bags/Sort.lua and are
+					known good, while GetAuctionInvTypes has never been measured on this
+					client (see the note in Tabs/Search.lua).
+
+					An EMPTY list is a real finding rather than a blank: it means the menu
+					offered slots the client cannot enumerate, and every invType we send is
+					an index into nothing. Said out loud instead of printing no lines.
+				]]
+				if q.subclass == j then
+					if not GetAuctionInvTypes then
+						E:Print("        (no GetAuctionInvTypes on this client)")
+					else
+						local slots = {GetAuctionInvTypes(i, j)}
+						if getn(slots) == 0 then
+							E:Print("        (GetAuctionInvTypes returned nothing)")
+						end
+						for k = 1, getn(slots) do
+							local slotmark = (q.invType == k) and " <--" or ""
+							E:Print(format("        slot %d = %s%s", k, tostring(slots[k]), slotmark))
+						end
+					end
+				end
 			end
 		end
 	end

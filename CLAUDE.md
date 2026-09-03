@@ -439,6 +439,30 @@ auction. Two byte-identical pages mean there is no next page.
 **Pages hold 50** and the last page index is `ceil(total / 50) - 1`.
 `NUM_AUCTION_ITEMS_PER_PAGE` has never been measured here.
 
+**A query with no results is answered with SILENCE, and the reported total can exceed what
+the server will serve.** Measured 2026-09-03. A browse for Armor > Cloth > Head at levels
+58-60 was served a full page of 50, reported a total larger than 50, and then never answered
+the query for page 1 - no page, no error, nothing. The same disagreement CLAUDE.md already
+recorded for the *owner* list turns out to apply to the browse query too.
+
+Two things follow, and both had been shipping as bugs. `batch < PAGE_SIZE` never gets the
+chance to stop such a walk, because the page that would have been short is never delivered.
+And treating that silence as a dropped query means a search which has already returned every
+matching auction spends its whole retry budget and then reports **"Timed out. 50 auctions
+found."** - complete, correct data announced as a failure. A category browse that simply
+matches nothing fails identically, from page 0.
+
+So for a SEARCH, silence past the page the scan started on, with rows already in hand, is the
+end of the results: finish clean, and spend one retry on it rather than three, since it is the
+ordinary way a search ends rather than an exceptional event. For a FULL scan it stays a
+timeout with the full budget - a whole-house walk ends on a genuinely short page, so silence
+part way through one is far likelier to be a real drop, and concluding otherwise would
+abandon the remainder of a scan that takes an hour and three quarters.
+
+`/octoui-ah query` prints the page number, which is what makes this diagnosable at all: the
+distinction between "page 0 was never served" and "page 1 was never served" is the entire
+difference between a broken query and a finished one.
+
 **`CanSendAuctionQuery` is a fixed 5.00 second gate.** Measured over 906 queries: min 5.00,
 avg 5.06, max 52.61 — and the whole gap between min and avg is one 53-second stall, so it is
 a timer rather than a throttle that eases off under load. Pages themselves arrive in 0.16s

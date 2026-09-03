@@ -470,6 +470,41 @@ function B:ScanBags()
 			--is not there. Instead the slot keeps its real count and is treated as
 			--UNSTACKABLE, which is the only assumption that is safe without data: it can be
 			--swapped around, but nothing will ever be merged into or out of it.
+			--[[
+				A NEGATIVE COUNT IS CHARGES, NOT A QUANTITY -- and not corruption either.
+
+				MEASURED 2026-09-03, and the first reading of it here was wrong. Three bank
+				slots reported by `/octoui-bags locks` came back with `count=-5`, and the
+				obvious conclusion was a corrupt cache entry. The item's own tooltip settled
+				it: Wizard Oil, itemID 20750, "5 Charges". This client returns an item's
+				CHARGES in the count field as a negative number. `quality=-1` alongside it is
+				not a symptom either -- vanilla never populated that field reliably and every
+				slot reads that way here, which is why bagQualities is taken from the link.
+
+				It still cannot be fed to the stacking arithmetic. `itemCount or 1` passes -5
+				through, because -5 is perfectly truthy, and bagMaxStacks gets the item's REAL
+				maximum from GetItemInfo -- so a five-charge oil reads as `-5 < 5`, a stack
+				with room in it. Stack() then plans a merge and works out -5 + -5 = -10 for
+				the result. The comparator orders on the same numbers. Nothing raises; the
+				moves are simply wrong, which is the worst shape a sort bug can take.
+
+				So: charges are not a stack size, and an item carrying them must not be
+				merged by count. Treated exactly as an uncached item is, by falling into the
+				branch below -- count 1 and unstackable. It still gets SWAPPED into position
+				like anything else, so charged items sort normally; nothing is ever merged
+				into or out of them, which is the only safe reading of a number that is not
+				a quantity.
+
+				Note this is NOT why the three slots would not sort. That is the `locked`
+				flag above, which excludes a slot from the permutation entirely and survives
+				until a relog. Two separate things that arrived on the same slots.
+			]]
+			if not itemCount or itemCount <= 0 then
+				bagUnknown[bagSlot] = itemID
+				itemCount = nil
+				stackCount = nil
+			end
+
 			if not (name and stackCount) then
 				bagUnknown[bagSlot] = itemID
 				stackCount = itemCount or 1
@@ -1477,11 +1512,77 @@ local function PrintLastFailure()
 	end
 end
 
+--[[
+	Every slot the CLIENT reports as locked, read right now.
+
+	The existing `stuckSlots` list only fills in when a sort is PLANNED, so it answers
+	nothing for somebody looking at two greyed-out squares who has not sorted. This walks
+	the bags and the bank as they are and names them.
+
+	A METHOD ON B RATHER THAN A LOCAL FUNCTION, deliberately, and this is not a style
+	choice. `B:SortReport` already sits at exactly 32 upvalues, which is Lua 5.0's hard
+	ceiling -- one more name from this file referenced inside it is a COMPILE error that
+	takes all of Sort.lua out of the build, and a file that does not load takes bag sorting
+	with it and says nothing. Calling `B:LockedSlotsReport()` from there charges only `B`,
+	which is charged already. Adding `allBags` and `GetContainerItemInfo` to SortReport
+	instead would have made it 34. Check with
+	`python ../octoui-dev/tools/lua50upvalues.py Modules/Bags` after touching either.
+
+	What the answer means: a client lock set while nothing is on the cursor and no sort is
+	running is not something this addon can set or clear. It is the client's own in-flight
+	flag for a move the server never confirmed, and CLAUDE.md records that it survives
+	/reload and needs a full relog. Lag is the usual reason the confirmation never arrived.
+]]
+function B:LockedSlotsReport()
+	E:Print("|cff00ff00slots the CLIENT reports as locked, read right now:|r")
+
+	local found = 0
+	local readable = 0
+
+	for _, bag in ipairs(allBags) do
+		local slots = GetContainerNumSlots(bag) or 0
+		readable = readable + slots
+
+		for slot = 1, slots do
+			local ok, _, _, slotLocked = pcall(GetContainerItemInfo, bag, slot)
+			if ok and slotLocked then
+				found = found + 1
+				ProbeSlot("locked", bag, slot)
+			end
+		end
+	end
+
+	--Zero readable slots is not "no locks", it is "nothing was read". The bank's bags
+	--report no slots at all while the bank is closed, so a scan run away from the banker
+	--covers the carried bags only and would report a clean bank it never looked at.
+	if readable == 0 then
+		E:Print("  |cffff9900no slots could be read at all. Are the bags loaded?|r")
+		return
+	end
+
+	if found == 0 then
+		E:Print(format("  none, across %d readable slot(s). If the bank is not open, its bags were NOT included -- walk to a banker and run this again.", readable))
+		return
+	end
+
+	E:Print(format("  |cffff0000%d locked slot(s)|r out of %d readable.", found, readable))
+	E:Print("  Nothing on the cursor and no sort running means this is the client's own")
+	E:Print("  in-flight flag for a move the server never confirmed. It is not OctoUI's")
+	E:Print("  padlock, this addon cannot clear it, and it survives /reload -- relog.")
+end
+
 function B:SortReport(msg)
 	--`/octoui-bags moves` prints the verdict for every planned move. The default prints only
 	--the failing ones, because a full bag sort plans 20-40 and a chat frame that long buries
 	--the answer. Both walk the same audit -- every move is checked either way, only the
 	--printing differs.
+	--Routed through B: so this branch adds no upvalue to SortReport, which has none
+	--spare. See the note on B:LockedSlotsReport.
+	if msg and lower(msg) == "locks" then
+		B:LockedSlotsReport()
+		return
+	end
+
 	local movesOnly = msg and (lower(msg) == "moves" or lower(msg) == "move")
 
 	if movesOnly then
