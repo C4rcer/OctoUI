@@ -202,6 +202,28 @@ end)
 
 The language server cannot see this: the closure is valid Lua and the upvalue exists.
 
+### A local referenced above its own declaration is a different variable
+
+Same family, and it has bitten twice. Lua binds a name at the point the closure is *created*,
+so a function written above the `local` it reads compiled against the **global** of that name:
+
+```lua
+local function Report() return format(fmt, n) end   -- `fmt` here is the global, nil
+local fmt = "%d moves"                              -- a different `fmt` entirely
+```
+
+Valid Lua, silent at load, `attempt to call a nil value` at runtime - and nothing in the
+toolchain catches it. `undefined-global` is off in `.luarc.json` (there is no WoW API
+definition set, so it would drown in false positives), and `lua50check.py` is a text scan for
+constructs 5.0 lacks, which this is not. Declare file-level locals above every function that
+reads them, as the rest of the codebase does.
+
+**Swept 2026-09-03 across all 267 non-library files: clean.** Worth knowing before repeating
+it, because a naive scan for this is nearly all noise - every candidate it turned up was a
+field access (`table.getn`, `frame.plateID`), a function-local shadowing a later file-level
+name, or the `local x = x` global-cache idiom. Check what the name actually resolves to
+before believing a hit.
+
 ### Use the LSP
 
 **Check every edited file through the language server before deploying it.** Use LSP
@@ -248,6 +270,22 @@ models neither the number nor the concept, and `lua50check.py` cannot see it eit
 name involved is valid, there are simply too many of them. A file opening with a long block of
 cached `local GetSomething = GetSomething` lines and a large handler underneath is the shape
 that trips it.
+
+**Two functions sit close enough to the limit to matter**, measured 2026-09-03:
+`Modules/Bags/Sort.lua:1480` `B:SortReport` is at **32 of 32**, and
+`Modules/DataTexts/Guild.lua:182` `OnEnter` at **30**. One more file-level local referenced
+inside either takes that whole file out of the build - which means bag sorting or the guild
+datatext quietly stops existing, with no error anywhere. Re-run the checker after touching
+either, and prefer reading a value back out of a table to adding another cached local.
+
+**`lua50upvalues.py` was over-reporting until 2026-09-03**, so treat any earlier note about
+it with suspicion. It counted `local` declarations that were commented out, charged every
+function for its own name and parameters, and its declaration regex could run past the end of
+a line. Together those reported Guild.lua's `OnEnter` at a phantom **33** - an OVER LIMIT
+compile error that did not exist - while simultaneously *missing* a real bare multi-name
+declaration in `Sort.lua`, leaving `SortReport` one under its true count. Both directions at
+once, in the one tool whose entire job is to see what the LSP structurally cannot. Pass
+`--verbose` to list the names charged before acting on any finding.
 
 Polyfills live in `Compatibility/api/`. Note `GetItemFamily` returns **nil** for any item id
 above `LAST_ITEM_ID` (24283) — every item this server added.
