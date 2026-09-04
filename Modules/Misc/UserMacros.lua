@@ -110,8 +110,28 @@ end
 
 --The dots the priority below waits for. Edit this list to change what it gates on; the
 --names must match what the game calls them, which /octoui-dots prints for your target.
+--
+--CURSE OF SHADOW USED TO BE IN HERE and was moved out on 2026-09-04. Every one of these
+--must be MINE for the gate to open, and in a raid the curse very often is not: Multidot
+--now takes Curse of the Elements when another warlock already holds Shadow, so demanding
+--Shadow specifically meant Dark Harvest could never fire for the rest of that fight. The
+--curse half moved to its own list below, where either one counts.
 if not OctoWarlockDots then
-	OctoWarlockDots = {"Corruption", "Curse of Agony", "Siphon Life", "Curse of Shadow"}
+	OctoWarlockDots = {"Corruption", "Curse of Agony", "Siphon Life"}
+end
+
+--The curse half of the gate: ANY ONE of these being mine satisfies it.
+--
+--Shadow and Elements are interchangeable for this purpose because the thing being asked
+--is "is my setup on this mob complete", and which of the two you ended up with is decided
+--by whichever warlock got there first, not by you.
+--
+--ASSUMPTION WORTH CHECKING, and easy to revert if wrong: that Dark Harvest does not care
+--WHICH curse is yours. If it turns out to need Shadow specifically, put "Curse of Shadow"
+--back in OctoWarlockDots above and empty this list -- the gate then behaves exactly as it
+--did before. Nothing else depends on this split.
+if not OctoWarlockCurses then
+	OctoWarlockCurses = {"Curse of Shadow", "Curse of the Elements"}
 end
 
 --Is this debuff on the target, and is it MINE?
@@ -156,7 +176,21 @@ if not OctoAllDotsUp then
 			if not OctoMyDebuff(OctoWarlockDots[i]) then return false end
 		end
 
-		return true
+		--The curse half. Any one of them being mine will do; see OctoWarlockCurses.
+		--
+		--An EMPTY list passes, unlike the dots above, and the difference is deliberate.
+		--Emptying the dot list would open the gate vacuously and permanently, which is the
+		--bug the comment up there records. Emptying this one is how you say "I do not want
+		--the gate to care about curses at all", which is a real thing to want -- so it has
+		--to mean no requirement rather than an impossible one.
+		local curses = OctoWarlockCurses and table.getn(OctoWarlockCurses) or 0
+		if curses == 0 then return true end
+
+		for i = 1, curses do
+			if OctoMyDebuff(OctoWarlockCurses[i]) then return true end
+		end
+
+		return false
 	end
 end
 
@@ -169,6 +203,19 @@ if not OctoDotReport then
 		for i = 1, table.getn(OctoWarlockDots) do
 			local name = OctoWarlockDots[i]
 			out:AddMessage("  "..name.." = "..tostring(OctoMyDebuff(name)))
+		end
+
+		--The curses are listed too, and marked, because they are the half that fails in a
+		--raid: any ONE of them being mine opens the gate, so a report showing only the dots
+		--would say every line is true and leave the closed gate unexplained. This IS the
+		--tool for that question -- it must not go quiet about the part that moved.
+		local curses = OctoWarlockCurses and table.getn(OctoWarlockCurses) or 0
+		for i = 1, curses do
+			local name = OctoWarlockCurses[i]
+			out:AddMessage("  "..name.." = "..tostring(OctoMyDebuff(name)).." (any one of these)")
+		end
+		if curses == 0 then
+			out:AddMessage("  no curse required -- OctoWarlockCurses is empty")
 		end
 
 		out:AddMessage("  all mine = "..tostring(OctoAllDotsUp())
@@ -216,6 +263,263 @@ if not WarlockPriority then
 end
 
 --[[
+	THE CURSE QUEUE, in one place because two buttons need exactly the same answer.
+
+	Multidot and Singledot both have to ask "which curse should I put on this mob", and
+	the moment that logic exists twice it starts drifting -- the Elements step was added
+	to one of them first and the other went on skipping straight to Agony. So the order
+	lives here and both call it.
+
+	SHADOW, THEN ELEMENTS, THEN AGONY. A mob holds one Curse of Shadow AND one Curse of
+	the Elements -- one of each, not one between them -- and a raid wants both up. So the
+	two big curses are a queue: take Shadow if nobody has it, take Elements if somebody
+	does, and if two other warlocks have already taken both then there is no big curse
+	left to place and Agony is what remains.
+
+	IT WORKS BECAUSE CURSIVE SEES OTHER PEOPLE'S CURSES, which is not obvious and is why
+	no extra detection was needed. Cursive:Curse defers to curses:HasCurse, which reads
+	curses.guids[guid][name] without looking at who cast it, and that table is filled both
+	by ApplyCurse for your own casts (currentPlayer = true) and by a UnitDebuff scan for
+	everybody else's (currentPlayer = false -- Cursive's own localisation calls those
+	"Shared Curse of Shadow" and "Shared Curse of the Elements"). Both curses are in its
+	tracked spell tables at every rank.
+
+	So the Shadow line already returned false when another warlock held Shadow. It simply
+	had nothing to fall through to.
+
+	Preferred over OctoUI's own lib:Contested for this: that infers from a cast event with
+	a deliberately generous 300s window and keeps calling a curse contested long after it
+	fell off. This is a scan of what is actually on the mob.
+
+	The name is "Curse of the Elements", with the "the". Cursive's spell tables and
+	Settings/DebuffDurations both spell it that way; "Curse of Elements" matches nothing
+	and would cast nothing at all, silently.
+
+	Returns true when it cast something, exactly as Cursive:Curse does, so a caller can
+	chain the rest of its dots behind it.
+]]
+--The two curses that compete for your ONE curse slot on a mob. Kept separate from
+--OctoWarlockCurses even though they hold the same names today: that one is the Dark
+--Harvest gate and is documented as safe to empty ("I do not want the gate to care about
+--curses"), and emptying it must not quietly disable the loop guard below.
+local BIG_CURSES = {"Curse of Shadow", "Curse of the Elements"}
+
+--Cursive keys its table by GUID. Cursive:Curse resolves "target" for itself, but reading
+--the table directly needs the GUID in hand, so the same resolution happens here.
+local function CurseGuid(target)
+	if not target then return nil end
+	if string.sub(target, 1, 2) == "0x" then return target end
+
+	local _, guid = UnitExists(target)
+	return guid
+end
+
+--The record Cursive holds for this curse on this mob, whoever cast it. Its keys are the
+--lowercased, rank-stripped spell name, which is what Cursive:Curse looks up too.
+--The form Cursive stores a spell name in: lowercased, rank stripped. Both the guids table
+--and trackedCurseIds use it, so anything comparing against either has to go through here.
+local function CurseKey(spellName)
+	return (Cursive and Cursive.utils and Cursive.utils.GetLowercaseSpellNameNoRank
+		and Cursive.utils.GetLowercaseSpellNameNoRank(spellName)) or string.lower(spellName)
+end
+
+local function CurseEntry(guid, spellName)
+	local tracker = Cursive and Cursive.curses
+	if not (guid and tracker and tracker.guids) then return nil end
+
+	local store = tracker.guids[guid]
+	return store and store[CurseKey(spellName)]
+end
+
+--[[
+	OUR OWN CASTS, TRACKED HERE, because Cursive's ownership flag is wrong for these two.
+
+	MEASURED 2026-09-04 with /run OctoCurseReport(), solo, on a mob nobody else had touched:
+
+	    store [curse of agony]        currentPlayer=true   remaining=18
+	    store [curse of the elements] currentPlayer=false  remaining=298.423
+
+	298.4 of 300 means that Elements had been cast 1.6 seconds earlier, by the player, and
+	Cursive had it marked as NOT the player's. Agony on the same mob is marked correctly.
+	The difference is the path: Agony is recorded by ApplyCurse, while the two big curses
+	arrive through Cursive's shared-debuff scan, which builds records with
+	currentPlayer = false whoever cast them.
+
+	That single flag is what three attempts at this were built on, and it is why each one
+	looped. Cast Shadow, Cursive files it as somebody else's, the chain reads "another
+	warlock has Shadow", casts Elements over it, Shadow is gone, repeat forever.
+
+	So ownership is kept here instead. It cannot disagree with itself: nothing writes it but
+	our own cast, and one curse per warlock means one entry per mob is the whole truth.
+
+	EXPIRY IS OUR OWN TOO. A curse of ours that has run out must stop counting or the chain
+	would never recast it, so the record carries the moment it can no longer be up. The
+	table is keyed by GUID and never grows without bound in practice, but it is pruned on
+	write anyway -- a long session across many mobs should not accumulate one entry per mob
+	ever cursed, which is the shape HANDOFF item 12c records for the debuff store.
+]]
+local CURSE_DURATION = 300
+local ownCurse = {}
+
+local function RememberOwnCurse(guid, spellName)
+	if not guid then return end
+
+	local now = GetTime()
+
+	--Pruned on write rather than on a timer: anything that expired a curse ago is gone
+	--whatever mob it belonged to.
+	for key, record in pairs(ownCurse) do
+		if record.expires < now then ownCurse[key] = nil end
+	end
+
+	ownCurse[guid] = {name = CurseKey(spellName), expires = now + CURSE_DURATION}
+end
+
+--Which of the two big curses is OURS on this mob, or nil. Cross-checked against Cursive's
+--store: if the curse is no longer on the mob at all, ours is not either, whatever our
+--record says -- dispels, deaths and a second warlock overwriting us all end it early.
+local function OwnBigCurse(guid)
+	local record = guid and ownCurse[guid]
+	if not record then return nil end
+
+	if record.expires < GetTime() then
+		ownCurse[guid] = nil
+		return nil
+	end
+
+	local tracker = Cursive and Cursive.curses
+	local store = tracker and tracker.guids and tracker.guids[guid]
+	local entry = store and store[record.name]
+
+	if not (entry and tracker:TimeRemaining(entry) > 0) then
+		ownCurse[guid] = nil
+		return nil
+	end
+
+	return record.name
+end
+
+--[[
+	ONE CURSE PER WARLOCK, and that is the whole shape of this.
+
+	A MOB holds one Curse of Shadow and one Curse of the Elements. A WARLOCK holds one
+	curse: the second replaces the first. So the pair on a mob comes from two different
+	warlocks, which is the raid case this exists for, and the choice here is one curse
+	rather than a list to walk.
+
+	If one of them is already ours, the other one is not available -- casting it would take
+	our own down. Cursive is still asked, so a curse of ours inside its refresh window gets
+	renewed rather than abandoned, but only ever the one we already hold.
+
+	With nothing of ours on the mob: Shadow if it is free, Elements if it is not. "Not
+	free" can only mean another warlock here, because our own is accounted for above.
+
+	Agony sits outside the pair. Malediction puts it up alongside Shadow, so it does not
+	compete for the slot, and it is what remains when both big curses are taken.
+
+	The name is "Curse of the Elements", with the "the". Cursive's spell tables and
+	Settings/DebuffDurations both spell it that way; "Curse of Elements" matches nothing
+	and casts nothing, silently.
+]]
+local function CurseChain(target)
+	local guid = CurseGuid(target)
+	local held = OwnBigCurse(guid)
+
+	if held then
+		--Ours. Renew it if Cursive says it is due, otherwise fall through to Agony. Never
+		--the other one: that would replace what we are holding.
+		for i = 1, table.getn(BIG_CURSES) do
+			if CurseKey(BIG_CURSES[i]) == held then
+				if Cursive:Curse(BIG_CURSES[i], target, {refreshtime = 1}) then
+					RememberOwnCurse(guid, BIG_CURSES[i])
+					return true
+				end
+				break
+			end
+		end
+	else
+		--Nothing of ours here. Shadow first; if it will not go on, somebody else has it and
+		--Elements is the half of the pair still going spare.
+		if Cursive:Curse("Curse of Shadow", target, {refreshtime = 1}) then
+			RememberOwnCurse(guid, "Curse of Shadow")
+			return true
+		end
+
+		if Cursive:Curse("Curse of the Elements", target, {refreshtime = 1}) then
+			RememberOwnCurse(guid, "Curse of the Elements")
+			return true
+		end
+	end
+
+	if Cursive:Curse("Curse of Agony", target, {refreshtime = 1}) then return true end
+
+	return false
+end
+
+--[[
+	WHAT THE CURSE CHAIN CAN SEE, for when it picks the wrong one.
+
+	Every wrong answer this has given came from a disagreement between what Cursive holds
+	and what the chain believed it held, and none of it is visible from the outside -- the
+	symptom is a curse landing, which looks the same whichever branch chose it. Run this
+	with the mob targeted, right after a press that did the wrong thing:
+
+		/run OctoCurseReport()
+
+	The store listing is the important part. It prints the keys Cursive actually holds, so
+	a name that does not match -- the wrong lowercase form, a rank left on, a localisation
+	difference -- shows up as an entry present in the store and MISSING on the lookup line.
+]]
+if not OctoCurseReport then
+	function OctoCurseReport()
+		local out = DEFAULT_CHAT_FRAME
+
+		if not (Cursive and Cursive.curses) then
+			out:AddMessage("OctoCurseReport: Cursive is not loaded.")
+			return
+		end
+
+		local tracker = Cursive.curses
+		local guid = CurseGuid("target")
+
+		out:AddMessage("Curse chain -- target: "..tostring(UnitName("target"))
+			..", guid = "..tostring(guid))
+
+		local store = guid and tracker.guids and tracker.guids[guid]
+		if store then
+			for key, entry in pairs(store) do
+				out:AddMessage("    store ["..tostring(key).."] currentPlayer="
+					..tostring(entry.currentPlayer)
+					.." remaining="..tostring(tracker:TimeRemaining(entry)))
+			end
+		else
+			out:AddMessage("    store: no entry for this mob")
+		end
+
+		local pending = tracker.pendingCast
+		if pending and pending.spellID then
+			local tracked = tracker.trackedCurseIds and tracker.trackedCurseIds[pending.spellID]
+			out:AddMessage("    pendingCast: name="..tostring(tracked and tracked.name)
+				..", onThisMob="..tostring(pending.targetGuid == guid))
+		else
+			out:AddMessage("    pendingCast: none")
+		end
+
+		for i = 1, table.getn(BIG_CURSES) do
+			local name = BIG_CURSES[i]
+			out:AddMessage("  "..name.." -> key '"..tostring(CurseKey(name)).."', lookup "
+				..(CurseEntry(guid, name) and "found" or "MISSING"))
+		end
+
+		--The line that actually decides, and the one Cursive cannot answer: currentPlayer
+		--reads false for the player's own Shadow and Elements, which is what sent three
+		--earlier versions of the chain into a loop.
+		out:AddMessage("  ours on this mob = "..tostring(OwnBigCurse(guid))
+			.." (tracked here, not by Cursive -- its currentPlayer is false for both)")
+	end
+end
+
+--[[
 	MULTI-DOT, through Cursive.
 
 	One button that keeps Curse of Shadow, Corruption and Siphon Life rolling on every
@@ -237,9 +541,13 @@ end
 	time or less is left. Corruption gets 3 because it is the longest of the three and
 	worth refreshing early; the other two get 1.
 
-	ORDER IS PRIORITY. Curse of Shadow first because only one curse can sit on a mob at
-	a time, so a missing curse is the most valuable global. Change the order here rather
-	than in the macro.
+	ORDER IS PRIORITY, and a missing curse is the most valuable global. Change the order
+	in CurseChain above rather than here or in the macro.
+
+	CORRECTED 2026-09-04: this used to say "only one curse can sit on a mob at a time",
+	which is wrong and had the feature pointed the wrong way. A mob holds one of EACH
+	curse -- one Shadow and one Elements -- so a second warlock does not overwrite the
+	first, they take the other one. That is the whole basis of the Elements step.
 ]]
 --[[
 	IT MUST NOT PULL, and by default it does.
@@ -435,12 +743,8 @@ if not Multidot then
 		for i = 1, table.getn(candidates) do
 			local guid = candidates[i]
 
-			--Shadow first: on a mob with no curse at all this single cast brings Agony too.
-			if Cursive:Curse("Curse of Shadow", guid, {refreshtime = 1}) then return end
-			--Shadow present but Agony missing means it resisted. Cast it directly rather
-			--than re-casting Shadow to piggyback, which would spend a global refreshing a
-			--curse that did not need it.
-			if Cursive:Curse("Curse of Agony", guid, {refreshtime = 1}) then return end
+			--The curse half, shared with Singledot. See CurseChain above.
+			if CurseChain(guid) then return end
 		end
 
 		--[[
@@ -463,6 +767,47 @@ if not Multidot then
 				if Cursive:Curse(spell, candidates[i], {refreshtime = refresh}) then return end
 			end
 		end
+	end
+end
+
+--[[
+	SINGLE TARGET, the counterpart to Multidot.
+
+	Same dots, same priority, on the mob you actually have targeted. This is the one to
+	press on a boss; Multidot is the one to press when a pack needs spreading.
+
+	The macro becomes:
+
+		/run Singledot()
+
+	Rename the function if your macro is called something else -- it is one line, and
+	nothing else refers to it.
+
+	NO COMBAT GUARD, and that is the difference from Multidot rather than an oversight.
+	Multidot refuses out of combat because Cursive PICKS ITS OWN TARGET there and will
+	happily dot something that is not fighting anybody, which pulls it. This one acts on
+	the target you deliberately selected, so opening a fight with it is the point.
+]]
+if not Singledot then
+	function Singledot()
+		--Guarded rather than assumed: without Cursive this is an "attempt to index a nil
+		--value" on a button somebody presses in combat.
+		if not (Cursive and Cursive.Curse) then
+			DEFAULT_CHAT_FRAME:AddMessage("Singledot: Cursive is not loaded.")
+			return
+		end
+
+		--Cursive resolves "target" through UnitExists itself, but it warns rather than
+		--returning quietly when there is nothing there, and a button that scolds you for
+		--pressing it with no target is noise.
+		if not UnitExists("target") then return end
+
+		if CurseChain("target") then return end
+
+		--Corruption gets 3 because it is the longest of these and worth refreshing early;
+		--Siphon Life gets 1. Same numbers as Multidot, for the same reasons.
+		if Cursive:Curse("Corruption", "target", {refreshtime = 3}) then return end
+		Cursive:Curse("Siphon Life", "target", {refreshtime = 1})
 	end
 end
 

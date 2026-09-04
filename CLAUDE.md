@@ -302,6 +302,27 @@ without complaint, so "did it register" tests nothing.
 **Known crash:** `/oprobe frame OctoTWTMain` kills the client with `ERROR #132`
 (`ACCESS_VIOLATION` reading `0x8`). Unfixed. Every getter in `ReportFrame` needs guarding.
 
+## The client dies of address space, and every table you add is a tenant
+
+Measured across a whole session with `octoui-dev/tools/sample-wow-memory.ps1`, written up at
+length in `HANDOFF.md` under *Priority 2*. This is a 32-bit process against a 4096 MB
+ceiling, and **the baseline is 3065 MB thirteen minutes after login** — barely a gigabyte of
+headroom before anything happens.
+
+- **Peak matters, not average.** Every spike ratchets the reserved footprint up permanently.
+  A relog hands back only about 17% of it; nothing short of a full exit of `WoW.exe` resets it.
+- **The ceiling is not a number you cross.** One session died at 3883 MB; a later one peaked
+  at 3946 MB and exited cleanly. What kills it is a single allocation that cannot be
+  satisfied, so fragmentation counts as much as the total, and "it was fine yesterday" proves
+  nothing.
+- **"Big addon data tables loading at once" is a named lever.** `Modules/Recipes/DB/` and
+  `E.global.auctionPrices` are already tenants. Anything on the scale of a quest database is
+  not an addition to the budget, it is the budget.
+
+Two crash reporters, one cause: Storm checks its allocation and prints *"Not enough memory
+resources are available"*, DXVK does not at one site and faults reading `0x00000020`. **A
+`d3d9.dll` frame in a crash log is therefore not evidence of a graphics bug.**
+
 ## Diagnostics belong in the addon
 
 Each subsystem has a report command, and extending one beats asking the user to time
@@ -332,6 +353,121 @@ inferred carries `unsure` and renders with a trailing `?`.
 pfQuest's coord tables are written `[1] = {x, y, zone, respawn}`, so they parse as
 **index-keyed tables, not arrays**. Reading them as a list yields no locations and no error —
 it cost a full rebuild before the empty zone column was noticed.
+
+## This client is not stock 1.12, and it ships a modern API
+
+Measured 2026-09-03 with `/oprobe port c`. **No addon defines any of these — OctoUI,
+pfQuest, pfExtend, SuperAPI and Questie's own `Libs` were all checked — so they are the
+client's own.** Worth knowing before writing another polyfill or another `OnUpdate` driver:
+
+| Namespace | Keys | Notable |
+| --- | ---: | --- |
+| `C_Item` | 63 | `GetItemInfo` (18 returns), `GetItemSellPrice`, `GetItemNameByID`, `RequestLoadItemDataByID`, `IsItemDataCachedByID` |
+| `C_Spell` | 36 | `GetSpellInfo` returns a **table**, plus `GetSpellCooldown`, `IsSpellInRange`, `GetSpellReagents` |
+| `C_Container` | 14 | `GetContainerItemID`, `GetContainerItemInfo`, `MoveItem`, `SwapItems`, `PlayerHasHearthstone` |
+| `C_QuestLog` | 10 | `GetQuestIDForLogIndex`, `GetLogIndexForQuestID`, `GetTitleForQuestID`, `GetNumQuestObjectives` |
+| `bit` | 8 | full set. `Libraries/LibCompress` has been depending on this at file scope all along |
+| `C_Map` | 8 | `GetBestMapForUnit` returns an **area id** (28 = Western Plaguelands), `GetAreas`, `GetAreaTriggers`, `GetMapOverlays` |
+| `C_Timer` | 3 | `After`, `NewTicker`, `NewTimer`. `After(1, ...)` measured firing at **1.00s** |
+| `C_CVar` | 1 | `GetCVarBool` only |
+| `C_Seasons` | — | **absent** |
+
+**Frame metatables have a FUNCTION `__index`.** Measured 2026-09-03: `getmetatable(frame)`
+returns a real table, but its `__index` is a function, not a method table. **So you cannot
+add a method to all frames by patching the prototype** - there is no table to add it to.
+`Core/toolkit.lua`'s `addapi()` does exactly that and is commented out, which is why.
+
+The consequence is a probe-design rule as much as a coding one: **ask by name, do not
+enumerate.** `type(frame.SetSize)` resolves through a function `__index` perfectly well,
+while walking the prototype returns nothing. Asking by name also settled that this client
+*has* `SetSize`, `GetSize`, `SetShown`, `SetResizeBounds`, `HookScript`, `SetColorTexture`,
+`GetObjectType` and `SetClampedToScreen`, and lacks `SetFixedFrameStrata`,
+`SetFixedFrameLevel`, `SetIgnoreParentScale/Alpha`, `SetPropagateKeyboardInput`,
+`SetClipsChildren`, `SetHyperlinksEnabled`, `SetClampRectInsets`, `SetMaskTexture` and
+`SetWordWrap`. `/oprobe port w` re-runs it.
+
+**Never create an `EditBox` to inspect it.** A new EditBox is shown by default and takes
+keyboard focus on show, so merely creating one swallows every keypress in the game - no
+movement, no chat, and nothing on screen to say why. It cost two forced client exits, and
+was first misread as a memory fault because a crash log happened to be sitting next to it.
+A crash log next to a symptom is not the cause of that symptom.
+
+**`C_Map` is the trap.** It exists, so a presence check calls it solved — but it has no
+`GetPlayerMapPosition` and no `GetMapInfo`, and it deals in area ids rather than UiMapIDs.
+Presence is not shape. `/oprobe port c` enumerates keys and calls into them for exactly this
+reason.
+
+The language is still **Lua 5.0**: `table.setn` works, `string.gfind` is the real one, and
+`coroutine` is fully present (`create`/`resume`/`yield` round-tripped, `wrap` works). Note
+that `string.gmatch`, `math.fmod` and `math.huge` also answer — but those are **OctoUI's own
+polyfills** from `Compatibility/api/`, not the client's.
+
+## Vendoring third-party code: check for a licence before reading it
+
+The rule this project has already applied four times, and the order matters — look for the
+licence file first, because you cannot un-read an implementation.
+
+| Addon | Licence | What that forced |
+| --- | --- | --- |
+| aux-addon | none, so all rights reserved | `Modules/Auction/` written from scratch |
+| ShaguDPS | none | same call, recorded in `Modules/Misc/DamageMeter.lua` |
+| Auctioneer | GPL-2.0 | copyleft, so it cannot be vendored here either |
+| **Questie** | **none at root** — only `Icons/LICENSE.md` and `Libs/LICENSE.txt`, which cover borrowed files rather than Questie itself | see below |
+| **pfQuest, pfQuest-turtle, pfExtend** | **MIT**, all three | vendorable, with the notice kept |
+
+Features and workflows are not copyrightable, and the client's own API is a fact about the
+client. Somebody else's implementation is neither. Every one of these has taken the same
+shape: a clean-room module, and a credit line in `README.md`.
+
+Worth noting which way the borrowing has actually run: Questie's `Icons/LICENSE.md` credits
+**pfQuest** for ten of its map icons, taken with Shagu's permission under MIT.
+
+## Quest helpers: pfQuest is the incumbent, and the Questie downport
+
+Established 2026-09-03 from the folders on disk, because "it is a versioning problem" is the
+natural assumption and it is wrong.
+
+**Questie 11.37.1 does not fail on this client for want of a version bump. It ships a
+refusal.** `Questie.toc` is a deliberate fallback for unsupported clients (`## Interface:
+00000`, title *"game client not supported"*) and loads exactly one file,
+`Modules/GameVersionError.lua`, whose own comment reads *"No timers or other fancy stuff as
+1.12 client is very limited"*. The four real TOCs declare Interface 20506 and up.
+
+Underneath sits Lua 5.1 throughout — **100** uses of `coroutine`, **80** of `C_Timer`, **26**
+of `C_Map`, **21** of `C_QuestLog` and **207** of `#`, across **49,168 lines in 143 module
+files** — on Ace3, HereBeDragons (`C_Map`-based) and LibDeflate (bit operations this client
+does not have). Its map layer is built on UiMapIDs, where 1.12 has zone indices.
+
+**And its database is the wrong database.** Questie ships retail Classic Era content and
+**zero Turtle content**. pfQuest's vanilla table holds **4,445** quests; `pfQuest-turtle`
+patches that to **5,869**. It is a patch, not an append: `patchtable.lua` walks `data-turtle`
+over `data`, where `"_"` means *delete this id* and a table means *replace it wholesale*, so
+Turtle also rewrites `race` masks and objectives on quests that already existed. A port that
+kept Questie's data would be missing about a quarter of the server's quests and quietly wrong
+about many of the rest.
+
+**The downport was chosen 2026-09-03 and is in progress.** Probing the client afterwards
+changed the picture substantially in its favour, and `octoui-dev/QUESTIE-PORT.md` is the
+working log — read it before touching any of this. The short version:
+
+- **Quest ids are readable.** `GetQuestLink` is absent, so stock 1.12 says they are not, and
+  pfQuest guesses ids by matching titles. But this client ships `C_QuestLog`, and
+  `GetQuestIDForLogIndex` returned real ids for **15 of 15** quests, all round-tripping via
+  `GetLogIndexForQuestID` and confirmed by `GetTitleForQuestID`. **They are pfQuest's own
+  ids**, Turtle customs in the 40000+ range included — ten checked against the DB on disk,
+  ten exact name matches. So no title matching, no ambiguity, no questcache.
+- **The mechanical half is generated.** `octoui-dev/tools/questie-port/transpile.py` rewrites
+  `#x` and `a % b`, the only two genuine syntax gaps, and took Questie's module tree from
+  **235 `lua50check` SYNTAX findings to 0** with all 139 files still parsing.
+
+pfQuest remains the incumbent until that lands, and is still what
+`Modules/Skins/Addons/pfQuest.lua`, `Modules/Maps/MinimapButtons.lua` and
+`Modules/Recipes/RecipeFinder.lua` are written against. It is **11,036 lines, 16 files, no
+libraries, MIT**. Whatever replaces it has to *replace* it, not sit alongside it — see the
+address-space section.
+
+pfQuest's coord tables are `[1] = {x, y, zone, respawn}` — **index-keyed tables, not arrays**.
+Reading them as a list yields no locations and no error; see *Generated data is not source*.
 
 ## The auction house, and the price database
 
