@@ -833,7 +833,7 @@ local function SendRecieve()
 
 		if arg1 == "ELVUI_VERSIONCHK" then
 			local msg, ver = tonumber(arg2), tonumber(E.version)
-			if msg and (msg > ver) then -- you're outdated D:
+			if msg and ver and (msg > ver) then -- you're outdated D:
 				if not E.recievedOutOfDateMessage then
 					E:Print(L["OctoUI is out of date. You can download the newest version from https://github.com/C4rcer/OctoUI"])
 
@@ -843,7 +843,7 @@ local function SendRecieve()
 
 					E.recievedOutOfDateMessage = true
 				end
-			elseif msg and (msg < ver) then -- Send Message Back if you intercept and are higher revision
+			elseif msg and ver and (msg < ver) then -- Send Message Back if you intercept and are higher revision
 				if not SendMessageTimer then
 					SendMessageTimer = E:ScheduleTimer("SendMessage", 10)
 				end

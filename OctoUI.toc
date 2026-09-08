@@ -2,7 +2,7 @@
 ## Title: |cff175581Octo|r|cffC4C4C4UI|r
 ## Notes: Complete User Interface replacement for OctoWoW. Based on the ElvUI 1.12.1 backport.
 ## Author: Carcer - N'Zoth. Based on ElvUI by Elv and Simpy, 1.12.1 backport by the ElvUI-Vanilla contributors.
-## Version: 1.0.0
+## Version: 1.0
 ## SavedVariables: ElvDB, ElvPrivateDB, GAME_LOCALE
 ## SavedVariablesPerCharacter: ElvCharacterDB, OctoTWT_CONFIG, TWT_CONFIG
 ## OptionalDeps: SharedMedia, Tukui, ButtonFacade
