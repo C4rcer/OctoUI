@@ -630,6 +630,7 @@ L["MOUNTGEAR_CURSOR_BUSY"] = "the cursor was already holding something"
 L["MOUNTGEAR_CURSOR_STUCK"] = "the swap left an item on the cursor"
 L["MOUNTGEAR_LOCKED"] = "that bag slot was locked"
 L["MOUNTGEAR_NO_PICKUP"] = "the client did not pick the item up"
+L["MOUNTGEAR_REFUSED"] = "the client would not put that item in that slot -- a second copy of a unique-equipped item is the usual reason"
 
 --Modules/Misc/CCWatch.lua -- what you have crowd controlled
 L["CC Watch"] = true;

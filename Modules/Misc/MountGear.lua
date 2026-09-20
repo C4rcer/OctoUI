@@ -72,6 +72,13 @@ local lastResults = {}
 local applying
 local reapplyPending
 
+--A restore is not finished when its pass returns: the client has not caught up with the
+--swaps yet, and a slot that could not be placed this time round usually can a moment later.
+--Bounded, because a slot whose item is genuinely in the bank must not retry forever.
+local restorePending
+local restoreTries
+local RESTORE_RETRIES = 3
+
 local function Store()
 	local db = E.db.general
 	if not db.mountGear then
@@ -145,8 +152,19 @@ end
 --Either half matching is enough. An entry recorded from a link has both, one typed by hand
 --has only a name, and a server item this client cannot look up may never resolve to more
 --than an id.
+--
+--A RAW LINK IS ACCEPTED AS WELL AS AN ENTRY. The swim side used to write the displaced
+--item's link straight into its memory table and hand that back here, where `entry.id` on a
+--string is `string.id` -- nil, silently, because Lua 5.0 gives strings a metatable. Every
+--comparison then returned false and "put back what the swim gear displaced" could never
+--find anything. The write site is fixed below, but profiles saved before that still hold
+--link strings, so the coercion stays.
 local function ItemMatches(entry, link)
 	if not entry or not link then return false end
+
+	if type(entry) == "string" then
+		entry = {id = LinkID(entry), name = LinkName(entry)}
+	end
 
 	local id = LinkID(link)
 	if entry.id and id and entry.id == id then return true end
@@ -161,11 +179,26 @@ local function NumBags()
 	return NUM_BAG_FRAMES or 4
 end
 
+--A LOCKED BAG SLOT IS SKIPPED, NOT RETURNED.
+--
+--This is what made the second of two identical trinkets fail, measured 2026-09-20. Restoring
+--Trinket 1 puts the riding item into the bag slot the fight item just left, and for a moment
+--after that the slot is locked AND still reads as holding the item that has already gone.
+--Trinket 2's search then matched that stale link, found the first copy again rather than the
+--second, and died on the lock -- "that bag slot was locked", with the real second copy
+--sitting untouched further down the bag.
+--
+--Stepping over locked slots fixes both halves at once: a locked slot is mid-move, so its
+--link cannot be trusted and it could not be picked up anyway. StillOwed comes round
+--afterwards for anything this still could not place.
 local function FindInBags(entry)
 	for bag = 0, NumBags() do
 		for slot = 1, GetContainerNumSlots(bag) do
 			if ItemMatches(entry, GetContainerItemLink(bag, slot)) then
-				return bag, slot
+				local _, _, locked = GetContainerItemInfo(bag, slot)
+				if not locked then
+					return bag, slot
+				end
 			end
 		end
 	end
@@ -216,6 +249,12 @@ local function EquipFromBag(bag, slot, invSlot)
 		return false, L["MOUNTGEAR_CURSOR_STUCK"]
 	end
 
+	--NO VERIFICATION HERE. Asking the inventory slot what it now holds looks like the
+	--obvious confirmation and is measured wrong: on 2026-09-20 a restore that actually
+	--succeeded on three of four slots reported all three as refused, because the client
+	--has not updated the slot by the time this returns. It is the same mid-move state
+	--ScheduleReapply below was written to step around. Whether a swap landed is decided
+	--by StillOwed, one delay later, not here.
 	return true
 end
 
@@ -359,6 +398,67 @@ local function ScheduleReapply()
 	E:Delay(0.2, ReapplyCheck)
 end
 
+--Is any slot still wearing the riding set, or still owed something back? Run one delay
+--after a pass, when the client has actually applied the swaps, this is the only honest
+--answer to "did that work" -- EquipFromBag cannot tell, as the note on it says.
+local function StillOwed()
+	local db = Store()
+
+	for _, def in ipairs(SLOTS) do
+		if db.saved[def.key] then return true end
+
+		local wanted = db.fight[def.key]
+		if wanted and (wanted.id or wanted.name) then
+			local invSlot = GetInventorySlotInfo(def.key)
+			--Only a slot the riding item is STILL sitting in counts. Anything else there
+			--was put on by hand, and RestoreMountGear leaves that alone by design.
+			if ItemMatches(db.slots[def.key], GetInventoryItemLink("player", invSlot)) then
+				return true
+			end
+		end
+	end
+
+	return false
+end
+
+local function RestoreCheck()
+	restorePending = nil
+
+	if mounted then return end
+	if not Store().enable then return end
+	if not StillOwed() then return end
+
+	--Held for the end of the fight rather than dropped, same as every other transition.
+	if UnitAffectingCombat("player") then
+		pendingAction = "restore"
+		return
+	end
+
+	M:RestoreMountGear()
+end
+
+local function ScheduleRestoreRetry()
+	if restorePending then return end
+	if not StillOwed() then return end
+
+	if (restoreTries or 0) >= RESTORE_RETRIES then
+		--Budget spent and a slot is still wearing riding gear. Say so, rather than letting
+		--the last pass stand there reporting a success that did not happen.
+		local db = Store()
+		for _, def in ipairs(SLOTS) do
+			local invSlot = GetInventorySlotInfo(def.key)
+			if ItemMatches(db.slots[def.key], GetInventoryItemLink("player", invSlot)) then
+				Record(def, false, L["MOUNTGEAR_REFUSED"])
+			end
+		end
+		return
+	end
+
+	restoreTries = (restoreTries or 0) + 1
+	restorePending = true
+	E:Delay(0.3, RestoreCheck)
+end
+
 function M:RestoreMountGear()
 	local db = Store()
 	lastResults = {}
@@ -414,6 +514,10 @@ function M:RestoreMountGear()
 			end
 		end
 	end
+
+	--Everything above ran against a client that has not caught up yet, so whether it
+	--worked is not knowable from here. Come back once it has.
+	ScheduleRestoreRetry()
 end
 
 function M:MountGearIsMounted()
@@ -436,6 +540,10 @@ local function RunOrDefer(action)
 	if action == "equip" then
 		M:ApplyMountGear()
 	else
+		--A fresh dismount, so the retry budget starts again. RestoreCheck calls
+		--RestoreMountGear directly and deliberately does NOT come through here, which is
+		--what stops a retry from renewing its own budget.
+		restoreTries = 0
 		M:RestoreMountGear()
 	end
 end
@@ -726,8 +834,15 @@ local function SwimSwap(wanted, memory)
 				else
 					--Only the first displacement is remembered, same as the mount version:
 					--running again mid-swim must not record our own item as the thing owed.
+					--
+					--Written as an ENTRY, the shape FindInBags reads. This used to store
+					--`current` -- the raw link -- and the restore then asked FindInBags to
+					--match a string, which answers nil for `.id` and `.name` instead of
+					--erroring, so it silently found nothing and every undeclared slot kept
+					--its swimming item. ItemMatches coerces old saved links for profiles
+					--written before this.
 					if memory and memory[def.key] == nil then
-						memory[def.key] = current or false
+						memory[def.key] = current and {id = LinkID(current), name = LinkName(current), link = current} or false
 					end
 
 					local ok, why = EquipFromBag(bag, slot, invSlot)
@@ -761,6 +876,12 @@ function M:RestoreSwimGear()
 	for _, def in ipairs(SLOTS) do
 		local wanted = db.land[def.key]
 		local displaced = db.saved[def.key]
+		--What is owed is only forgotten once it has actually been handed back. This used
+		--to be cleared unconditionally at the end of every pass, so a slot that could not
+		--be restored -- the item in the bank, the bags full, the client refusing the
+		--equip -- lost the record of what it owed and never tried again. The mount side
+		--has always kept it on failure; this is the same rule.
+		local settled = true
 
 		if wanted and (wanted.id or wanted.name) then
 			local invSlot = GetInventorySlotInfo(def.key)
@@ -769,8 +890,10 @@ function M:RestoreSwimGear()
 				if bag then
 					local ok, why = EquipFromBag(bag, slot, invSlot)
 					SwimRecord(def, ok, why)
+					settled = ok
 				else
 					SwimRecord(def, false, L["MOUNTGEAR_NOT_IN_BAGS"])
+					settled = false
 				end
 			end
 		elseif displaced ~= nil then
@@ -779,18 +902,21 @@ function M:RestoreSwimGear()
 			if displaced == false then
 				local ok, why = UnequipToBags(invSlot)
 				SwimRecord(def, ok, why)
+				settled = ok
 			else
 				local bag, slot = FindInBags(displaced)
 				if bag then
 					local ok, why = EquipFromBag(bag, slot, invSlot)
 					SwimRecord(def, ok, why)
+					settled = ok
 				else
 					SwimRecord(def, false, L["MOUNTGEAR_NOT_IN_BAGS"])
+					settled = false
 				end
 			end
 		end
 
-		db.saved[def.key] = nil
+		if settled then db.saved[def.key] = nil end
 	end
 
 	swimApplying = false
